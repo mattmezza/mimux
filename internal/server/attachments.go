@@ -73,6 +73,9 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		disp = "attachment"
 	}
 	w.Header().Set("Content-Disposition", fmt.Sprintf("%s; filename=%q", disp, sanitizeFilename(filename)))
+	// #nosec G705 -- raw attachment bytes are served with X-Content-Type-Options:
+	// nosniff, a Content-Disposition, and a locked-down sandbox CSP; they are
+	// never rendered as HTML in the app's own origin.
 	_, _ = w.Write(data)
 }
 
