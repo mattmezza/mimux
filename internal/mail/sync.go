@@ -240,7 +240,7 @@ func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UI
 		return uidNext
 	}
 	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
-	if uint32(len(uids)) > limit {
+	if len(uids) > int(limit) {
 		return uids[len(uids)-int(limit)]
 	}
 	return uids[0]
@@ -267,7 +267,7 @@ func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *s
 		return 0, nil
 	}
 	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
-	if uint32(len(uids)) > limit {
+	if len(uids) > int(limit) {
 		uids = uids[len(uids)-int(limit):]
 	}
 	existed, err := a.m.st.FolderUIDs(f.ID)

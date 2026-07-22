@@ -108,7 +108,7 @@ func (s *Store) GetPrefs() Prefs {
 		slog.Error("GetPrefs account colors", "err", err)
 		return p
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	for rows.Next() {
 		var k, v string
 		if err := rows.Scan(&k, &v); err != nil {
