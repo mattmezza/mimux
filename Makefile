@@ -7,7 +7,7 @@ IMAGE   := ghcr.io/mattmezza/sm
 ##@ Development
 .PHONY: dev
 dev: ## Run with hot reload (requires air)
-	air
+	$(shell go env GOPATH)/bin/air
 
 .PHONY: run
 run: ## Build and run locally
