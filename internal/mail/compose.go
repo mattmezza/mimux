@@ -211,8 +211,12 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 	if in.From != "" {
 		fromAddr = bareAddr(in.From)
 	}
+	senderName := cfg.SenderName
+	if senderName == "" {
+		senderName = cfg.Name
+	}
 	var h emmail.Header
-	h.SetAddressList("From", []*emmail.Address{{Name: cfg.Name, Address: fromAddr}})
+	h.SetAddressList("From", []*emmail.Address{{Name: senderName, Address: fromAddr}})
 	if to := parseAddrs(in.To); len(to) > 0 {
 		h.SetAddressList("To", to)
 	}
