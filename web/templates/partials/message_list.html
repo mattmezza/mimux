@@ -1,0 +1,42 @@
+{{define "message_list"}}
+<section id="message-list" data-folder="{{if .CurrentFolder}}{{.CurrentFolder}}{{else}}0{{end}}"
+  hx-get="{{.ListURL}}" hx-trigger="sm:refresh from:body" hx-swap="outerHTML"
+  class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto flex flex-col">
+  <div class="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur px-3 py-2 border-b border-zinc-800 text-zinc-100 font-medium shrink-0">
+    {{if .Unified}}All inboxes{{else}}{{folderLabel .Folder}}{{end}}
+  </div>
+  {{if .HasMessages}}
+  <ul id="message-list-items">
+    {{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src)}}{{end}}
+  </ul>
+  {{else}}
+  <div class="flex-1 flex flex-col items-center justify-center gap-2 text-center p-8">
+    {{if .Unified}}
+    <span class="text-3xl">🌱</span>
+    <p class="text-zinc-400">You're all caught up. Go touch some grass.</p>
+    {{else if .Folder}}
+      {{if eq .Folder.SpecialUse "inbox"}}
+      <span class="text-3xl">🌱</span>
+      <p class="text-zinc-400">You're all caught up. Go touch some grass.</p>
+      {{else}}
+      <p class="text-zinc-500">Nothing in here.</p>
+      {{end}}
+    {{else}}
+    <p class="text-zinc-500">Nothing in here.</p>
+    {{end}}
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "skeleton_row"}}
+<div class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 animate-pulse">
+  <div class="shrink-0 w-8 h-8 rounded-full bg-zinc-800"></div>
+  <div class="min-w-0 flex-1 space-y-2">
+    <div class="h-3 bg-zinc-800 rounded w-1/3"></div>
+    <div class="h-3 bg-zinc-800 rounded w-2/3"></div>
+    <div class="h-2.5 bg-zinc-800 rounded w-1/2"></div>
+  </div>
+</div>
+{{end}}
+

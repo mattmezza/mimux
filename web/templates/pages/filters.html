@@ -1,0 +1,44 @@
+{{define "title"}}Filters — SM{{end}}
+{{define "content"}}
+<div class="h-full flex flex-col">
+  {{template "topbar" .}}
+  <div class="flex-1 flex min-h-0">
+    {{template "sidebar" .}}
+    <main class="flex-1 overflow-y-auto">
+      <div class="max-w-3xl mx-auto w-full p-6 space-y-6">
+        <div class="flex items-center justify-between">
+          <h1 class="text-lg font-semibold text-zinc-100">Filters</h1>
+          <div class="flex items-center gap-2">
+            <a href="/filters/export" class="text-xs px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">Export JSON</a>
+            <a href="/filters?new=1" class="text-xs px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white font-medium transition-colors duration-150">+ New rule</a>
+          </div>
+        </div>
+
+        {{with .Error}}<p class="text-red-500 text-xs">{{.}}</p>{{end}}
+        {{if .TestResult}}
+          <p class="text-xs {{if .TestResult.Match}}text-emerald-400{{else}}text-zinc-500{{end}}">
+            {{if .TestResult.Match}}Test message matches this rule.{{else}}Test message does not match this rule.{{end}}
+          </p>
+        {{end}}
+
+        {{if .Form}}
+          {{template "filter_form" .Form}}
+          {{if .Form.Editing}}{{template "filter_test_form" .Form}}{{end}}
+        {{end}}
+
+        {{if .Rules}}
+        <div class="space-y-2">
+          {{range .Rules}}{{template "filter_row" .}}{{end}}
+        </div>
+        {{else}}
+        <div class="flex flex-col items-center justify-center gap-2 text-center py-16 text-zinc-500">
+          <span class="text-3xl">🧹</span>
+          <p>No rules yet. Automate the boring stuff.</p>
+        </div>
+        {{end}}
+      </div>
+    </main>
+  </div>
+  {{template "statusbar" .}}
+</div>
+{{end}}

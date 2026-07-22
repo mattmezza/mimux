@@ -1,0 +1,244 @@
+package server
+
+import (
+	"log/slog"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/mattmezza/sm/internal/auth"
+	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/sm/internal/mail"
+	"github.com/mattmezza/sm/internal/store"
+)
+
+// composeView is the compose partial's template data.
+type composeView struct {
+	CSRF          string
+	DraftID       int64
+	Accounts      []config.Account
+	Account       string
+	To, Cc, Bcc   string
+	Subject       string
+	Body          string
+	Kind          string // new|reply|reply_all|forward
+	InReplyTo     string // original Message-ID, for the In-Reply-To header
+	References    string // full References header value to reuse
+	ThreadContext string // for the embedded ai_reply partial
+	Error         string
+}
+
+// handleComposeNew serves GET /compose (blank) and GET
+// /compose?reply=<id>&mode=reply|all|forward (prefilled). A local draft row
+// is created immediately so every autosave from here on is an update to a
+// known id.
+// NOTE: this means an opened-then-abandoned compose leaves an empty
+// draft row behind; acceptable for a local-only, low-volume table — prune
+// empties on a timer if that ever becomes annoying.
+func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
+	view := composeView{
+		CSRF:     auth.EnsureCSRF(w, r, s.secure),
+		Accounts: s.cfg.Accounts,
+		Kind:     "new",
+	}
+	if len(s.cfg.Accounts) > 0 {
+		view.Account = s.cfg.Accounts[0].Name
+	}
+	// Reopening a saved local draft (from /drafts) just loads its fields —
+	// no new row, no reply prefill.
+	if draftID, err := strconv.ParseInt(r.URL.Query().Get("draft"), 10, 64); err == nil && draftID > 0 {
+		if d, err := s.store.DraftByID(draftID); err == nil && d != nil {
+			refs := ""
+			if d.InReplyTo != "" {
+				// NOTE: a reopened draft only remembers its immediate
+				// parent, not the full References chain — still threads
+				// correctly via In-Reply-To in every mail client that matters.
+				refs = "<" + d.InReplyTo + ">"
+			}
+			s.renderPartial(w, "compose", composeView{
+				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account,
+				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body,
+				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs,
+			})
+			return
+		}
+	}
+	if replyID, err := strconv.ParseInt(r.URL.Query().Get("reply"), 10, 64); err == nil && replyID > 0 {
+		if orig, err := s.store.MessageByID(replyID); err == nil && orig != nil {
+			s.prefillReply(&view, orig, r.URL.Query().Get("mode"))
+		}
+	}
+	d := &store.Draft{
+		Account: view.Account, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
+		Subject: view.Subject, Body: view.Body, InReplyTo: view.InReplyTo, Kind: view.Kind,
+	}
+	if err := s.store.UpsertDraft(d); err != nil {
+		slog.Error("compose: create draft", "err", err)
+	}
+	view.DraftID = d.ID
+	s.renderPartial(w, "compose", view)
+}
+
+// prefillReply fills the To/Cc/Subject/Body/threading fields of view for a
+// reply, reply-all or forward of orig.
+func (s *Server) prefillReply(view *composeView, orig *store.Message, mode string) {
+	view.Account = orig.Account
+	self := orig.Account
+	if ac, ok := s.accountByName(orig.Account); ok {
+		self = ac.Email
+	}
+	from := orig.FromAddress
+	if orig.FromName != "" {
+		from = orig.FromName + " <" + orig.FromAddress + ">"
+	}
+	switch mode {
+	case "all":
+		view.Kind = "reply_all"
+		to, cc := mail.ReplyAllRecipients(self,
+			mail.SplitAddrList(orig.FromAddress), mail.SplitAddrList(orig.ToAddresses), mail.SplitAddrList(orig.CcAddresses))
+		view.To, view.Cc = joinAddrList(to), joinAddrList(cc)
+	case "forward":
+		view.Kind = "forward"
+	default:
+		view.Kind = "reply"
+		view.To = joinAddrList(mail.ReplyRecipients(self, orig.FromAddress))
+	}
+	view.Subject = mail.PrefixSubject(view.Kind, orig.Subject)
+	// NOTE: quotes the stored snippet (first ~2KB), not the full fetched
+	// body — reusing mail.Body would need an HTML->text conversion this
+	// phase doesn't have. Good enough for a reply quote; revisit if users
+	// complain about truncation.
+	if view.Kind == "forward" {
+		view.Body = "\n\n---------- Forwarded message ----------\nFrom: " + from +
+			"\nDate: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
+			"\nSubject: " + orig.Subject + "\n\n" + orig.Snippet
+	} else {
+		view.Body = "\n\n" + mail.QuoteBody(orig.Date, from, orig.Snippet)
+		view.InReplyTo = orig.MessageID
+		view.References = mail.ComputeReferences(orig.Refs, orig.MessageID)
+	}
+	view.ThreadContext = from + " wrote:\n" + orig.Snippet
+}
+
+func joinAddrList(addrs []string) string {
+	out := ""
+	for i, a := range addrs {
+		if i > 0 {
+			out += ", "
+		}
+		out += a
+	}
+	return out
+}
+
+func (s *Server) accountByName(name string) (config.Account, bool) {
+	for _, ac := range s.cfg.Accounts {
+		if ac.Name == name {
+			return ac, true
+		}
+	}
+	return config.Account{}, false
+}
+
+// handleComposeDraftSave is the htmx autosave endpoint: POST /compose/draft,
+// debounced client-side. It always returns 204 (see compose.html), so the
+// draft must already have an id — handleComposeNew creates one at open time.
+func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	id, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
+	if id == 0 {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	d := &store.Draft{
+		ID: id, Account: r.PostFormValue("account"),
+		To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
+		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"),
+		InReplyTo: r.PostFormValue("in_reply_to"), Kind: r.PostFormValue("kind"),
+	}
+	if err := s.store.UpsertDraft(d); err != nil {
+		slog.Error("compose: draft autosave", "err", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleComposeSend is POST /compose. On success it deletes the draft and
+// returns 204 (the client closes the modal + shows a toast); on failure it
+// re-renders the compose partial with an error banner, modal stays open,
+// draft stays saved.
+func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	draftID, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
+	view := composeView{
+		CSRF: auth.EnsureCSRF(w, r, s.secure), DraftID: draftID, Accounts: s.cfg.Accounts,
+		Account: r.PostFormValue("account"), To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
+		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"), Kind: r.PostFormValue("kind"),
+		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
+	}
+	if len(s.cfg.Accounts) == 0 {
+		view.Error = "No accounts configured. Add one to config.toml."
+		s.renderPartial(w, "compose", view)
+		return
+	}
+	if view.Account == "" {
+		view.Account = s.cfg.Accounts[0].Name
+	}
+	to := mail.SplitAddrList(view.To)
+	if len(to) == 0 {
+		view.Error = "Add at least one recipient."
+		s.renderPartial(w, "compose", view)
+		return
+	}
+	in := mail.ComposeInput{
+		To: to, Cc: mail.SplitAddrList(view.Cc), Bcc: mail.SplitAddrList(view.Bcc),
+		Subject: view.Subject, Body: view.Body,
+		InReplyTo: view.InReplyTo, References: view.References,
+	}
+	if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
+		slog.Error("compose: send", "account", view.Account, "err", err)
+		view.Error = "Could not send: " + err.Error()
+		s.renderPartial(w, "compose", view)
+		return
+	}
+	if draftID > 0 {
+		_ = s.store.DeleteDraft(draftID)
+	}
+	s.mail.Toast("Sent.")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// --- local drafts page (the simpler alternative to folding drafts into the
+// IMAP Drafts special-use folder view — see server.go routes) ---
+
+func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
+	drafts, err := s.store.ListDrafts()
+	if err != nil {
+		slog.Error("drafts: list", "err", err)
+		http.Error(w, "failed to load drafts", http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "drafts", map[string]any{
+		"CSRF":    auth.EnsureCSRF(w, r, s.secure),
+		"Sidebar": s.sidebarData(),
+		"Drafts":  drafts,
+	})
+}
+
+func (s *Server) handleDraftDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.DeleteDraft(id); err != nil {
+		slog.Error("drafts: delete", "err", err)
+	}
+	http.Redirect(w, r, "/drafts", http.StatusSeeOther)
+}

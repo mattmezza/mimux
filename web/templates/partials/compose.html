@@ -1,0 +1,87 @@
+{{define "compose"}}
+<div class="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-0 sm:p-4">
+  <div class="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-md bg-zinc-900 border border-zinc-800 shadow-xl flex flex-col">
+    <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+      <h2 class="text-zinc-100 font-semibold text-sm">
+        {{if eq .Kind "forward"}}Forward{{else if eq .Kind "reply_all"}}Reply all{{else if eq .Kind "reply"}}Reply{{else}}New message{{end}}
+      </h2>
+      <button type="button" title="Close (Esc)" aria-label="Close" onclick="closeCompose()"
+        class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
+      class="flex-1 overflow-y-auto p-4 space-y-3"
+      hx-on::after-request="if(event.detail.xhr.status===204){closeCompose()}">
+      <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+      <input type="hidden" name="draft_id" value="{{.DraftID}}">
+      <input type="hidden" name="kind" value="{{.Kind}}">
+      <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
+      <input type="hidden" name="references" value="{{.References}}">
+
+      {{with .Error}}<div class="rounded-md border border-red-900/50 bg-red-950/30 p-3 text-red-300 text-xs">{{.}}</div>{{end}}
+
+      {{if gt (len .Accounts) 1}}
+      <div class="flex items-center gap-2">
+        <label class="w-12 shrink-0 text-xs text-zinc-500">From</label>
+        <select name="account"
+          class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
+          {{$acct := .Account}}
+          {{range .Accounts}}<option value="{{.Name}}" {{if eq .Name $acct}}selected{{end}}>{{.Name}} &lt;{{.Email}}&gt;</option>{{end}}
+        </select>
+      </div>
+      {{else if .Accounts}}
+      <input type="hidden" name="account" value="{{(index .Accounts 0).Name}}">
+      {{else}}
+      <input type="hidden" name="account" value="">
+      {{end}}
+
+      <div class="flex items-center gap-2">
+        <label class="w-12 shrink-0 text-xs text-zinc-500">To</label>
+        <input name="to" value="{{.To}}" placeholder="name@example.com, ..."
+          hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+          class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
+      </div>
+
+      <div id="cc-bcc-fields" class="space-y-2 {{if and (not .Cc) (not .Bcc)}}hidden{{end}}">
+        <div class="flex items-center gap-2">
+          <label class="w-12 shrink-0 text-xs text-zinc-500">Cc</label>
+          <input name="cc" value="{{.Cc}}" hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+            class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="w-12 shrink-0 text-xs text-zinc-500">Bcc</label>
+          <input name="bcc" value="{{.Bcc}}" hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+            class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
+        </div>
+      </div>
+      {{if and (not .Cc) (not .Bcc)}}
+      <button type="button" class="text-xs text-indigo-400 hover:text-indigo-300"
+        onclick="document.getElementById('cc-bcc-fields').classList.remove('hidden');this.remove()">Cc/Bcc</button>
+      {{end}}
+
+      <input name="subject" value="{{.Subject}}" placeholder="Subject"
+        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+        class="w-full rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
+
+      <textarea name="body" placeholder="Write your message…" rows="12"
+        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
+        class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+
+      <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
+        {{if eq .Kind "new"}}{{template "ai_compose_form" .}}{{else}}{{template "ai_reply_form" .}}{{end}}
+      </div>
+
+      <div class="flex justify-end gap-2 pt-2">
+        <button type="submit" title="Send (Ctrl+Enter)"
+          class="rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white text-sm font-medium px-4 py-1.5">
+          Send
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+{{end}}

@@ -1,0 +1,27 @@
+{{define "message_row"}}
+<li id="msg-{{.ID}}"
+    hx-get="/messages/{{.ID}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms"
+    hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
+    data-message-row data-folder="{{.FolderID}}" tabindex="-1"
+    class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150 outline-none focus:bg-zinc-800">
+  <div class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white select-none"
+       style="background-color:{{avatarColor .FromAddress}}">{{avatarInitials .FromName .FromAddress}}</div>
+  <div class="min-w-0 flex-1">
+    <div class="flex items-center gap-2">
+      {{if not .IsRead}}<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
+      <span class="truncate {{if .IsRead}}text-zinc-400{{else}}text-zinc-100 font-semibold{{end}}">{{if .FromName}}{{.FromName}}{{else}}{{.FromAddress}}{{end}}</span>
+      <span class="ml-auto shrink-0 text-[11px] text-zinc-500">{{relTime .Date}}</span>
+    </div>
+    <div class="truncate {{if .IsRead}}text-zinc-400{{else}}text-zinc-100 font-medium{{end}}">
+      {{if .HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}
+    </div>
+    <div class="truncate text-zinc-500 text-xs">{{.Snippet}}</div>
+  </div>
+  <button title="{{if .IsStarred}}Unstar{{else}}Star{{end}} (s)" aria-label="{{if .IsStarred}}Unstar{{else}}Star{{end}}" onclick="event.stopPropagation()"
+    hx-post="/messages/{{.ID}}/{{if .IsStarred}}unstar{{else}}star{{end}}"
+    hx-target="#msg-{{.ID}}" hx-swap="outerHTML settle:120ms"
+    class="star-btn shrink-0 self-start pt-0.5 {{if .IsStarred}}text-amber-400{{else}}text-zinc-600 hover:text-zinc-300{{end}} transition-colors duration-150">
+    <svg class="w-4 h-4" fill="{{if .IsStarred}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.5a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z"/></svg>
+  </button>
+</li>
+{{end}}

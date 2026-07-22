@@ -1,0 +1,11 @@
+{{define "translate_result"}}
+<div class="mt-2 rounded-md border border-zinc-800 bg-zinc-800/50 p-3 text-zinc-200">
+  <p class="text-[11px] uppercase tracking-wider text-zinc-500 mb-1">Translated from {{.DetectedLang}}</p>
+  <p class="whitespace-pre-wrap">{{.Text}}</p>
+</div>
+{{end}}
+{{define "translate_error"}}
+<div class="mt-2 rounded-md border border-red-900/50 bg-red-950/30 p-3 text-red-300 text-xs">
+  {{.Error}}
+</div>
+{{end}}

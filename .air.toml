@@ -1,0 +1,12 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/sm ./cmd/sm"
+bin = "./tmp/sm"
+include_ext = ["go", "html", "css", "js", "toml", "sql", "json"]
+exclude_dir = ["tmp", "bin", "data", "node_modules", ".git"]
+exclude_regex = ["dist\\.css$"]
+
+[misc]
+clean_on_exit = true
