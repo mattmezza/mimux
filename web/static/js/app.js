@@ -297,10 +297,35 @@ window.toggleThreadMessage = toggleThreadMessage;
 // stable #main-content (so the width survives htmx list swaps), persisted. ---
 (function initListResize() {
   const KEY = "sm.listw";
+  const MIN = 240, MAX = 700;
   const main = () => document.getElementById("main-content");
-  function apply(px) { main()?.style.setProperty("--list-w", px + "px"); }
+  function clamp(px) {
+    const m = main();
+    const hi = m ? Math.min(MAX, m.clientWidth - 320) : MAX;
+    return Math.max(MIN, Math.min(px, hi));
+  }
+  function apply(px) {
+    main()?.style.setProperty("--list-w", px + "px");
+    document.getElementById("list-resizer")?.setAttribute("aria-valuenow", String(Math.round(px)));
+  }
+  function persist(px) { if (px > 0) localStorage.setItem(KEY, String(Math.round(px))); }
   const saved = parseInt(localStorage.getItem(KEY) || "", 10);
   if (saved > 0) apply(saved);
+  // Keyboard: focus the separator and use arrow keys (Home/End for min/max).
+  document.addEventListener("keydown", (e) => {
+    if (!e.target || e.target.id !== "list-resizer") return;
+    const cur = parseInt(getComputedStyle(main()).getPropertyValue("--list-w")) || 416;
+    let next = cur;
+    if (e.key === "ArrowLeft") next = cur - 24;
+    else if (e.key === "ArrowRight") next = cur + 24;
+    else if (e.key === "Home") next = MIN;
+    else if (e.key === "End") next = MAX;
+    else return;
+    e.preventDefault();
+    next = clamp(next);
+    apply(next);
+    persist(next);
+  });
   document.addEventListener("mousedown", (e) => {
     const handle = e.target.closest && e.target.closest("#list-resizer");
     if (!handle) return;
@@ -313,7 +338,7 @@ window.toggleThreadMessage = toggleThreadMessage;
     document.body.style.cursor = "col-resize";
     let last = 0;
     const move = (ev) => {
-      last = Math.max(240, Math.min(ev.clientX - left, Math.min(700, m.clientWidth - 320)));
+      last = clamp(ev.clientX - left);
       apply(last);
     };
     const up = () => {
@@ -322,7 +347,7 @@ window.toggleThreadMessage = toggleThreadMessage;
       handle.classList.remove("dragging");
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
-      if (last > 0) localStorage.setItem(KEY, String(Math.round(last)));
+      persist(last);
     };
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", up);

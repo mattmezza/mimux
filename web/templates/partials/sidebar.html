@@ -10,12 +10,12 @@
       Compose
     </button>
     <div class="flex items-center gap-1" role="group" aria-label="Quick filters">
-      <button type="button" @click="setFilter('')" :class="filter==='' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
+      <button type="button" @click="setFilter('')" :aria-pressed="filter===''" :class="filter==='' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
         class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150">All</button>
-      <button type="button" @click="setFilter('unread')" :class="filter==='unread' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
+      <button type="button" @click="setFilter('unread')" :aria-pressed="filter==='unread'" :class="filter==='unread' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
         class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only unread">
         <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>Unread</button>
-      <button type="button" @click="setFilter('starred')" :class="filter==='starred' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
+      <button type="button" @click="setFilter('starred')" :aria-pressed="filter==='starred'" :class="filter==='starred' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
         class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only starred">
         <span class="text-amber-400">★</span>Starred</button>
     </div>
@@ -33,7 +33,7 @@
     {{end}}
     {{range .Sidebar}}
     <div>
-      <button type="button" @click="toggleAcct('{{.Name}}')"
+      <button type="button" @click="toggleAcct('{{.Name}}')" :aria-expanded="acctOpen('{{.Name}}')" aria-label="Toggle {{.Name}} folders"
         class="w-full px-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 flex items-center gap-2 transition-colors duration-150">
         <svg class="acct-chevron w-3 h-3 shrink-0" :class="{ 'rotate-90': acctOpen('{{.Name}}') }" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
         {{$c := ""}}{{if $.AccountColors}}{{$c = index $.AccountColors .Name}}{{end}}

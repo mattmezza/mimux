@@ -1,5 +1,8 @@
-// SM service worker: cache-first for static assets, network-first for pages.
-const CACHE = "sm-v2";
+// SM service worker: network-first for everything (always fresh when online),
+// with the cache as an offline-only fallback. This deliberately avoids serving
+// stale JS/CSS/templates — a cache-first strategy previously pinned old assets
+// in already-open browsers and broke the app after updates.
+const CACHE = "sm-v3";
 const STATIC = [
   "/static/css/dist.css",
   "/static/js/htmx.min.js",
@@ -14,35 +17,22 @@ self.addEventListener("install", (e) => {
 });
 
 self.addEventListener("activate", (e) => {
+  // Drop old caches, then take control of already-open pages immediately so a
+  // refresh isn't needed for the new worker (and fresh assets) to apply.
   e.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
-  if (url.pathname.startsWith("/static/")) {
-    // Stale-while-revalidate: serve cache instantly (offline-capable) but always
-    // refetch in the background so updated JS/CSS propagate on the next reload —
-    // no cache-version bump needed for every asset change.
-    e.respondWith(
-      caches.open(CACHE).then((c) =>
-        c.match(e.request).then((hit) => {
-          const fetching = fetch(e.request)
-            .then((res) => {
-              if (res.ok) c.put(e.request, res.clone());
-              return res;
-            })
-            .catch(() => hit);
-          return hit || fetching;
-        })
-      )
-    );
-    return;
-  }
   if (url.pathname === "/events") return; // never intercept SSE
-  // Pages: network first, fall back to cache for offline read-only.
+  // Network-first: try the network (fresh), cache a copy, and fall back to the
+  // cache only when offline.
   e.respondWith(
     fetch(e.request)
       .then((res) => {
