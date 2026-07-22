@@ -5,6 +5,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/BurntSushi/toml"
@@ -39,18 +40,41 @@ type Account struct {
 	Name string `toml:"account_name"`
 	// SenderName is the display name on outgoing mail (the From header). Comes
 	// from `name`; falls back to Name when unset.
-	SenderName         string   `toml:"name"`
-	Provider           string   `toml:"provider"`
-	Email              string   `toml:"email"`
-	Aliases            []string `toml:"aliases"` // extra addresses this account can send/receive as
-	Auth               string   `toml:"auth"`    // "password" | "oauth2"
-	Password           string   `toml:"password"`
-	OAuth2ClientID     string   `toml:"oauth2_client_id"`
-	OAuth2ClientSecret string   `toml:"oauth2_client_secret"`
-	IMAPHost           string   `toml:"imap_host"`
-	IMAPPort           int      `toml:"imap_port"`
-	SMTPHost           string   `toml:"smtp_host"`
-	SMTPPort           int      `toml:"smtp_port"`
+	SenderName         string  `toml:"name"`
+	Provider           string  `toml:"provider"`
+	Email              string  `toml:"email"`
+	Aliases            []Alias `toml:"aliases"` // extra identities this account can send/receive as
+	Auth               string  `toml:"auth"`    // "password" | "oauth2"
+	Password           string  `toml:"password"`
+	OAuth2ClientID     string  `toml:"oauth2_client_id"`
+	OAuth2ClientSecret string  `toml:"oauth2_client_secret"`
+	IMAPHost           string  `toml:"imap_host"`
+	IMAPPort           int     `toml:"imap_port"`
+	SMTPHost           string  `toml:"smtp_host"`
+	SMTPPort           int     `toml:"smtp_port"`
+}
+
+// Alias is an extra send/receive identity on an account, with its own sender
+// display name and address.
+type Alias struct {
+	Name  string `toml:"name"`  // display name on outgoing mail sent as this alias
+	Email string `toml:"email"` // the alias address
+}
+
+// DisplayNameFor returns the From display name to use when sending as addr: the
+// matching alias's name, else the account's own sender name (falling back to
+// its label).
+func (a Account) DisplayNameFor(addr string) string {
+	addr = strings.ToLower(strings.TrimSpace(addr))
+	for _, al := range a.Aliases {
+		if strings.ToLower(strings.TrimSpace(al.Email)) == addr && al.Name != "" {
+			return al.Name
+		}
+	}
+	if a.SenderName != "" {
+		return a.SenderName
+	}
+	return a.Name
 }
 
 type Translate struct {
