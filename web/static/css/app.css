@@ -127,6 +127,17 @@
   pointer-events: none;
 }
 
+/* Live list refresh (SSE new-mail / manual Refresh): htmx swaps #message-list
+   with transition:true, and each row carries a per-row view-transition-name so
+   added rows fade in, removed rows fade out, and moved rows slide (FLIP) —
+   independently, instead of the whole list flashing. Kept fast (~200ms). */
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-duration: 200ms;
+  animation-timing-function: ease;
+}
+
 /* Reading pane: crossfade in on message switch via htmx's settle lifecycle. */
 #reading-pane { transition: opacity 150ms ease; }
 #reading-pane.htmx-settling { opacity: 0; }
@@ -188,5 +199,11 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
+  }
+  /* View-transition pseudos aren't matched by * above: snap instantly. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

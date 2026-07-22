@@ -3,6 +3,7 @@ package mail
 import (
 	"bytes"
 	"encoding/base64"
+	"encoding/gob"
 	"io"
 	"mime/quotedprintable"
 	"strings"
@@ -17,6 +18,47 @@ type messageBody struct {
 	htmlContent string
 	textContent string
 	inline      map[string]inlinePart // keyed by lowercased Content-ID
+}
+
+// bodyDTO is the exported, gob-encodable form of messageBody used to persist a
+// parsed body to SQLite. Note it carries only text/HTML and inline cid: images —
+// attachment parts are already discarded by parseBody — so caching this never
+// stores attachment bytes.
+type bodyDTO struct {
+	HTML   string
+	Text   string
+	Inline map[string]inlineDTO
+}
+
+type inlineDTO struct {
+	Mime string
+	Data []byte
+}
+
+// encodeBody gob-encodes a parsed body for storage.
+func encodeBody(b *messageBody) ([]byte, error) {
+	dto := bodyDTO{HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{}}
+	for k, v := range b.inline {
+		dto.Inline[k] = inlineDTO{Mime: v.mime, Data: v.data}
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(dto); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+// decodeBody reverses encodeBody.
+func decodeBody(blob []byte) (*messageBody, error) {
+	var dto bodyDTO
+	if err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&dto); err != nil {
+		return nil, err
+	}
+	b := &messageBody{htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{}}
+	for k, v := range dto.Inline {
+		b.inline[k] = inlinePart{mime: v.Mime, data: v.Data}
+	}
+	return b, nil
 }
 
 // render produces the final sanitized HTML document for the reading-pane iframe.

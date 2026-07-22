@@ -240,7 +240,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if msg.FromAddress != "" {
 		allow, _ = s.store.SenderAllowsExternal(msg.FromAddress)
 	}
-	_, blocked, err := s.mail.Body(r.Context(), msg, allow)
+	_, blocked, err := s.mail.Body(r.Context(), msg, allow, false)
 	s.renderPartial(w, "message_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Msg":              msg,
@@ -273,7 +273,8 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src "+imgSrc+"; style-src 'unsafe-inline'; font-src data:")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	body, _, err := s.mail.Body(r.Context(), msg, allow)
+	force := r.URL.Query().Get("refresh") == "1"
+	body, _, err := s.mail.Body(r.Context(), msg, allow, force)
 	if err != nil {
 		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#a1a1aa;padding:12px">Could not load this message. The account may be offline.</body>`))
 		return
