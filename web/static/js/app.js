@@ -10,6 +10,26 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js");
 }
 
+// --- App theme (dark/light/system), stored client-side in localStorage. The
+// flash-free initial apply lives inline in base.html <head>; these keep it in
+// sync when the user switches (Settings) or the OS preference flips. ---
+function resolveTheme(mode) {
+  if (mode === "dark" || mode === "light") return mode;
+  return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+function applyTheme() {
+  var t = resolveTheme(localStorage.getItem("sm.theme") || "system");
+  document.documentElement.dataset.theme = t;
+  document.documentElement.style.colorScheme = t;
+}
+window.setTheme = function (mode) {
+  try { localStorage.setItem("sm.theme", mode); } catch (_) {}
+  applyTheme();
+};
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if ((localStorage.getItem("sm.theme") || "system") === "system") applyTheme();
+});
+
 // --- Alpine UI state (sidebar collapse, per-account tree open/closed, quick
 // filter) persisted in localStorage so it survives reloads. Referenced by
 // x-data="smUI" on the page roots. Registered on alpine:init so it's available

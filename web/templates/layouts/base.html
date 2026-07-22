@@ -1,7 +1,20 @@
 {{define "base"}}<!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <!-- Flash-free theme: resolve dark/light/system before the stylesheet loads
+       and stamp data-theme on <html>. Kept in sync later by app.js setTheme. -->
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem("sm.theme") || "system";
+        var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        var el = document.documentElement;
+        el.dataset.theme = dark ? "dark" : "light";
+        el.style.colorScheme = dark ? "dark" : "light";
+      } catch (e) { document.documentElement.dataset.theme = "dark"; }
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18181b">
   <title>{{block "title" .}}SM — Simple Mail{{end}}</title>
