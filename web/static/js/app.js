@@ -100,14 +100,20 @@ function toastUndo(label, id, folderId) {
 }
 window.toastUndo = toastUndo;
 
-// When an htmx link can't find its swap target (e.g. the sidebar's list links
-// clicked from the filters/drafts pages, which have no #message-list), fall
-// back to a normal navigation using the element's href.
-document.body.addEventListener("htmx:targetError", (e) => {
-  const el = e.detail && e.detail.elt;
-  const href = el && el.getAttribute && el.getAttribute("href");
-  if (href && href !== "#") window.location.assign(href);
-});
+// Sidebar list links (All inboxes / folders) swap #message-list via htmx. On
+// the filters/drafts pages there is no #message-list, so intercept the click in
+// the capture phase — before htmx's handler — and navigate to the link's href
+// instead. stopPropagation keeps htmx from also trying (and failing) to swap.
+document.addEventListener("click", (e) => {
+  const link = e.target.closest && e.target.closest('a[hx-target="#message-list"]');
+  if (!link || document.getElementById("message-list")) return;
+  const href = link.getAttribute("href");
+  if (href && href !== "#") {
+    e.preventDefault();
+    e.stopPropagation();
+    window.location.assign(href);
+  }
+}, true);
 
 // --- server-sent events ---
 (function () {
