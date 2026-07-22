@@ -11,27 +11,46 @@ import (
 	"github.com/mattmezza/sm/internal/store"
 )
 
-// Body returns the sanitized HTML document for a message, fetching and caching
-// the raw body on demand. blockedExternal reports whether external images were
-// suppressed.
-func (m *Manager) Body(ctx context.Context, msg *store.Message, allowExternal bool) (out string, blockedExternal bool, err error) {
-	if !allowExternal {
-		if b, ok := m.bodies.get(msg.ID); ok {
-			out, blocked := b.render(false)
-			return out, blocked, nil
-		}
-	}
-	body, ok := m.bodies.get(msg.ID)
-	if !ok {
-		raw, err := m.fetchRaw(ctx, msg)
-		if err != nil {
-			return "", false, err
-		}
-		body = parseBody(raw)
-		m.bodies.put(msg.ID, body)
+// Body returns the sanitized HTML document for a message. The parsed body is
+// cached (in-memory LRU, then SQLite); force bypasses both caches to re-fetch
+// from the IMAP server and overwrite them. blockedExternal reports whether
+// external images were suppressed. render(allowExternal) runs per call so the
+// external-image toggle keeps working off a cached body.
+func (m *Manager) Body(ctx context.Context, msg *store.Message, allowExternal, force bool) (out string, blockedExternal bool, err error) {
+	body, err := m.parsedBody(ctx, msg, force)
+	if err != nil {
+		return "", false, err
 	}
 	out, blocked := body.render(allowExternal)
 	return out, blocked, nil
+}
+
+// parsedBody resolves a message's parsed body via LRU → SQLite → IMAP, caching
+// the result in both on a miss. force skips both caches, re-fetches, and
+// overwrites them.
+func (m *Manager) parsedBody(ctx context.Context, msg *store.Message, force bool) (*messageBody, error) {
+	if !force {
+		if b, ok := m.bodies.get(msg.ID); ok {
+			return b, nil
+		}
+		if blob, ok, _ := m.st.GetMessageBody(msg.ID); ok {
+			if b, err := decodeBody(blob); err == nil {
+				m.bodies.put(msg.ID, b)
+				return b, nil
+			}
+			// corrupt/incompatible blob: fall through and re-fetch.
+		}
+	}
+	raw, err := m.fetchRaw(ctx, msg)
+	if err != nil {
+		return nil, err
+	}
+	body := parseBody(raw)
+	if blob, err := encodeBody(body); err == nil {
+		_ = m.st.SaveMessageBody(msg.ID, blob) // best-effort cache
+	}
+	m.bodies.put(msg.ID, body)
+	return body, nil
 }
 
 func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, error) {

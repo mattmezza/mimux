@@ -20,15 +20,16 @@ import (
 
 // Event is pushed to SSE subscribers.
 type Event struct {
-	Type string // "sync-status" | "new-mail"
+	Type string // "sync-status" | "new-mail" (any list change) | "toast" | search-*
 	Data string // account name
 }
 
 // AccountStatus is the live sync state surfaced in the status bar.
 type AccountStatus struct {
-	Account string
-	State   string // "ok" | "syncing" | "error"
-	Message string
+	Account  string
+	State    string // "ok" | "syncing" | "error"
+	Message  string
+	LastSync time.Time // last successful ("ok") sync; zero until first success
 }
 
 // Manager owns one worker per configured account and a shared body cache.
@@ -123,9 +124,23 @@ func (a *account) getStatus() AccountStatus {
 
 func (a *account) setStatus(state, msg string) {
 	a.mu.Lock()
-	a.status = AccountStatus{Account: a.cfg.Name, State: state, Message: msg}
+	// setStatus rebuilds the struct each call; carry LastSync forward and stamp
+	// it on a successful sync. NOTE: kept in one place, under the lock.
+	last := a.status.LastSync
+	if state == "ok" {
+		last = time.Now()
+	}
+	a.status = AccountStatus{Account: a.cfg.Name, State: state, Message: msg, LastSync: last}
 	a.mu.Unlock()
 	a.m.hub.broadcast(Event{Type: "sync-status", Data: a.cfg.Name})
+}
+
+// signalListChanged tells subscribed browsers to re-fetch their open message
+// list (new mail, flag changes or expunges). Reuses the "new-mail" event the
+// client already maps to sm:refresh + an unread-title refresh. Callers coalesce
+// to at most one per sync cycle to avoid a refresh storm.
+func (a *account) signalListChanged() {
+	a.m.hub.broadcast(Event{Type: "new-mail", Data: a.cfg.Name})
 }
 
 func (a *account) signalWake() {
@@ -235,13 +250,19 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 	sort.SliceStable(folders, func(i, j int) bool {
 		return folders[i].SpecialUse == "inbox" && folders[j].SpecialUse != "inbox"
 	})
+	anyChanged := false
 	for i := range folders {
 		if ctx.Err() != nil {
 			return nil
 		}
-		if err := a.syncFolder(ctx, c, &folders[i], caps); err != nil {
+		changed, err := a.syncFolder(ctx, c, &folders[i], caps)
+		if err != nil {
 			return err
 		}
+		anyChanged = anyChanged || changed
+	}
+	if anyChanged {
+		a.signalListChanged()
 	}
 	a.setStatus("ok", "")
 	if inbox == nil {
@@ -258,8 +279,12 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 		if err := a.drain(c); err != nil {
 			return err
 		}
-		if err := a.syncFolder(ctx, c, inbox, caps); err != nil {
+		changed, err := a.syncFolder(ctx, c, inbox, caps)
+		if err != nil {
 			return err
+		}
+		if changed {
+			a.signalListChanged()
 		}
 		a.setStatus("ok", "")
 		// Re-read the poll interval each cycle so the "Check every N minutes"

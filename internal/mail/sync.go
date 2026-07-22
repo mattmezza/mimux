@@ -2,6 +2,7 @@ package mail
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -121,21 +122,23 @@ func syncUIDValidity(st *store.Store, f *store.Folder, serverUV uint32) (reset b
 }
 
 // syncFolder selects a folder and incrementally syncs new messages, flag
-// changes (CONDSTORE) and — on a full pass — expunged messages.
-func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store.Folder, caps imap.CapSet) error {
+// changes (CONDSTORE) and — on a full pass — expunged messages. It reports
+// whether the folder's stored list actually changed (new/flag/expunge) so the
+// caller can signal the browser to refresh — coalesced to one signal per cycle.
+func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store.Folder, caps imap.CapSet) (changed bool, err error) {
 	condstore := caps.Has(imap.CapCondStore)
 	sel, err := c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait()
 	if err != nil {
-		return err
+		return false, err
 	}
 	reset, err := syncUIDValidity(a.m.st, f, sel.UIDValidity)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	maxUID, err := a.m.st.MaxUID(f.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	firstFull := maxUID == 0 || reset
 
@@ -155,16 +158,8 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 				}
 			}
 		}
-		if start == 0 { // no history limit, or the search failed: use the count cap
-			limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
-			if limit == 0 {
-				limit = 500
-			}
-			if uint32(sel.UIDNext) > limit {
-				start = sel.UIDNext - imap.UID(limit)
-			} else {
-				start = 1
-			}
+		if start == 0 { // no history limit, or the search failed: cap by count
+			start = a.windowStartUID(c, sel.UIDNext)
 		}
 	} else {
 		start = imap.UID(maxUID) + 1
@@ -172,21 +167,38 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 
 	newCount, err := a.fetchRange(ctx, c, f, start, condstore)
 	if err != nil {
-		return err
+		return false, err
 	}
+	changed = newCount > 0
 
 	// Flag updates for existing messages (CONDSTORE only, cheap).
 	if condstore && !firstFull && f.HighestModSeq > 0 {
-		if err := a.fetchFlagChanges(c, f); err != nil {
-			return err
+		flagsChanged, err := a.fetchFlagChanges(c, f)
+		if err != nil {
+			return changed, err
+		}
+		changed = changed || flagsChanged
+	}
+
+	// Heal older gaps in the inbox — e.g. left by a previous UIDNext-based window
+	// that skipped older messages still present on the server (see windowStartUID)
+	// — by fetching any of the newest server messages we don't have yet. Scoped to
+	// the inbox: it's an extra SEARCH per cycle, the unread badge is inbox-only,
+	// and once caught up the diff is empty. NOTE: inbox-only; widen if other
+	// folders show stale counts.
+	if f.SpecialUse == "inbox" && !firstFull {
+		if got, _ := a.backfillWindow(ctx, c, f); got > 0 {
+			changed = true
 		}
 	}
 
 	// Reconcile expunged messages on the full pass.
 	if firstFull {
-		if err := a.reconcileExpunged(c, f, start); err != nil {
-			return err
+		expunged, err := a.reconcileExpunged(c, f, start)
+		if err != nil {
+			return changed, err
 		}
+		changed = changed || expunged
 	}
 
 	if condstore && sel.HighestModSeq > 0 {
@@ -195,16 +207,88 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	}
 	_ = a.m.st.RecountUnread(f.ID)
 
-	if newCount > 0 && f.SpecialUse == "inbox" {
-		a.m.hub.broadcast(Event{Type: "new-mail", Data: a.cfg.Name})
-	}
-	return nil
+	return changed, nil
 }
 
 // fetchRange fetches envelope/flags/bodystructure + a snippet part for a UID
 // range and upserts each message. Returns the number of newly stored messages.
 func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store.Folder, start imap.UID, condstore bool) (int, error) {
-	set := imap.UIDSet{{Start: start, Stop: 0}} // start:* (0 = "*")
+	_ = condstore
+	return a.fetchSet(ctx, c, f, imap.UIDSet{{Start: start, Stop: 0}}) // start:* (0 = "*")
+}
+
+// windowStartUID returns the lowest UID to fetch so the newest
+// MaxMessagesPerSync messages ACTUALLY present in the mailbox are covered. It
+// SEARCHes for the real UIDs rather than using UIDNext-N: on Gmail, archived
+// mail consumes UIDs without remaining in the mailbox, so UIDNext can be far
+// larger than the message count, and UIDNext-N would skip older messages still
+// present (e.g. old unread inbox mail).
+func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UID {
+	limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
+	if limit == 0 {
+		limit = 500
+	}
+	data, err := c.UIDSearch(&imap.SearchCriteria{}, nil).Wait()
+	if err != nil { // SEARCH failed: fall back to the UID-arithmetic window
+		if uint32(uidNext) > limit {
+			return uidNext - imap.UID(limit)
+		}
+		return 1
+	}
+	uids := data.AllUIDs()
+	if len(uids) == 0 {
+		return uidNext
+	}
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
+	if uint32(len(uids)) > limit {
+		return uids[len(uids)-int(limit)]
+	}
+	return uids[0]
+}
+
+// backfillWindow fetches any of the newest MaxMessagesPerSync messages present
+// on the server that aren't stored yet, healing gaps left by an older/narrower
+// window without a manual re-sync. Cheap once caught up (a SEARCH + empty diff).
+func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *store.Folder) (int, error) {
+	limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
+	if limit == 0 {
+		limit = 500
+	}
+	crit := &imap.SearchCriteria{}
+	if months := a.m.st.GetPrefs().SyncMonths; months > 0 {
+		crit.Since = time.Now().AddDate(0, -months, 0)
+	}
+	data, err := c.UIDSearch(crit, nil).Wait()
+	if err != nil {
+		return 0, err
+	}
+	uids := data.AllUIDs()
+	if len(uids) == 0 {
+		return 0, nil
+	}
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
+	if uint32(len(uids)) > limit {
+		uids = uids[len(uids)-int(limit):]
+	}
+	existed, err := a.m.st.FolderUIDs(f.ID)
+	if err != nil {
+		return 0, err
+	}
+	var missing imap.UIDSet
+	for _, u := range uids {
+		if !existed[uint32(u)] {
+			missing.AddNum(u)
+		}
+	}
+	if len(missing) == 0 {
+		return 0, nil
+	}
+	return a.fetchSet(ctx, c, f, missing)
+}
+
+// fetchSet fetches envelope/flags/bodystructure + a snippet part for an explicit
+// UID set and upserts each message. Returns the number of newly stored messages.
+func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.Folder, set imap.UIDSet) (int, error) {
 	opts := &imap.FetchOptions{
 		UID:           true,
 		Flags:         true,
@@ -237,12 +321,13 @@ func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store
 			a.runRules(ctx, f.ID, uint32(buf.UID))
 		}
 	}
-	_ = condstore
 	return n, nil
 }
 
-// fetchFlagChanges pulls \Seen/\Flagged changes since the stored modseq.
-func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) error {
+// fetchFlagChanges pulls \Seen/\Flagged changes since the stored modseq and
+// reports whether the server returned any changed messages (a proxy for "the
+// list's read/star state changed", used to trigger a browser refresh).
+func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool, error) {
 	set := imap.UIDSet{{Start: 1, Stop: 0}}
 	msgs, err := c.Fetch(set, &imap.FetchOptions{
 		UID:          true,
@@ -250,7 +335,7 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) error 
 		ChangedSince: f.HighestModSeq,
 	}).Collect()
 	if err != nil {
-		return err
+		return false, err
 	}
 	for _, buf := range msgs {
 		id, err := a.messageID(f.ID, uint32(buf.UID))
@@ -260,16 +345,16 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) error 
 		_ = a.m.st.SetRead(id, hasFlag(buf.Flags, imap.FlagSeen))
 		_ = a.m.st.SetStarred(id, hasFlag(buf.Flags, imap.FlagFlagged))
 	}
-	return nil
+	return len(msgs) > 0, nil
 }
 
 // reconcileExpunged deletes stored messages in the fetched window that the
-// server no longer reports.
-func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, start imap.UID) error {
+// server no longer reports, reporting whether it removed any.
+func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, start imap.UID) (bool, error) {
 	set := imap.UIDSet{{Start: start, Stop: 0}}
 	msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
 	if err != nil {
-		return err
+		return false, err
 	}
 	live := map[uint32]bool{}
 	for _, buf := range msgs {
@@ -277,14 +362,16 @@ func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, start
 	}
 	stored, err := a.m.st.FolderUIDs(f.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	removed := false
 	for uid := range stored {
 		if uid >= uint32(start) && !live[uid] {
 			_ = a.m.st.DeleteMessageByUID(f.ID, uid)
+			removed = true
 		}
 	}
-	return nil
+	return removed, nil
 }
 
 func (a *account) messageID(folderID int64, uid uint32) (int64, error) {

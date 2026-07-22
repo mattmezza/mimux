@@ -82,7 +82,11 @@ func (m *Manager) appendSent(ctx context.Context, a *account, raw []byte) error 
 		if _, err := cmd.Wait(); err != nil {
 			return err
 		}
-		return a.syncFolder(ctx, c, sent, c.Caps())
+		changed, err := a.syncFolder(ctx, c, sent, c.Caps())
+		if err == nil && changed {
+			a.signalListChanged()
+		}
+		return err
 	})
 }
 

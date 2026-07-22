@@ -61,6 +61,8 @@
         <div class="mt-2 flex items-center gap-4">
           <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
             onclick="toggleBodyTheme(this.closest('[data-thread-body]').querySelector('iframe'))">Dark / light</button>
+          <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
+            onclick="var f=this.closest('[data-thread-body]').querySelector('iframe');f.src='/messages/{{.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')">Re-fetch</button>
           {{if $.TranslateEnabled}}
           <button type="button" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors duration-150"
             onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.parentElement.nextElementSibling)">Translate</button>
