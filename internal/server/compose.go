@@ -27,9 +27,13 @@ type Identity struct {
 func identities(accounts []config.Account) []Identity {
 	var out []Identity
 	for _, a := range accounts {
-		out = append(out, Identity{Name: a.Name, Address: a.Email})
+		name := a.SenderName
+		if name == "" {
+			name = a.Name
+		}
+		out = append(out, Identity{Name: name, Address: a.Email})
 		for _, al := range a.Aliases {
-			out = append(out, Identity{Name: a.Name, Address: al, IsAlias: true})
+			out = append(out, Identity{Name: al.Name, Address: al.Email, IsAlias: true})
 		}
 	}
 	return out
@@ -55,7 +59,7 @@ func (s *Server) accountForAddress(addr string) (config.Account, bool) {
 			return a, true
 		}
 		for _, al := range a.Aliases {
-			if strings.ToLower(bareEmail(al)) == want {
+			if strings.ToLower(bareEmail(al.Email)) == want {
 				return a, true
 			}
 		}

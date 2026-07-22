@@ -42,8 +42,14 @@ var accountAliases = map[string][]string{}
 func setAccountAliases(accts []config.Account) {
 	m := map[string][]string{}
 	for _, a := range accts {
-		if len(a.Aliases) > 0 {
-			m[a.Name] = a.Aliases
+		var emails []string
+		for _, al := range a.Aliases {
+			if al.Email != "" {
+				emails = append(emails, al.Email)
+			}
+		}
+		if len(emails) > 0 {
+			m[a.Name] = emails
 		}
 	}
 	accountAliases = m
