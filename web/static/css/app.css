@@ -15,6 +15,35 @@
   --color-zinc-750: #333338;
 }
 
+/* --- Light theme. Tailwind v4 compiles color utilities to var(--color-...),
+   so overriding the zinc scale here flips every zinc bg, text and border in the
+   templates without touching markup. Values are semantic, not a mechanical
+   invert: zinc-900 is the canvas, zinc-800 panels/inputs/hovers, 700/600
+   borders, 500-100 the text ramp (dark on light). Indigo accent kept.
+   Unlayered, so it beats the @layer theme defaults from @import.
+   The dark default color-scheme is set on <html> by the theme script in
+   base.html / app.js: a lone :root color-scheme:dark gets stripped by the
+   minifier, and a custom-property-only rule gets pruned too — so color-scheme
+   here doubles as the anchor that keeps this block from being minified away. */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-zinc-950: #fafafa;
+  --color-zinc-900: #ffffff; /* page canvas */
+  --color-zinc-800: #f0f0f2; /* panels, inputs, hover bg, dividers */
+  --color-zinc-750: #e8e8eb; /* row hover */
+  --color-zinc-700: #e0e0e4; /* borders */
+  --color-zinc-600: #cbcbd1; /* stronger borders, checkbox */
+  --color-zinc-500: #71717a; /* muted labels */
+  --color-zinc-400: #52525b; /* secondary text, icons */
+  --color-zinc-300: #3f3f46; /* body text */
+  --color-zinc-200: #27272a; /* strong text */
+  --color-zinc-100: #18181b; /* headings, primary text */
+}
+/* Light scrollbars (the * rule above is dark-tuned). */
+:root[data-theme="light"] * { scrollbar-color: #c4c4c8 transparent; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c4c4c8; }
+:root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
 /* Thread view: hide the collapsed snippet preview once a message is expanded. */
 [data-thread-msg].expanded .thread-snippet {
   display: none;

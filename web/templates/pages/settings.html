@@ -12,6 +12,28 @@
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
 
       <section class="space-y-4">
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Appearance</h2>
+        <label class="block space-y-1">
+          <span class="text-sm text-zinc-200">App theme</span>
+          {{/* Client-side only (localStorage) for flash-free switching: no name attr,
+               so it is not part of the POST. Wired to window.setTheme in app.js. */}}
+          <select id="theme-select" onchange="setTheme(this.value)"
+            class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+            <option value="system">System</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+          <span class="block text-xs text-zinc-500">Applies instantly. Saved in this browser.</span>
+        </label>
+        <script>
+          (function () {
+            var s = document.getElementById("theme-select");
+            if (s) s.value = localStorage.getItem("sm.theme") || "system";
+          })();
+        </script>
+      </section>
+
+      <section class="space-y-4">
         <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Reading</h2>
 
         <label class="block space-y-1">
