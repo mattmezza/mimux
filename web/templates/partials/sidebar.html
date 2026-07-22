@@ -1,0 +1,86 @@
+{{define "sidebar"}}
+<div x-show="sidebarOpen" x-transition.opacity.duration.200ms x-cloak
+     class="md:hidden fixed inset-0 z-40 bg-black/50" @click="sidebarOpen = false" aria-hidden="true"></div>
+<nav :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full'"
+     class="w-64 md:w-56 md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 md:z-auto shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto transition-transform duration-200 ease-out">
+  <div class="p-3 space-y-5 flex-1">
+    <button type="button" title="Compose (c)" aria-label="Compose" hx-get="/compose" hx-target="#compose-root" hx-swap="innerHTML" @click="sidebarOpen = false"
+      class="btn-compose w-full rounded-md bg-indigo-500 hover:bg-indigo-400 text-white font-medium py-2 flex items-center justify-center gap-2">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897l12.682-12.681Z"/></svg>
+      Compose
+    </button>
+    {{if gt (len .Sidebar) 1}}
+    <ul class="space-y-0.5">
+      <li>
+        <a href="#" data-unified hx-get="/u" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
+           class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150 font-medium">
+          {{template "folder_icon" "inbox"}}
+          <span class="truncate flex-1">All inboxes</span>
+        </a>
+      </li>
+    </ul>
+    {{end}}
+    {{range .Sidebar}}
+    <div>
+      <h2 class="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-indigo-500 shrink-0"></span>{{.Name}}
+      </h2>
+      {{if .NeedsAuth}}
+      <a href="/oauth/{{.Name}}/start"
+         class="mx-2 flex items-center gap-2 px-2 py-1.5 rounded-md bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors duration-150 text-xs">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+        <span class="truncate flex-1">Connect account</span>
+      </a>
+      {{else if .Folders}}
+      <ul class="space-y-0.5">
+        {{range .Folders}}
+        <li>
+          <a href="#" {{if eq .SpecialUse "inbox"}}data-account-inbox{{end}}{{if eq .SpecialUse "sent"}} data-sent{{end}} hx-get="/f/{{.ID}}" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
+             class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+            {{template "folder_icon" .SpecialUse}}
+            <span class="truncate flex-1">{{folderLabel .}}</span>
+            {{if gt .UnreadCount 0}}<span class="shrink-0 text-[11px] rounded-full bg-zinc-800 group-hover:bg-zinc-700 px-1.5 text-zinc-300">{{.UnreadCount}}</span>{{end}}
+          </a>
+        </li>
+        {{end}}
+      </ul>
+      {{else}}
+      <p class="px-2 text-[11px] text-zinc-600">Syncing folders…</p>
+      {{end}}
+    </div>
+    {{else}}
+    <p class="px-2 text-xs text-zinc-500">No accounts configured. Add one to <code class="text-zinc-400">config.toml</code>.</p>
+    {{end}}
+    <div id="saved-searches">{{template "saved_searches" .}}</div>
+    <div>
+      <h2 class="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Tools</h2>
+      <ul class="space-y-0.5">
+        <li>
+          <a href="/filters" class="flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+            <svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 0 1-.659 1.591l-5.432 5.432a2.25 2.25 0 0 0-.659 1.591v2.927a2.25 2.25 0 0 1-1.244 2.013L9.75 21v-6.568a2.25 2.25 0 0 0-.659-1.591L3.659 7.409A2.25 2.25 0 0 1 3 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0 1 12 3Z"/></svg>
+            <span class="truncate flex-1">Filters</span>
+          </a>
+        </li>
+        <li>
+          <a href="/drafts" class="flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+            {{template "folder_icon" "drafts"}}
+            <span class="truncate flex-1">Drafts (local)</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+  </div>
+</nav>
+{{end}}
+
+{{define "folder_icon"}}
+<svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+{{if eq . "inbox"}}<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 13.5h3.86a2.25 2.25 0 0 1 2.012 1.244l.256.512a2.25 2.25 0 0 0 2.013 1.244h3.218a2.25 2.25 0 0 0 2.013-1.244l.256-.512a2.25 2.25 0 0 1 2.013-1.244h3.859m-19.5.338V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18v-4.162c0-.224-.034-.447-.1-.661L19.24 5.338a2.25 2.25 0 0 0-2.15-1.588H6.911a2.25 2.25 0 0 0-2.15 1.588L2.35 13.177a2.25 2.25 0 0 0-.1.661Z"/>
+{{else if eq . "sent"}}<path stroke-linecap="round" stroke-linejoin="round" d="M6 12 3.269 3.126A59.768 59.768 0 0 1 21.485 12 59.77 59.77 0 0 1 3.27 20.876L5.999 12Zm0 0h7.5"/>
+{{else if eq . "drafts"}}<path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z"/>
+{{else if eq . "archive"}}<path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>
+{{else if eq . "spam"}}<path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/>
+{{else if eq . "trash"}}<path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>
+{{else}}<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12.75V12A2.25 2.25 0 0 1 4.5 9.75h15A2.25 2.25 0 0 1 21.75 12v.75m-8.69-6.44-2.12-2.12a1.5 1.5 0 0 0-1.061-.44H4.5A2.25 2.25 0 0 0 2.25 6v12a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9a2.25 2.25 0 0 0-2.25-2.25h-5.379a1.5 1.5 0 0 1-1.06-.44Z"/>{{end}}
+</svg>
+{{end}}

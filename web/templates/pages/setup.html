@@ -1,0 +1,27 @@
+{{define "title"}}Welcome — SM{{end}}
+{{define "content"}}
+<div class="h-full flex items-center justify-center">
+  <form method="post" action="/setup" class="w-80 bg-zinc-800/60 rounded-lg shadow-lg p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <img src="/static/icons/favicon.svg" alt="" class="w-8 h-8">
+      <div>
+        <h1 class="text-lg font-semibold text-zinc-100 tracking-wide">Welcome to SM</h1>
+        <p class="text-xs text-zinc-400">Create your admin account to get started.</p>
+      </div>
+    </div>
+    {{with .Error}}<p class="text-red-500 text-xs">{{.}}</p>{{end}}
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Username</span>
+      <input name="username" required autofocus autocomplete="username"
+             class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Password <span class="text-zinc-500">(8+ characters)</span></span>
+      <input name="password" type="password" required minlength="8" autocomplete="new-password"
+             class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+    <button class="w-full rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white font-medium py-2">Create account</button>
+  </form>
+</div>
+{{end}}

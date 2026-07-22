@@ -1,0 +1,107 @@
+@import "tailwindcss";
+
+/* Scan Go templates for class names (Tailwind 4 auto-detects, but templates
+   use .html so make it explicit). */
+@source "../../templates/**/*.html";
+@source "../js/app.js";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+/* zinc-750: between 700 and 800, used for row hovers per design system */
+@theme {
+  --color-zinc-750: #333338;
+}
+
+/* Thread view: hide the collapsed snippet preview once a message is expanded. */
+[data-thread-msg].expanded .thread-snippet {
+  display: none;
+}
+
+/* Alpine: hide elements gated by x-show before it has initialized them. */
+[x-cloak] { display: none !important; }
+
+/* --- micro-interactions (150-200ms ease, per design spec) --- */
+
+/* Star: htmx swaps the whole row in on toggle; ride its settle lifecycle
+   (hx-swap="outerHTML settle:120ms" on the star buttons) for a quick bounce
+   instead of writing a click handler. */
+.star-btn svg { transition: transform 120ms ease; }
+[data-message-row].htmx-settling .star-btn svg,
+.htmx-settling .star-btn svg {
+  transform: scale(1.35);
+}
+
+/* List rows: fade + slide out before removal (see removeRowAnimated in app.js). */
+.row-removing {
+  transition: opacity 180ms ease, transform 180ms ease;
+  opacity: 0;
+  transform: translateX(10px);
+  pointer-events: none;
+}
+
+/* Reading pane: crossfade in on message switch via htmx's settle lifecycle. */
+#reading-pane { transition: opacity 150ms ease; }
+#reading-pane.htmx-settling { opacity: 0; }
+
+/* Generic htmx loading indicator (skeletons, spinners): hidden until the
+   request that names it via hx-indicator is in flight. */
+.htmx-indicator { opacity: 0; transition: opacity 150ms ease; }
+.htmx-request.htmx-indicator,
+.htmx-request .htmx-indicator {
+  opacity: 1;
+}
+
+/* Compose affordances: a little lift on hover/press, nothing flashy. */
+.btn-compose { transition: transform 150ms ease, background-color 150ms ease; }
+.btn-compose:hover { transform: translateY(-1px); }
+.btn-compose:active { transform: translateY(0) scale(0.97); }
+
+/* Accessible focus ring everywhere, overriding any outline-none utility. */
+:focus-visible {
+  outline: 2px solid var(--color-indigo-500, #6366f1);
+  outline-offset: 2px;
+}
+
+/* Skip-to-content link: hidden off-screen until focused. */
+.skip-link {
+  position: absolute;
+  left: 0.5rem;
+  top: -3rem;
+  z-index: 100;
+  background: var(--color-indigo-500, #6366f1);
+  color: #fff;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.375rem;
+  transition: top 150ms ease;
+}
+.skip-link:focus { top: 0.5rem; }
+
+/* Mobile (<768px): single-column flow. Reading pane is hidden until it holds
+   an actual message (marked by the absence of the #reading-pane-empty
+   placeholder), at which point it takes over full-screen and the list hides
+   behind it — no JS needed to track which pane is "active". */
+@media (max-width: 767px) {
+  #reading-pane { display: none; }
+  #reading-pane:not(:has(#reading-pane-empty)) {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    background-color: var(--color-zinc-900, #18181b);
+  }
+  #message-list:has(~ #reading-pane:not(:has(#reading-pane-empty))) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

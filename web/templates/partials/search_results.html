@@ -1,0 +1,85 @@
+{{define "search_results"}}
+<section id="message-list" class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto flex flex-col">
+  <div class="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur px-3 py-2 border-b border-zinc-800 shrink-0 space-y-2">
+    <div class="flex items-center gap-2">
+      <span class="text-zinc-100 font-medium">Search</span>
+      <span class="text-[11px] text-zinc-500">{{.Count}} local {{if eq .Count 1}}result{{else}}results{{end}} · {{.Scope}}</span>
+      <a href="/" hx-get="/" hx-target="body" hx-push-url="true" class="ml-auto text-[11px] text-zinc-500 hover:text-zinc-200" title="Close search (Esc)">✕ close</a>
+    </div>
+    {{if .Pills}}
+    <div class="flex flex-wrap gap-1">
+      {{range .Pills}}
+      <span class="inline-flex items-center gap-1 text-[11px] rounded-full bg-zinc-800 border border-zinc-700 pl-2 pr-1 py-0.5 text-zinc-200">
+        {{.Label}}
+        <button hx-get="/search?scope={{$.Scope}}&account={{$.Account}}&folder={{$.Folder}}&q={{.Query}}"
+                hx-target="#message-list" hx-swap="outerHTML" title="Remove filter" aria-label="Remove filter {{.Label}}"
+                class="w-4 h-4 rounded-full hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100 leading-none">✕</button>
+      </span>
+      {{end}}
+    </div>
+    {{end}}
+    <div class="flex items-center gap-2">
+      <button hx-post="/search/server" hx-target="#search-server" hx-swap="innerHTML"
+              hx-vals='{"q":"{{.Q}}","scope":"{{.Scope}}","account":"{{.Account}}","folder":"{{.Folder}}"}'
+              class="text-[11px] rounded-md bg-indigo-500/90 hover:bg-indigo-400 text-white px-2 py-1 transition-colors duration-150">
+        Search on server
+      </button>
+      <details class="relative">
+        <summary class="text-[11px] rounded-md bg-zinc-800 hover:bg-zinc-700 text-zinc-300 px-2 py-1 cursor-pointer list-none">Save search</summary>
+        <form hx-post="/search/saved" hx-target="#saved-searches" hx-swap="innerHTML"
+              class="absolute left-0 mt-1 z-20 flex gap-1 bg-zinc-800 border border-zinc-700 rounded-md p-1.5 shadow-lg">
+          <input type="hidden" name="query" value="{{.Q}}">
+          <input name="name" required placeholder="Name" class="w-28 rounded bg-zinc-900 border border-zinc-700 px-1.5 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500">
+          <button class="text-xs rounded bg-indigo-500 hover:bg-indigo-400 text-white px-2">Save</button>
+        </form>
+      </details>
+    </div>
+  </div>
+
+  <div id="search-server"></div>
+
+  {{if .HasResults}}
+  <ul id="search-local-items">
+    {{range .Groups}}
+      {{if $.Grouped}}
+      <li class="sticky top-[0] z-[5] bg-zinc-800 px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-400 border-b border-zinc-800 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full" style="background-color:{{avatarColor .Account}}"></span>{{.Account}}
+        <span class="ml-auto text-zinc-500">{{len .Msgs}}</span>
+      </li>
+      {{end}}
+      {{range .Msgs}}{{template "search_row" (dict "Msg" . "Terms" $.Terms "Grouped" $.Grouped)}}{{end}}
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+    <span class="text-3xl">🔍</span>
+    <p class="text-zinc-400">No messages match your search.<br>Try broadening your terms or searching on server.</p>
+    <button hx-post="/search/server" hx-target="#search-server" hx-swap="innerHTML"
+            hx-vals='{"q":"{{.Q}}","scope":"{{.Scope}}","account":"{{.Account}}","folder":"{{.Folder}}"}'
+            class="text-xs rounded-md bg-indigo-500 hover:bg-indigo-400 text-white px-3 py-1.5 transition-colors duration-150">
+      Search on server
+    </button>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "search_server_status"}}
+{{if .Cached}}
+<div class="border-b border-zinc-800">
+  <div class="px-3 py-1.5 bg-zinc-800/60 text-[11px] text-zinc-400">Server results (cached) · {{.Count}}</div>
+  <ul>{{.Rows}}</ul>
+</div>
+{{else}}
+<div class="px-3 py-2 border-b border-zinc-800 bg-zinc-800/60 text-[11px] text-zinc-400 space-y-1">
+  <div class="flex items-center gap-2 text-zinc-300"><span>Searching server…</span></div>
+  {{range .Accounts}}
+  <div class="flex items-center gap-2" data-search-acct="{{.}}">
+    <span class="search-spinner w-3 h-3 rounded-full border-2 border-zinc-600 border-t-indigo-400 animate-spin"></span>
+    <span>{{.}}</span>
+    <span class="ml-auto search-acct-count text-zinc-500"></span>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}

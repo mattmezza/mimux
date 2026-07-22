@@ -1,0 +1,13 @@
+services:
+  sm:
+    image: ghcr.io/mattmezza/sm:latest
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+      - ./config.toml:/etc/sm/config.toml:ro
+    environment:
+      - SM_CONFIG=/etc/sm/config.toml
+      - TZ=Europe/Zurich
+    restart: unless-stopped

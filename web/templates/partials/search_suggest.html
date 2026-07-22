@@ -1,0 +1,54 @@
+{{define "search_suggest"}}
+{{if .History}}
+<div class="py-1">
+  <div class="flex items-center justify-between px-3 py-1 text-[10px] uppercase tracking-wider text-zinc-500">
+    <span>Recent searches</span>
+    <button hx-post="/search/history/clear" hx-target="#search-suggest" hx-swap="innerHTML"
+            class="hover:text-zinc-200">Clear</button>
+  </div>
+  {{range .History}}
+  <button type="button" data-suggest-query="{{.}}"
+          class="w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-800 flex items-center gap-2">
+    <span class="text-zinc-600">↩</span><span class="truncate">{{.}}</span>
+  </button>
+  {{end}}
+</div>
+{{else if .Msgs}}
+<div class="py-1">
+  {{range .Msgs}}
+  <button type="button" hx-get="/messages/{{.ID}}" hx-target="#reading-pane" hx-swap="innerHTML"
+          class="w-full text-left px-3 py-1.5 hover:bg-zinc-800 flex flex-col gap-0.5">
+    <span class="truncate text-sm {{if .IsRead}}text-zinc-300{{else}}text-zinc-100 font-medium{{end}}">{{if .Subject}}{{highlight .Subject $.Terms}}{{else}}(no subject){{end}}</span>
+    <span class="truncate text-xs text-zinc-500">{{if .FromName}}{{highlight .FromName $.Terms}}{{else}}{{highlight .FromAddress $.Terms}}{{end}}</span>
+  </button>
+  {{end}}
+  <button type="button" data-suggest-query="{{.Q}}"
+          class="w-full text-left px-3 py-1.5 text-xs text-indigo-300 hover:bg-zinc-800 border-t border-zinc-800">
+    Search all results for “{{.Q}}” ↵
+  </button>
+</div>
+{{else}}
+<div class="px-3 py-2 text-xs text-zinc-500">No quick matches. Press Enter to search on the server.</div>
+{{end}}
+{{end}}
+
+{{define "saved_searches"}}
+{{if .Saved}}
+<div>
+  <h2 class="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Saved Searches</h2>
+  <ul class="space-y-0.5">
+    {{range .Saved}}
+    <li class="group flex items-center gap-1 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+      <button hx-get="/search?q={{.Query}}&scope=all" hx-target="#message-list" hx-swap="outerHTML"
+              class="flex items-center gap-2 flex-1 min-w-0 text-left">
+        <svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
+        <span class="truncate flex-1" title="{{.Query}}">{{.Name}}</span>
+      </button>
+      <button hx-post="/search/saved/{{.ID}}/delete" hx-target="#saved-searches" hx-swap="innerHTML"
+              title="Delete" class="shrink-0 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-zinc-200">✕</button>
+    </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+{{end}}

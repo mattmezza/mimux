@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Tailwind build
+        run: |
+          npm ci
+          npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --minify
+      - name: Lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -cover ./...

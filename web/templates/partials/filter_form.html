@@ -1,0 +1,83 @@
+{{define "filter_form"}}
+<form method="post" action="{{if .Editing}}/filters/{{.ID}}{{else}}/filters{{end}}"
+      x-data='{"conditions": {{.ConditionsJSON}}, "actions": {{.ActionsJSON}}}'
+      class="rounded-lg border border-zinc-800 bg-zinc-800/40 p-4 space-y-4">
+  <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+  <div class="grid grid-cols-2 gap-3">
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Rule name</span>
+      <input name="name" required value="{{.Name}}"
+             class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Account (blank = all accounts)</span>
+      <input name="account" value="{{.Account}}"
+             class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+  </div>
+
+  <label class="flex items-center gap-2 text-xs text-zinc-400">
+    <input type="checkbox" name="enabled" {{if .Enabled}}checked{{end}}
+           class="rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500">
+    Enabled
+  </label>
+
+  <div class="space-y-2">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Conditions (all must match)</span>
+      <button type="button" @click="conditions.push({field:'from', op:'contains', value:''})"
+              class="text-xs text-indigo-400 hover:text-indigo-300">+ Add condition</button>
+    </div>
+    <template x-for="(c, i) in conditions" :key="i">
+      <div class="flex items-center gap-2">
+        <select name="cond_field" x-model="c.field"
+                class="rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+          <option value="from">From</option>
+          <option value="to">To</option>
+          <option value="subject">Subject</option>
+          <option value="body">Body</option>
+        </select>
+        <select name="cond_op" x-model="c.op"
+                class="rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+          <option value="contains">contains</option>
+          <option value="regex">regex</option>
+        </select>
+        <input name="cond_value" x-model="c.value" placeholder="value"
+               class="flex-1 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs focus:outline-none focus:border-indigo-500">
+        <button type="button" title="Remove condition" aria-label="Remove condition" @click="conditions.splice(i,1)" class="text-zinc-500 hover:text-red-400 text-xs px-1">✕</button>
+      </div>
+    </template>
+  </div>
+
+  <div class="space-y-2">
+    <div class="flex items-center justify-between">
+      <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Actions</span>
+      <button type="button" @click="actions.push({type:'mark_read', arg:''})"
+              class="text-xs text-indigo-400 hover:text-indigo-300">+ Add action</button>
+    </div>
+    <template x-for="(a, i) in actions" :key="i">
+      <div class="flex items-center gap-2">
+        <select name="act_type" x-model="a.type"
+                class="rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+          <option value="forward">Forward to</option>
+          <option value="move">Move to folder</option>
+          <option value="mark_read">Mark as read</option>
+          <option value="star">Star</option>
+          <option value="delete">Delete</option>
+          <option value="label">Apply label</option>
+        </select>
+        <input name="act_arg" x-model="a.arg" placeholder="argument (address / folder / label)"
+               class="flex-1 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs focus:outline-none focus:border-indigo-500">
+        <button type="button" title="Remove action" aria-label="Remove action" @click="actions.splice(i,1)" class="text-zinc-500 hover:text-red-400 text-xs px-1">✕</button>
+      </div>
+    </template>
+  </div>
+
+  <div class="flex items-center gap-3 pt-2">
+    <button class="rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white font-medium px-4 py-1.5 text-xs">
+      {{if .Editing}}Save changes{{else}}Create rule{{end}}
+    </button>
+    <a href="/filters" class="text-xs text-zinc-400 hover:text-zinc-100">Cancel</a>
+  </div>
+</form>
+{{end}}

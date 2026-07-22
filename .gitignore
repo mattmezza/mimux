@@ -1,1 +1,7 @@
 .tmux-session
+bin/
+tmp/
+data/
+node_modules/
+config.toml
+web/static/css/dist.css

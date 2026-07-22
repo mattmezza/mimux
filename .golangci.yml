@@ -1,0 +1,21 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - misspell
+    - unconvert
+    - gosec
+  settings:
+    misspell:
+      ignore-rules:
+        - thrid # Gmail's X-GM-THRID header / gm_thrid column — a real identifier, not a typo
+    gosec:
+      excludes:
+        - G104 # handled by errcheck
+        - G124 # cookies set HttpOnly/SameSite; Secure is conditional on https base_url (LAN http is a supported deployment)
+        - G101 # false positive on public OAuth provider endpoint URLs (not credentials)
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
