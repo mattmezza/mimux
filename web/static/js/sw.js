@@ -1,5 +1,5 @@
 // SM service worker: cache-first for static assets, network-first for pages.
-const CACHE = "sm-v1";
+const CACHE = "sm-v2";
 const STATIC = [
   "/static/css/dist.css",
   "/static/js/htmx.min.js",
@@ -23,7 +23,22 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
   if (url.pathname.startsWith("/static/")) {
-    e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));
+    // Stale-while-revalidate: serve cache instantly (offline-capable) but always
+    // refetch in the background so updated JS/CSS propagate on the next reload —
+    // no cache-version bump needed for every asset change.
+    e.respondWith(
+      caches.open(CACHE).then((c) =>
+        c.match(e.request).then((hit) => {
+          const fetching = fetch(e.request)
+            .then((res) => {
+              if (res.ok) c.put(e.request, res.clone());
+              return res;
+            })
+            .catch(() => hit);
+          return hit || fetching;
+        })
+      )
+    );
     return;
   }
   if (url.pathname === "/events") return; // never intercept SSE

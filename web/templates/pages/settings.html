@@ -45,7 +45,7 @@
           <span class="text-sm text-zinc-200">Sync history — how far back to download</span>
           <select name="sync_months"
             class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-            <option value="0"{{if eq .Prefs.SyncMonths 0}} selected{{end}}>Everything (count-capped)</option>
+            <option value="0"{{if eq .Prefs.SyncMonths 0}} selected{{end}}>Everything (up to {{.MaxPerSync}} newest per folder)</option>
             <option value="1"{{if eq .Prefs.SyncMonths 1}} selected{{end}}>Last 1 month</option>
             <option value="3"{{if eq .Prefs.SyncMonths 3}} selected{{end}}>Last 3 months</option>
             <option value="6"{{if eq .Prefs.SyncMonths 6}} selected{{end}}>Last 6 months</option>

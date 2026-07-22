@@ -54,17 +54,29 @@
 /* Show/hide sender avatars. */
 .hide-avatars .sender-avatar { display: none !important; }
 
-/* List preview lines: 0 hides the snippet, 1–3 clamp it to that many lines. */
+/* List preview lines: wrap the snippet to N lines that fit the list column
+   (0 hides it). The snippet is one collapsed string; line-clamp bounds how many
+   wrapped lines show, so rows never grow unbounded. */
 .msg-snippet {
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
   -webkit-line-clamp: 1;
+  line-clamp: 1;
 }
 .preview-lines-0 .msg-snippet { display: none; }
-.preview-lines-2 .msg-snippet { -webkit-line-clamp: 2; }
-.preview-lines-3 .msg-snippet { -webkit-line-clamp: 3; }
+.preview-lines-2 .msg-snippet { -webkit-line-clamp: 2; line-clamp: 2; }
+.preview-lines-3 .msg-snippet { -webkit-line-clamp: 3; line-clamp: 3; }
+
+/* --- resizable message-list column (desktop). Width is a CSS variable on the
+   stable #main-content so it survives htmx list swaps; #list-resizer drags it,
+   app.js persists it. --- */
+@media (min-width: 768px) {
+  #message-list, #list-skeleton { width: var(--list-w, 26rem); }
+  #reading-skeleton { left: var(--list-w, 26rem); }
+}
+#list-resizer:hover, #list-resizer.dragging { background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 40%, transparent); }
 
 /* Alpine: hide elements gated by x-show before it has initialized them. */
 [x-cloak] { display: none !important; }

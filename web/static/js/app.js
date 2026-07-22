@@ -29,7 +29,9 @@ window.smUI = function () {
     },
     toggleCollapse() { this.collapsed = !this.collapsed; this._save(); },
     acctOpen(name) { return !this.accts[name]; }, // default open
-    toggleAcct(name) { this.accts[name] = !this.accts[name]; this._save(); },
+    // Reassign the whole object (not just a key) so Alpine reliably reacts even
+    // for account names it hasn't seen before.
+    toggleAcct(name) { this.accts = { ...this.accts, [name]: !this.accts[name] }; this._save(); },
     setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); },
   };
 };
@@ -97,6 +99,15 @@ function toastUndo(label, id, folderId) {
   });
 }
 window.toastUndo = toastUndo;
+
+// When an htmx link can't find its swap target (e.g. the sidebar's list links
+// clicked from the filters/drafts pages, which have no #message-list), fall
+// back to a normal navigation using the element's href.
+document.body.addEventListener("htmx:targetError", (e) => {
+  const el = e.detail && e.detail.elt;
+  const href = el && el.getAttribute && el.getAttribute("href");
+  if (href && href !== "#") window.location.assign(href);
+});
 
 // --- server-sent events ---
 (function () {
@@ -275,6 +286,42 @@ function toggleThreadMessage(header) {
   }
 }
 window.toggleThreadMessage = toggleThreadMessage;
+
+// --- resizable message-list column: drag #list-resizer to set --list-w on the
+// stable #main-content (so the width survives htmx list swaps), persisted. ---
+(function initListResize() {
+  const KEY = "sm.listw";
+  const main = () => document.getElementById("main-content");
+  function apply(px) { main()?.style.setProperty("--list-w", px + "px"); }
+  const saved = parseInt(localStorage.getItem(KEY) || "", 10);
+  if (saved > 0) apply(saved);
+  document.addEventListener("mousedown", (e) => {
+    const handle = e.target.closest && e.target.closest("#list-resizer");
+    if (!handle) return;
+    const m = main();
+    if (!m) return;
+    e.preventDefault();
+    handle.classList.add("dragging");
+    const left = m.getBoundingClientRect().left;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    let last = 0;
+    const move = (ev) => {
+      last = Math.max(240, Math.min(ev.clientX - left, Math.min(700, m.clientWidth - 320)));
+      apply(last);
+    };
+    const up = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", up);
+      handle.classList.remove("dragging");
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+      if (last > 0) localStorage.setItem(KEY, String(Math.round(last)));
+    };
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", up);
+  });
+})();
 
 // --- translate: pull the rendered text out of a message-body iframe and POST
 // it to /translate, dropping the result into resultEl. Same-origin iframe, so
