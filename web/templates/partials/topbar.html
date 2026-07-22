@@ -4,7 +4,7 @@
     class="md:hidden -ml-1.5 p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5"/></svg>
   </button>
-  <button type="button" @click="toggleCollapse()" :title="collapsed ? 'Show sidebar' : 'Hide sidebar'" aria-label="Toggle sidebar"
+  <button type="button" @click="toggleCollapse()" :title="collapsed ? 'Show sidebar' : 'Hide sidebar'" :aria-expanded="!collapsed" aria-label="Toggle sidebar"
     class="hidden md:inline-flex -ml-1.5 p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5v13.5H3.75zM9 5.25v13.5"/></svg>
   </button>
