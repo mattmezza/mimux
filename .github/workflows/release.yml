@@ -9,7 +9,13 @@ permissions:
   packages: write
 
 jobs:
+  # Gate: run the same checks as CI. The release job below only runs if this
+  # passes, so a release never ships unless CI is green.
+  check:
+    uses: ./.github/workflows/ci.yml
+
   release:
+    needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,17 +25,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      # Release trigger can't wait for CI, so validate here before building.
       - name: Tailwind build
         run: |
           npm ci
           npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --minify
-      - name: Lint
-        uses: golangci/golangci-lint-action@v8
-        with:
-          version: latest
-      - name: Test
-        run: go test -race ./...
+
+      # Image tags: v0.1 (tag), 0.1 (tag without leading v), and latest.
+      - name: Compute image tags
+        id: meta
+        run: |
+          tag="${{ github.event.release.tag_name }}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build release binaries
         run: |
@@ -58,5 +65,6 @@ jobs:
           build-args: |
             VERSION=${{ github.event.release.tag_name }}
           tags: |
-            ghcr.io/mattmezza/sm:${{ github.event.release.tag_name }}
             ghcr.io/mattmezza/sm:latest
+            ghcr.io/mattmezza/sm:${{ steps.meta.outputs.tag }}
+            ghcr.io/mattmezza/sm:${{ steps.meta.outputs.ver }}
