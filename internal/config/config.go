@@ -33,17 +33,18 @@ type DB struct {
 }
 
 type Account struct {
-	Name               string `toml:"name"`
-	Provider           string `toml:"provider"`
-	Email              string `toml:"email"`
-	Auth               string `toml:"auth"` // "password" | "oauth2"
-	Password           string `toml:"password"`
-	OAuth2ClientID     string `toml:"oauth2_client_id"`
-	OAuth2ClientSecret string `toml:"oauth2_client_secret"`
-	IMAPHost           string `toml:"imap_host"`
-	IMAPPort           int    `toml:"imap_port"`
-	SMTPHost           string `toml:"smtp_host"`
-	SMTPPort           int    `toml:"smtp_port"`
+	Name               string   `toml:"name"`
+	Provider           string   `toml:"provider"`
+	Email              string   `toml:"email"`
+	Aliases            []string `toml:"aliases"` // extra addresses this account can send/receive as
+	Auth               string   `toml:"auth"`    // "password" | "oauth2"
+	Password           string   `toml:"password"`
+	OAuth2ClientID     string   `toml:"oauth2_client_id"`
+	OAuth2ClientSecret string   `toml:"oauth2_client_secret"`
+	IMAPHost           string   `toml:"imap_host"`
+	IMAPPort           int      `toml:"imap_port"`
+	SMTPHost           string   `toml:"smtp_host"`
+	SMTPPort           int      `toml:"smtp_port"`
 }
 
 type Translate struct {
@@ -74,8 +75,8 @@ func (s Sync) Interval() time.Duration { return time.Duration(s.PollInterval) }
 
 func Load(path string) (*Config, error) {
 	cfg := &Config{
-		Server: Server{Host: "0.0.0.0", Port: 8080},
-		DB:     DB{Path: "./data/sm.db"},
+		Server:    Server{Host: "0.0.0.0", Port: 8080},
+		DB:        DB{Path: "./data/sm.db"},
 		Translate: Translate{TargetLanguage: "en"},
 		AI:        AI{Model: "anthropic/claude-sonnet-4-6"},
 		Sync:      Sync{PollInterval: duration(5 * time.Minute), MaxMessagesPerSync: 500},

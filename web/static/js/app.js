@@ -12,15 +12,19 @@ if ("serviceWorker" in navigator) {
 
 // --- Alpine UI state (sidebar collapse, per-account tree open/closed, quick
 // filter) persisted in localStorage so it survives reloads. Referenced by
-// x-data="smUI()" on the page roots. ---
-window.smUI = function () {
+// x-data="smUI" on the page roots. Registered on alpine:init so it's available
+// regardless of script load order (a bare global raced Alpine's boot). ---
+document.addEventListener("alpine:init", () => {
+  Alpine.data("smUI", function () {
   const KEY = "sm.ui";
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
+  // A ?filter= in the URL (bookmarked/shared) wins over the saved preference.
+  const urlFilter = new URLSearchParams(location.search).get("filter") || "";
   return {
     sidebarOpen: false, // mobile drawer
     collapsed: !!saved.collapsed, // desktop sidebar hidden
-    filter: saved.filter || "", // "" | "unread" | "starred"
+    filter: urlFilter || saved.filter || "", // "" | "unread" | "starred"
     accts: saved.accts || {}, // account name -> true when collapsed
     _save() {
       try {
@@ -32,9 +36,18 @@ window.smUI = function () {
     // Reassign the whole object (not just a key) so Alpine reliably reacts even
     // for account names it hasn't seen before.
     toggleAcct(name) { this.accts = { ...this.accts, [name]: !this.accts[name] }; this._save(); },
-    setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); },
+    setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); this._syncFilterURL(); },
+    // Keep the active filter in the address bar so it's bookmarkable, without
+    // adding a history entry per toggle.
+    _syncFilterURL() {
+      const u = new URL(location.href);
+      if (this.filter) u.searchParams.set("filter", this.filter);
+      else u.searchParams.delete("filter");
+      history.replaceState(history.state, "", u);
+    },
   };
-};
+  });
+});
 
 // --- offline banner: sw.js falls back to the last-cached page when a fetch
 // fails, but the user should know they're looking at stale data. ---
@@ -119,13 +132,22 @@ document.addEventListener("click", (e) => {
 (function () {
   if (!window.EventSource) return;
   const es = new EventSource("/events");
-  es.addEventListener("new-mail", () => document.body.dispatchEvent(new Event("sm:refresh")));
-  es.addEventListener("sync-status", () => document.body.dispatchEvent(new Event("sm:sync")));
+  es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
+  es.addEventListener("sync-status", () => { document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
   es.addEventListener("toast", (e) => toast(e.data));
   es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
   es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
   es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
 })();
+
+// --- unread count in tab title ---
+async function refreshUnreadTitle() {
+  let n = 0;
+  try { n = parseInt(await (await fetch("/unread")).text(), 10) || 0; } catch (e) { return; }
+  const base = document.title.replace(/^\(\d+\)\s+/, "");
+  document.title = n > 0 ? `(${n}) ${base}` : base;
+}
+document.addEventListener("DOMContentLoaded", refreshUnreadTitle);
 
 // --- search: scope pill, folder tracking, suggestions, server results ---
 const SCOPES = ["folder", "account", "all"];
@@ -359,6 +381,12 @@ window.toggleThreadMessage = toggleThreadMessage;
 // reading its text is allowed. ---
 window.translateFrame = function (frame, resultEl) {
   if (!frame || !resultEl || !window.htmx) return;
+  // Already translated once this open: toggle the cached panel — no re-fetch,
+  // no repeat API/network call. "Show original" inside the panel hides it too.
+  if (resultEl.dataset.translated === "1") {
+    resultEl.classList.toggle("hidden");
+    return;
+  }
   let text = "";
   try { text = frame.contentDocument?.body?.innerText || ""; } catch (_) {}
   if (!text.trim()) {
@@ -366,15 +394,62 @@ window.translateFrame = function (frame, resultEl) {
     return;
   }
   resultEl.innerHTML = '<p class="text-xs text-zinc-500 px-4 py-2">Translating…</p>';
-  htmx.ajax("POST", "/translate", { values: { text: text.slice(0, 5000) }, target: resultEl, swap: "innerHTML" });
+  htmx.ajax("POST", "/translate", { values: { text: text.slice(0, 5000) }, target: resultEl, swap: "innerHTML" })
+    .then(() => {
+      // Only mark cached on a real translation (not the error partial), so a
+      // failed attempt still retries instead of toggling a stale error.
+      if (resultEl.querySelector("[data-translated-ok]")) resultEl.dataset.translated = "1";
+    });
 };
 
-// --- per-message dark/light toggle: email bodies render on a light background
-// (many hardcode black text); this flips just that iframe to dark on demand. ---
+// --- attachments: inline preview (image/pdf/text) without downloading. The
+// attachment endpoint is same-origin and served under a locked-down CSP, so
+// embedding it here is safe. Toggles the preview panel; loads it only once. ---
+window.previewAttachment = function (btn, url, kind) {
+  const holder = btn.closest("[data-attachment]")?.querySelector("[data-preview]");
+  if (!holder) return;
+  if (holder.dataset.loaded) { holder.classList.toggle("hidden"); return; }
+  holder.dataset.loaded = "1";
+  holder.classList.remove("hidden");
+  if (kind === "image") {
+    holder.innerHTML = `<img src="${url}" alt="" class="max-h-96 max-w-full rounded">`;
+  } else {
+    holder.innerHTML = `<iframe src="${url}" class="w-full h-96 rounded border-0 bg-white" title="Attachment preview"></iframe>`;
+  }
+};
+
+// --- per-message dark/light: email bodies render light by default (many
+// hardcode black text). A Settings pref sets the default mode; another remembers
+// the per-message choice in localStorage. applyBodyTheme runs on iframe load;
+// toggleBodyTheme flips + (when remembering) persists the choice. ---
+function bodyThemePrefs() {
+  const d = document.getElementById("message-detail");
+  return { dark: d?.dataset.darkDefault === "1", remember: d?.dataset.rememberTheme === "1" };
+}
+function msgIdFromFrame(frame) {
+  const src = (frame && (frame.getAttribute("src") || frame.getAttribute("data-src"))) || "";
+  const m = src.match(/\/messages\/(\d+)\/body/);
+  return m ? m[1] : "";
+}
+window.applyBodyTheme = function (frame) {
+  const doc = frame && frame.contentDocument;
+  if (!doc) return;
+  const { dark, remember } = bodyThemePrefs();
+  let wantDark = dark;
+  if (remember) {
+    const saved = localStorage.getItem("sm.msgtheme." + msgIdFromFrame(frame));
+    if (saved) wantDark = saved === "dark";
+  }
+  doc.documentElement.classList.toggle("sm-dark", wantDark);
+};
 window.toggleBodyTheme = function (frame) {
   const doc = frame && frame.contentDocument;
   if (!doc) return;
-  doc.documentElement.classList.toggle("sm-dark");
+  const isDark = doc.documentElement.classList.toggle("sm-dark");
+  if (bodyThemePrefs().remember) {
+    const id = msgIdFromFrame(frame);
+    if (id) localStorage.setItem("sm.msgtheme." + id, isDark ? "dark" : "light");
+  }
 };
 
 // --- compose ---
@@ -410,15 +485,90 @@ document.addEventListener("htmx:afterSwap", (e) => {
     e.target.querySelector('[name="to"]')?.focus();
   }
   if (e.target && e.target.id === "reading-pane") {
-    e.target.querySelector("#message-detail")?.focus({ preventScroll: true });
-    scheduleMarkRead(e.target.querySelector("#message-detail"));
+    const detail = e.target.querySelector("#message-detail");
+    detail?.focus({ preventScroll: true });
+    if (detail && detail.dataset.markReadPending) {
+      // Delay configured: flip the row once the timer fires.
+      scheduleMarkRead(detail);
+    } else if (detail) {
+      // Delay 0 (or already read): the server marked it read at open, so flip
+      // the list row now to match.
+      markRowRead(detail.dataset.messageId);
+    }
   }
+});
+
+// Flip a list row from unread to read in place: drop the dot, un-bold the text,
+// and clear data-unread. Adds .just-read so the row stays visible even under an
+// active "Unread" quick filter (per requirement — a just-read message shouldn't
+// vanish out from under you; the next list refresh removes it correctly).
+function markRowRead(id) {
+  const row = id && document.getElementById(`msg-${id}`);
+  if (!row || !row.hasAttribute("data-unread")) return;
+  row.removeAttribute("data-unread");
+  row.classList.add("just-read");
+  row.querySelector(".unread-dot")?.remove();
+  const sender = row.querySelector(".row-sender");
+  if (sender) { sender.classList.remove("text-zinc-100", "font-semibold"); sender.classList.add("text-zinc-400"); }
+  const subject = row.querySelector(".row-subject");
+  if (subject) { subject.classList.remove("text-zinc-100", "font-medium"); subject.classList.add("text-zinc-400"); }
+  // Brief highlight so the state change is noticeable when it fires on a delay.
+  row.classList.add("read-flash");
+  setTimeout(() => row.classList.remove("read-flash"), 700);
+}
+
+// Inverse of markRowRead: flip a row back to unread in place (re-add the dot,
+// re-bold). Used by the double-click read/unread toggle.
+function markRowUnread(id) {
+  const row = id && document.getElementById(`msg-${id}`);
+  if (!row || row.hasAttribute("data-unread")) return;
+  row.setAttribute("data-unread", "");
+  row.classList.remove("just-read");
+  const senderRow = row.querySelector(".row-sender")?.parentElement;
+  if (senderRow && !senderRow.querySelector(".unread-dot")) {
+    const dot = document.createElement("span");
+    dot.className = "unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0";
+    senderRow.insertBefore(dot, senderRow.firstElementChild);
+  }
+  const sender = row.querySelector(".row-sender");
+  if (sender) { sender.classList.add("text-zinc-100", "font-semibold"); sender.classList.remove("text-zinc-400"); }
+  const subject = row.querySelector(".row-subject");
+  if (subject) { subject.classList.add("text-zinc-100", "font-medium"); subject.classList.remove("text-zinc-400"); }
+}
+
+// Double-click a list row to toggle its read/unread state. The single click
+// that precedes it still opens the message; we cancel any pending auto-mark-read
+// so a toggle-to-unread sticks. The row is updated in place (the POST response
+// is ignored — swapping the single-message fragment would corrupt thread rows).
+document.addEventListener("dblclick", (e) => {
+  const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+  if (!row || !window.htmx) return;
+  const id = row.id.replace(/^msg-/, "");
+  if (!id) return;
+  const makeRead = row.hasAttribute("data-unread"); // unread -> read, else -> unread
+  if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
+  htmx.ajax("POST", `/messages/${id}/${makeRead ? "read" : "unread"}`, { swap: "none" })
+    .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
+});
+
+// Restore a bookmarked open thread (?t=<id>&src=<src>) into the reading pane on
+// full page load. The list itself is rendered server-side (handleInbox reads
+// src); here we just open the thread and highlight its row.
+document.addEventListener("DOMContentLoaded", () => {
+  const p = new URLSearchParams(location.search);
+  const t = p.get("t");
+  if (!t || !window.htmx) return;
+  const src = p.get("src") || "u";
+  htmx.ajax("GET", `/t/${t}?src=${encodeURIComponent(src)}`, { target: "#reading-pane", swap: "innerHTML" });
+  document.getElementById(`msg-${t}`)?.classList.add("bg-zinc-800");
 });
 
 // Mark-as-read-after-N-seconds: when the server defers read-marking (a delay is
 // configured), the opened message carries data-mark-read-pending + a delay. We
 // POST /read once it's been on screen that long, cancelling if the user leaves
-// the message first.
+// the message first, then flip the list row to read (the POST response is
+// ignored — we update the row in place so thread rows and the Unread filter
+// keep working).
 let markReadTimer = null;
 function scheduleMarkRead(detail) {
   if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
@@ -430,7 +580,7 @@ function scheduleMarkRead(detail) {
     // Only fire if this message is still the one on screen.
     const cur = document.querySelector("#message-detail");
     if (cur && cur.dataset.messageId === id) {
-      htmx.ajax("POST", `/messages/${id}/read`, { swap: "none" });
+      htmx.ajax("POST", `/messages/${id}/read`, { swap: "none" }).then(() => markRowRead(id));
     }
   }, delay * 1000);
 }

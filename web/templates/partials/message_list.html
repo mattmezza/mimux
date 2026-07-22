@@ -7,7 +7,7 @@
   </div>
   {{if .HasMessages}}
   <ul id="message-list-items">
-    {{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src)}}{{end}}
+    {{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker)}}{{end}}
   </ul>
   {{else}}
   <div class="flex-1 flex flex-col items-center justify-center gap-2 text-center p-8">

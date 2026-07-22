@@ -21,19 +21,21 @@
 
       {{with .Error}}<div class="rounded-md border border-red-900/50 bg-red-950/30 p-3 text-red-300 text-xs">{{.}}</div>{{end}}
 
-      {{if gt (len .Accounts) 1}}
+      {{$ids := identities .Accounts}}
+      {{if gt (len $ids) 1}}
       <div class="flex items-center gap-2">
         <label class="w-12 shrink-0 text-xs text-zinc-500">From</label>
-        <select name="account"
+        <select name="from"
+          hx-post="/compose/draft" hx-trigger="change" hx-include="closest form" hx-swap="none"
           class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
-          {{$acct := .Account}}
-          {{range .Accounts}}<option value="{{.Name}}" {{if eq .Name $acct}}selected{{end}}>{{.Name}} &lt;{{.Email}}&gt;</option>{{end}}
+          {{$from := .From}}
+          {{range $ids}}<option value="{{.Address}}" {{if eq .Address $from}}selected{{end}}>{{.Name}} &lt;{{.Address}}&gt;{{if .IsAlias}} · alias{{end}}</option>{{end}}
         </select>
       </div>
-      {{else if .Accounts}}
-      <input type="hidden" name="account" value="{{(index .Accounts 0).Name}}">
+      {{else if $ids}}
+      <input type="hidden" name="from" value="{{(index $ids 0).Address}}">
       {{else}}
-      <input type="hidden" name="account" value="">
+      <input type="hidden" name="from" value="">
       {{end}}
 
       <div class="flex items-center gap-2">

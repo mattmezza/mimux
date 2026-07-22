@@ -19,6 +19,7 @@ type ComposeInput struct {
 	To, Cc, Bcc []string
 	Subject     string
 	Body        string
+	From        string // send-as address (account primary or an alias); "" = account default
 	InReplyTo   string // original Message-ID (no angle brackets), "" for a new message
 	References  string // full References header value to reuse (see ComputeReferences), "" for a new message
 }
@@ -206,8 +207,12 @@ func parseAddrs(raw []string) []*emmail.Address {
 // brackets). Plain text only — rich text/attachments are out of scope for
 // this phase.
 func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byte, messageID string, err error) {
+	fromAddr := cfg.Email
+	if in.From != "" {
+		fromAddr = bareAddr(in.From)
+	}
 	var h emmail.Header
-	h.SetAddressList("From", []*emmail.Address{{Name: cfg.Name, Address: cfg.Email}})
+	h.SetAddressList("From", []*emmail.Address{{Name: cfg.Name, Address: fromAddr}})
 	if to := parseAddrs(in.To); len(to) > 0 {
 		h.SetAddressList("To", to)
 	}
@@ -218,7 +223,7 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 	// (RCPT TO) carries it instead, see Manager.Send.
 	h.SetSubject(in.Subject)
 	h.SetDate(now)
-	if err := h.GenerateMessageIDWithHostname(msgIDHost(cfg.Email)); err != nil {
+	if err := h.GenerateMessageIDWithHostname(msgIDHost(fromAddr)); err != nil {
 		return nil, "", err
 	}
 	messageID, _ = h.MessageID()

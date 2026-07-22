@@ -119,6 +119,29 @@ func TestSplitAddrList(t *testing.T) {
 	}
 }
 
+// TestBuildMessageAlias verifies send-as: a non-empty ComposeInput.From
+// overrides the account's primary address in both the From header and the
+// Message-ID host, while keeping the account's display name.
+func TestBuildMessageAlias(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{To: []string{"a@x.com"}, Subject: "hi", Body: "yo", From: "me@alias.org"}
+	raw, msgID, err := BuildMessage(cfg, in, time.Date(2026, 7, 22, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(msgID, "@alias.org") {
+		t.Errorf("Message-ID host = %q, want alias domain", msgID)
+	}
+	r, err := emmail.CreateReader(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	from, _ := r.Header.AddressList("From")
+	if len(from) != 1 || from[0].Address != "me@alias.org" || from[0].Name != "Work" {
+		t.Errorf("From = %+v, want me@alias.org / Work", from)
+	}
+}
+
 // TestBuildMessage builds a message then parses it back with go-message,
 // asserting the headers/threading/subject came through correctly.
 func TestBuildMessage(t *testing.T) {

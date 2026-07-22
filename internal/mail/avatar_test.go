@@ -35,6 +35,22 @@ func TestAvatarColorSpread(t *testing.T) {
 	}
 }
 
+func TestFaviconURL(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"alice@example.com", "https://www.google.com/s2/favicons?domain=example.com&sz=64"},
+		{"Bob <bob@Sub.Example.CO.UK>", "https://www.google.com/s2/favicons?domain=sub.example.co.uk&sz=64"},
+		{"nodomain", ""},       // no @
+		{"user@", ""},          // empty domain
+		{"user@localhost", ""}, // no dot → skip
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := FaviconURL(c.in); got != c.want {
+			t.Errorf("FaviconURL(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
 func TestAvatarInitials(t *testing.T) {
 	cases := []struct{ name, email, want string }{
 		{"Alice Wonderland", "a@x.com", "AW"},

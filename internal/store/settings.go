@@ -10,22 +10,32 @@ import (
 // Prefs holds user-tunable app preferences. Zero-config defaults live in
 // defaultPrefs(); missing keys fall back to those.
 type Prefs struct {
-	MarkReadDelay   int               // seconds; 0 = immediately on open
-	SyncIntervalMin int               // minutes between syncs (default 5)
-	PreviewLines    int               // list snippet lines 0..3 (default 1)
-	ShowAvatar      bool              // show sender avatar (default true)
-	SyncMonths      int               // how far back to download on first sync; 0 = all (count-capped)
-	AccountColors   map[string]string // account name -> hex color, e.g. "#6366f1"
+	MarkReadDelay    int               // seconds; 0 = immediately on open
+	SyncIntervalMin  int               // minutes between syncs (default 5)
+	PreviewLines     int               // list snippet lines 0..3 (default 1)
+	ShowAvatar       bool              // show sender avatar (default true)
+	ShowAccountBadge bool              // show account-name badge on list rows (default true)
+	ShowAttachMarker bool              // show attachment marker on list rows (default true)
+	ShowFavicon      bool              // use sender-domain favicon as avatar (default false)
+	DarkMessages     bool              // open message bodies in dark mode by default (default false)
+	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
+	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
+	AccountColors    map[string]string // account name -> hex color, e.g. "#6366f1"
 }
 
 func defaultPrefs() Prefs {
 	return Prefs{
-		MarkReadDelay:   0,
-		SyncIntervalMin: 5,
-		PreviewLines:    1,
-		ShowAvatar:      true,
-		SyncMonths:      0,
-		AccountColors:   map[string]string{},
+		MarkReadDelay:    0,
+		SyncIntervalMin:  5,
+		PreviewLines:     1,
+		ShowAvatar:       true,
+		ShowAccountBadge: true,
+		ShowAttachMarker: true,
+		ShowFavicon:      false,
+		DarkMessages:     false,
+		RememberMsgTheme: false,
+		SyncMonths:       0,
+		AccountColors:    map[string]string{},
 	}
 }
 
@@ -73,6 +83,21 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("show_avatar"); ok {
 		p.ShowAvatar = v == "1"
 	}
+	if v, ok := s.getSetting("show_account_badge"); ok {
+		p.ShowAccountBadge = v == "1"
+	}
+	if v, ok := s.getSetting("show_attach_marker"); ok {
+		p.ShowAttachMarker = v == "1"
+	}
+	if v, ok := s.getSetting("show_favicon"); ok {
+		p.ShowFavicon = v == "1"
+	}
+	if v, ok := s.getSetting("dark_messages"); ok {
+		p.DarkMessages = v == "1"
+	}
+	if v, ok := s.getSetting("remember_msg_theme"); ok {
+		p.RememberMsgTheme = v == "1"
+	}
 	if v, ok := s.getSetting("sync_months"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
 			p.SyncMonths = n
@@ -97,11 +122,16 @@ func (s *Store) GetPrefs() Prefs {
 // SavePrefs writes all preference keys.
 func (s *Store) SavePrefs(p Prefs) error {
 	kv := map[string]string{
-		"mark_read_delay":   strconv.Itoa(p.MarkReadDelay),
-		"sync_interval_min": strconv.Itoa(p.SyncIntervalMin),
-		"preview_lines":     strconv.Itoa(p.PreviewLines),
-		"show_avatar":       boolStr(p.ShowAvatar),
-		"sync_months":       strconv.Itoa(p.SyncMonths),
+		"mark_read_delay":    strconv.Itoa(p.MarkReadDelay),
+		"sync_interval_min":  strconv.Itoa(p.SyncIntervalMin),
+		"preview_lines":      strconv.Itoa(p.PreviewLines),
+		"show_avatar":        boolStr(p.ShowAvatar),
+		"show_account_badge": boolStr(p.ShowAccountBadge),
+		"show_attach_marker": boolStr(p.ShowAttachMarker),
+		"show_favicon":       boolStr(p.ShowFavicon),
+		"dark_messages":      boolStr(p.DarkMessages),
+		"remember_msg_theme": boolStr(p.RememberMsgTheme),
+		"sync_months":        strconv.Itoa(p.SyncMonths),
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

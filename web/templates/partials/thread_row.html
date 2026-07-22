@@ -1,27 +1,25 @@
 {{define "thread_row"}}
 {{$t := .T}}{{$m := $t.LatestMessage}}
 <li id="msg-{{$t.RootID}}"
-    hx-get="/t/{{$t.RootID}}?src={{.Src}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-indicator="#reading-skeleton"
+    hx-get="/t/{{$t.RootID}}?src={{.Src}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-push-url="/?t={{$t.RootID}}&src={{.Src}}" hx-indicator="#reading-skeleton"
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
     data-message-row data-folder="{{$m.FolderID}}" {{if $t.Unread}}data-unread{{end}}{{if $t.Starred}} data-starred{{end}} tabindex="-1"
     class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150 outline-none focus:bg-zinc-800">
-  <div class="relative shrink-0">
-    <div class="sender-avatar w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white select-none"
-         style="background-color:{{avatarColor $m.FromAddress}}">{{avatarInitials $m.FromName $m.FromAddress}}</div>
-    {{if and .Unified $m.Account}}<span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border border-zinc-900 flex items-center justify-center text-[7px] font-bold text-white leading-none"
-       style="background-color:{{avatarColor $m.Account}}" title="{{$m.Account}}">{{slice $m.Account 0 1}}</span>{{end}}
-  </div>
+  <div class="sender-avatar relative shrink-0 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-xs font-semibold text-white select-none"
+       style="background-color:{{avatarColor $m.FromAddress}}">{{avatarInitials $m.FromName $m.FromAddress}}{{if .ShowFavicon}}{{with faviconURL $m.FromAddress}}<img src="{{.}}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover bg-white" onerror="this.remove()">{{end}}{{end}}</div>
   <div class="min-w-0 flex-1">
     <div class="flex items-center gap-2">
-      {{if $t.Unread}}<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
-      <span class="truncate {{if $t.Unread}}text-zinc-100 font-semibold{{else}}text-zinc-400{{end}}">
+      {{if $t.Unread}}<span class="unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
+      <span class="row-sender truncate {{if $t.Unread}}text-zinc-100 font-semibold{{else}}text-zinc-400{{end}}">
         {{range $i, $p := $t.Participants}}{{if $i}}, {{end}}{{$p}}{{end}}
       </span>
+      {{if and .Unified $m.Account .ShowBadge}}{{$col := index .Colors $m.Account}}{{if not $col}}{{$col = "#6366f1"}}{{end}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{$col}}" title="{{$m.Account}}">{{$m.Account}}</span>{{end}}
+      {{if and $m.HasAttachment .ShowAttach}}<span class="shrink-0 text-zinc-500" title="Has attachment">📎</span>{{end}}
       {{if gt $t.Count 1}}<span class="shrink-0 text-[11px] rounded-full bg-zinc-700 px-1.5 text-zinc-200" title="{{$t.Count}} messages">{{$t.Count}}</span>{{end}}
       <span class="ml-auto shrink-0 text-[11px] text-zinc-500">{{relTime $t.Latest}}</span>
     </div>
-    <div class="truncate {{if $t.Unread}}text-zinc-100 font-medium{{else}}text-zinc-400{{end}}">
-      {{if $m.HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if $t.Subject}}{{$t.Subject}}{{else}}(no subject){{end}}
+    <div class="row-subject truncate {{if $t.Unread}}text-zinc-100 font-medium{{else}}text-zinc-400{{end}}">
+      {{if $t.Subject}}{{$t.Subject}}{{else}}(no subject){{end}}
     </div>
     <div class="msg-snippet text-zinc-500 text-xs">{{$m.Snippet}}</div>
     {{with messageLabels $m.Labels}}<div class="mt-0.5 flex flex-wrap gap-1">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}

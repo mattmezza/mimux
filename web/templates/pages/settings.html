@@ -31,6 +31,37 @@
             class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
           <span class="text-sm text-zinc-200">Show sender avatar</span>
         </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="show_favicon" value="1" {{if .Prefs.ShowFavicon}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Use sender's website icon as avatar</span>
+          <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="show_account_badge" value="1" {{if .Prefs.ShowAccountBadge}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Show account badge in message list</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="show_attach_marker" value="1" {{if .Prefs.ShowAttachMarker}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Show attachment marker in message list</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="dark_messages" value="1" {{if .Prefs.DarkMessages}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Open messages in dark mode by default</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="remember_msg_theme" value="1" {{if .Prefs.RememberMsgTheme}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
+        </label>
       </section>
 
       <section class="space-y-4">

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -13,12 +14,62 @@ import (
 	"github.com/mattmezza/sm/internal/store"
 )
 
+// Identity is one selectable "send as" address for the compose From menu:
+// an account's primary address or one of its aliases.
+type Identity struct {
+	Name    string
+	Address string
+	IsAlias bool
+}
+
+// identities flattens accounts into their primary address plus any aliases.
+// Template helper for the compose From selector.
+func identities(accounts []config.Account) []Identity {
+	var out []Identity
+	for _, a := range accounts {
+		out = append(out, Identity{Name: a.Name, Address: a.Email})
+		for _, al := range a.Aliases {
+			out = append(out, Identity{Name: a.Name, Address: al, IsAlias: true})
+		}
+	}
+	return out
+}
+
+// bareEmail strips a "Name <addr>" wrapper down to the address.
+func bareEmail(a string) string {
+	if i := strings.LastIndex(a, "<"); i >= 0 {
+		return strings.TrimSpace(strings.TrimSuffix(a[i+1:], ">"))
+	}
+	return strings.TrimSpace(a)
+}
+
+// accountForAddress finds the account that owns a from-address — its primary
+// Email or one of its aliases — matched case-insensitively on the bare address.
+func (s *Server) accountForAddress(addr string) (config.Account, bool) {
+	want := strings.ToLower(bareEmail(addr))
+	if want == "" {
+		return config.Account{}, false
+	}
+	for _, a := range s.cfg.Accounts {
+		if strings.ToLower(a.Email) == want {
+			return a, true
+		}
+		for _, al := range a.Aliases {
+			if strings.ToLower(bareEmail(al)) == want {
+				return a, true
+			}
+		}
+	}
+	return config.Account{}, false
+}
+
 // composeView is the compose partial's template data.
 type composeView struct {
 	CSRF          string
 	DraftID       int64
 	Accounts      []config.Account
 	Account       string
+	From          string // selected send-as address (primary or alias)
 	To, Cc, Bcc   string
 	Subject       string
 	Body          string
@@ -44,6 +95,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(s.cfg.Accounts) > 0 {
 		view.Account = s.cfg.Accounts[0].Name
+		view.From = s.cfg.Accounts[0].Email
 	}
 	// Reopening a saved local draft (from /drafts) just loads its fields —
 	// no new row, no reply prefill.
@@ -56,8 +108,12 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 				// correctly via In-Reply-To in every mail client that matters.
 				refs = "<" + d.InReplyTo + ">"
 			}
+			from := ""
+			if ac, ok := s.accountByName(d.Account); ok {
+				from = ac.Email
+			}
 			s.renderPartial(w, "compose", composeView{
-				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account,
+				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs,
 			})
@@ -87,6 +143,11 @@ func (s *Server) prefillReply(view *composeView, orig *store.Message, mode strin
 	self := orig.Account
 	if ac, ok := s.accountByName(orig.Account); ok {
 		self = ac.Email
+		// Reply from the alias the mail was delivered to, when it was one.
+		view.From = ac.Email
+		if via := receivedAlias(ac.Name, orig.ToAddresses, orig.CcAddresses); via != "" {
+			view.From = via
+		}
 	}
 	from := orig.FromAddress
 	if orig.FromName != "" {
@@ -154,8 +215,15 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
+	// The From menu posts an address; store which account owns it.
+	account := r.PostFormValue("account")
+	if account == "" {
+		if ac, ok := s.accountForAddress(r.PostFormValue("from")); ok {
+			account = ac.Name
+		}
+	}
 	d := &store.Draft{
-		ID: id, Account: r.PostFormValue("account"),
+		ID: id, Account: account,
 		To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"),
 		InReplyTo: r.PostFormValue("in_reply_to"), Kind: r.PostFormValue("kind"),
@@ -178,7 +246,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	draftID, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
 	view := composeView{
 		CSRF: auth.EnsureCSRF(w, r, s.secure), DraftID: draftID, Accounts: s.cfg.Accounts,
-		Account: r.PostFormValue("account"), To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
+		From: r.PostFormValue("from"), To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"), Kind: r.PostFormValue("kind"),
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
 	}
@@ -187,8 +255,15 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "compose", view)
 		return
 	}
-	if view.Account == "" {
+	// Route SMTP by whichever account owns the chosen From address; the alias
+	// (if any) rides along in ComposeInput.From. Fall back to the first account.
+	if ac, ok := s.accountForAddress(view.From); ok {
+		view.Account = ac.Name
+	} else {
 		view.Account = s.cfg.Accounts[0].Name
+		if view.From == "" {
+			view.From = s.cfg.Accounts[0].Email
+		}
 	}
 	to := mail.SplitAddrList(view.To)
 	if len(to) == 0 {
@@ -198,7 +273,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	}
 	in := mail.ComposeInput{
 		To: to, Cc: mail.SplitAddrList(view.Cc), Bcc: mail.SplitAddrList(view.Bcc),
-		Subject: view.Subject, Body: view.Body,
+		Subject: view.Subject, Body: view.Body, From: view.From,
 		InReplyTo: view.InReplyTo, References: view.References,
 	}
 	if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
