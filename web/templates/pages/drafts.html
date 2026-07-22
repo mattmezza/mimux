@@ -1,6 +1,6 @@
 {{define "title"}}Drafts — SM{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col">
+<div class="h-full flex flex-col" x-data="smUI()" :data-filter="filter">
   {{template "topbar" .}}
   <div class="flex-1 flex min-h-0">
     {{template "sidebar" .}}

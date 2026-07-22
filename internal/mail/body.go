@@ -21,8 +21,15 @@ type messageBody struct {
 
 // render produces the final sanitized HTML document for the reading-pane iframe.
 func (b *messageBody) render(allowExternal bool) (out string, blockedExternal bool) {
-	if strings.TrimSpace(b.htmlContent) != "" {
-		safe, blocked := sanitizeHTML(b.htmlContent, b.inline, allowExternal)
+	htmlSrc := b.htmlContent
+	// Some senders ship full HTML under Content-Type: text/plain (or with no
+	// type). Render it as HTML — through the same sanitizer + CSP — instead of
+	// escaping the tags into a <pre>.
+	if strings.TrimSpace(htmlSrc) == "" && looksHTML(b.textContent) {
+		htmlSrc = b.textContent
+	}
+	if strings.TrimSpace(htmlSrc) != "" {
+		safe, blocked := sanitizeHTML(htmlSrc, b.inline, allowExternal)
 		return renderBodyDocument(safe, false), blocked
 	}
 	return renderBodyDocument(b.textContent, true), false
@@ -54,9 +61,18 @@ func parseBody(raw []byte) *messageBody {
 		cid := strings.Trim(part.Header.Get("Content-ID"), "<> ")
 		switch {
 		case mt == "text/html" && !strings.EqualFold(disp, "attachment"):
-			b.htmlContent += string(data)
+			// Keep the first non-empty HTML body only. Concatenating sibling
+			// parts (multipart/mixed with several bodies, forwarded messages,
+			// digests) glues multiple complete <html> documents together and
+			// renders as garbage. A multipart/alternative has just one HTML
+			// leaf, so first-wins is also correct there.
+			if b.htmlContent == "" {
+				b.htmlContent = string(data)
+			}
 		case (mt == "text/plain" || mt == "") && !strings.EqualFold(disp, "attachment"):
-			b.textContent += string(data)
+			if b.textContent == "" {
+				b.textContent = string(data)
+			}
 		case cid != "" && strings.HasPrefix(mt, "image/"):
 			b.inline[strings.ToLower(cid)] = inlinePart{mime: mt, data: data}
 		}

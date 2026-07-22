@@ -85,6 +85,18 @@ func (s *Server) handleStatusbar(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status()})
 }
 
+// handleHealth re-renders the sidebar accounts-health rows (live-updated over
+// SSE when sync status changes).
+func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
+	s.renderPartial(w, "health_rows", s.mail.Status())
+}
+
+// handleRefresh triggers an immediate sync across every account.
+func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
+	s.mail.RefreshAll()
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	f, err := s.store.FolderByID(id)
@@ -137,18 +149,24 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		s.handleMessage(w, r)
 		return
 	}
-	// Mark the latest message read on open (matches single-message behavior).
+	// Mark the latest message read on open (matches single-message behavior),
+	// honoring the mark-read delay the same way as handleMessage.
+	prefs := s.store.GetPrefs()
 	latest := thread.LatestMessage()
-	if !latest.IsRead {
+	wasUnread := !latest.IsRead
+	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(latest.ID, true)
 		_ = s.store.RecountUnread(latest.FolderID)
 		msgCopy := latest
 		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, &msgCopy, true) })
 	}
 	s.renderPartial(w, "thread_detail", map[string]any{
-		"CSRF":   auth.EnsureCSRF(w, r, s.secure),
-		"Thread": thread,
-		"Latest": latest,
+		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
+		"Thread":           thread,
+		"Latest":           latest,
+		"MarkReadDelay":    prefs.MarkReadDelay,
+		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
+		"TranslateEnabled": s.cfg.Translate.APIKey != "",
 	})
 }
 
@@ -157,8 +175,12 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	if msg == nil {
 		return
 	}
-	// Opening marks the message read (locally now, on the server in the background).
-	if !msg.IsRead {
+	// Opening marks the message read. With a mark-read delay configured, the
+	// client schedules the read after N seconds instead (see app.js); at delay 0
+	// we mark it now (locally + on the server in the background).
+	prefs := s.store.GetPrefs()
+	wasUnread := !msg.IsRead
+	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(msg.ID, true)
 		_ = s.store.RecountUnread(msg.FolderID)
 		msg.IsRead = true
@@ -170,11 +192,14 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	_, blocked, err := s.mail.Body(r.Context(), msg, allow)
 	s.renderPartial(w, "message_detail", map[string]any{
-		"CSRF":     auth.EnsureCSRF(w, r, s.secure),
-		"Msg":      msg,
-		"Blocked":  blocked && !allow,
-		"BodyErr":  err != nil,
-		"CurrentFolder": msg.FolderID,
+		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
+		"Msg":              msg,
+		"Blocked":          blocked && !allow,
+		"BodyErr":          err != nil,
+		"CurrentFolder":    msg.FolderID,
+		"MarkReadDelay":    prefs.MarkReadDelay,
+		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
+		"TranslateEnabled": s.cfg.Translate.APIKey != "",
 	})
 }
 

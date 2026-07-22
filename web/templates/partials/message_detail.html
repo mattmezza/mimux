@@ -1,13 +1,13 @@
 {{define "message_detail"}}
 {{$m := .Msg}}
-<div class="h-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" tabindex="-1">
+<div class="h-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
   <div class="shrink-0 border-b border-zinc-800 p-4">
     <div class="flex items-start gap-3">
       <button type="button" title="Back to list" aria-label="Back to list" onclick="closeReadingPane()"
         class="md:hidden shrink-0 p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
       </button>
-      <div class="shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white select-none"
+      <div class="sender-avatar shrink-0 w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold text-white select-none"
            style="background-color:{{avatarColor $m.FromAddress}}">{{avatarInitials $m.FromName $m.FromAddress}}</div>
       <div class="min-w-0 flex-1">
         <h1 class="text-zinc-100 font-semibold text-base leading-snug break-words">{{if $m.Subject}}{{$m.Subject}}{{else}}(no subject){{end}}</h1>
@@ -19,6 +19,18 @@
         </div>
       </div>
       <div class="shrink-0 flex items-center gap-1">
+        <button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"
+          onclick="toggleBodyTheme(document.getElementById('body-frame'))"
+          class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 transition-colors duration-150">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/></svg>
+        </button>
+        {{if .TranslateEnabled}}
+        <button type="button" title="Translate" aria-label="Translate"
+          onclick="translateFrame(document.getElementById('body-frame'), document.getElementById('translate-result'))"
+          class="p-1.5 rounded-md text-zinc-400 hover:text-indigo-300 hover:bg-zinc-800 transition-colors duration-150">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
+        </button>
+        {{end}}
         <button title="Reply (R)" aria-label="Reply" hx-get="/compose?reply={{$m.ID}}&mode=reply" hx-target="#compose-root" hx-swap="innerHTML"
           class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 transition-colors duration-150">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 6 6v3"/></svg>
@@ -59,16 +71,17 @@
     </div>
   </div>
   {{if .Blocked}}
-  <div class="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
+  <div id="ext-banner" class="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
     <span>External images blocked for your privacy.</span>
     <button class="underline hover:text-amber-200"
-      onclick="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1'">Load once</button>
+      onclick="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1';this.closest('#ext-banner').remove()">Load once</button>
     <button class="underline hover:text-amber-200"
       hx-post="/messages/{{$m.ID}}/allow-sender" hx-swap="none"
-      hx-on::after-request="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1'">Always allow from this sender</button>
+      hx-on::after-request="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1';document.getElementById('ext-banner')?.remove()">Always allow from this sender</button>
   </div>
   {{end}}
-  <iframe id="body-frame" sandbox="allow-popups" src="/messages/{{$m.ID}}/body"
+  {{if .TranslateEnabled}}<div id="translate-result" class="shrink-0 empty:hidden border-b border-zinc-800"></div>{{end}}
+  <iframe id="body-frame" sandbox="allow-popups allow-same-origin" src="/messages/{{$m.ID}}/body"
           class="flex-1 w-full border-0 bg-white" title="Message body"></iframe>
 </div>
 {{end}}

@@ -1,6 +1,6 @@
 {{define "thread_detail"}}
 {{$t := .Thread}}{{$latest := .Latest}}
-<div class="h-full flex flex-col" id="message-detail" data-message-id="{{$latest.ID}}" tabindex="-1">
+<div class="h-full flex flex-col" id="message-detail" data-message-id="{{$latest.ID}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
   <div class="shrink-0 border-b border-zinc-800 p-4 flex items-start gap-3">
     <button type="button" title="Back to list" aria-label="Back to list" onclick="closeReadingPane()"
       class="md:hidden shrink-0 p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
@@ -36,7 +36,7 @@
     <div data-thread-msg class="{{if $expanded}}expanded{{end}}">
       <button type="button" onclick="toggleThreadMessage(this)"
         class="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-zinc-800/40 transition-colors duration-150 outline-none focus:bg-zinc-800/60">
-        <span class="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white select-none"
+        <span class="sender-avatar shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold text-white select-none"
               style="background-color:{{avatarColor .FromAddress}}">{{avatarInitials .FromName .FromAddress}}</span>
         <span class="min-w-0 flex-1">
           <span class="flex items-center gap-2">
@@ -55,7 +55,16 @@
           {{with messageLabels .Labels}}<div class="flex flex-wrap gap-1 pt-0.5">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}
         </div>
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
-                sandbox="allow-popups" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
+                sandbox="allow-popups allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
+        <div class="mt-2 flex items-center gap-4">
+          <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
+            onclick="toggleBodyTheme(this.closest('[data-thread-body]').querySelector('iframe'))">Dark / light</button>
+          {{if $.TranslateEnabled}}
+          <button type="button" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors duration-150"
+            onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.parentElement.nextElementSibling)">Translate</button>
+          {{end}}
+        </div>
+        <div class="mt-1"></div>
       </div>
     </div>
     {{end}}

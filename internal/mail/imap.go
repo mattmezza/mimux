@@ -88,6 +88,13 @@ func (m *Manager) Wake(accountName string) {
 	}
 }
 
+// RefreshAll nudges every account worker to sync now (the "Refresh now" button).
+func (m *Manager) RefreshAll() {
+	for _, a := range m.accounts {
+		a.signalWake()
+	}
+}
+
 // --- account worker ---
 
 type cmd struct {
@@ -244,10 +251,6 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 
 func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store.Folder, caps imap.CapSet) error {
 	idleOK := caps.Has(imap.CapIdle)
-	poll := a.m.cfg.Sync.Interval()
-	if poll <= 0 {
-		poll = 5 * time.Minute
-	}
 	for {
 		if err := a.drain(c); err != nil {
 			return err
@@ -256,8 +259,11 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 			return err
 		}
 		a.setStatus("ok", "")
+		// Re-read the poll interval each cycle so the "Check every N minutes"
+		// setting takes effect without a restart.
+		poll := a.pollInterval()
 		if idleOK {
-			if err := a.waitIdle(ctx, c); err != nil {
+			if err := a.waitIdle(ctx, c, poll); err != nil {
 				return err
 			}
 		} else {
@@ -274,17 +280,33 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 	}
 }
 
+// pollInterval is the user-configured sync cadence (Settings → "Check every N
+// minutes"), falling back to the config file / a 5-minute default.
+func (a *account) pollInterval() time.Duration {
+	if n := a.m.st.GetPrefs().SyncIntervalMin; n > 0 {
+		return time.Duration(n) * time.Minute
+	}
+	if d := a.m.cfg.Sync.Interval(); d > 0 {
+		return d
+	}
+	return 5 * time.Minute
+}
+
 // waitIdle blocks in IMAP IDLE until new data arrives, a command is queued, the
-// context ends, or the ~29-minute server limit is reached.
-func (a *account) waitIdle(ctx context.Context, c *imapclient.Client) error {
+// context ends, or the poll interval elapses (capped at the ~29-minute server
+// limit) so the "Check every N minutes" setting still applies under IDLE.
+func (a *account) waitIdle(ctx context.Context, c *imapclient.Client, poll time.Duration) error {
 	idleCmd, err := c.Idle()
 	if err != nil {
 		return err
 	}
+	if poll <= 0 || poll > 28*time.Minute {
+		poll = 28 * time.Minute
+	}
 	select {
 	case <-ctx.Done():
 	case <-a.wake:
-	case <-time.After(28 * time.Minute):
+	case <-time.After(poll):
 	}
 	if err := idleCmd.Close(); err != nil {
 		return err
