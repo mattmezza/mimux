@@ -64,6 +64,8 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ github.event.release.tag_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/mattmezza/sm:latest
             ghcr.io/mattmezza/sm:${{ steps.meta.outputs.tag }}
