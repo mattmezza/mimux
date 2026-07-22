@@ -35,8 +35,13 @@ path = "./data/sm.db"
 # Default auth mode is "password" if not specified.
 
 # Example 1: Gmail with OAuth2
+# `name` is the display name used on outgoing mail (the From: header).
+# `account_name` is the short label shown on the account badge and sidebar, and
+# is the account's stable identity. If `account_name` is omitted, `name` is used
+# for both (legacy behavior).
 [[accounts]]
-name = "Gmail"
+name = "Matteo Merola"
+account_name = "gmail"
 provider = "gmail"
 email = "you@gmail.com"
 auth = "oauth2"

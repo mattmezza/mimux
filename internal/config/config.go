@@ -33,7 +33,13 @@ type DB struct {
 }
 
 type Account struct {
-	Name               string   `toml:"name"`
+	// Name is the account's identity/key (folders, tokens, colors, filters are
+	// keyed by it) and the badge label. Comes from `account_name`; falls back to
+	// the legacy `name` when unset (see Load).
+	Name string `toml:"account_name"`
+	// SenderName is the display name on outgoing mail (the From header). Comes
+	// from `name`; falls back to Name when unset.
+	SenderName         string   `toml:"name"`
 	Provider           string   `toml:"provider"`
 	Email              string   `toml:"email"`
 	Aliases            []string `toml:"aliases"` // extra addresses this account can send/receive as
@@ -89,6 +95,15 @@ func Load(path string) (*Config, error) {
 	}
 	for i := range cfg.Accounts {
 		a := &cfg.Accounts[i]
+		// Back-compat: `name` used to be the identity. When `account_name` is
+		// unset, keep the old behavior (name is both identity and sender name);
+		// otherwise account_name is the identity and name is the sender name.
+		if a.Name == "" {
+			a.Name = a.SenderName
+		}
+		if a.SenderName == "" {
+			a.SenderName = a.Name
+		}
 		if p, ok := account.Presets[a.Provider]; ok {
 			if a.IMAPHost == "" {
 				a.IMAPHost, a.IMAPPort = p.IMAPHost, p.IMAPPort
