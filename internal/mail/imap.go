@@ -88,9 +88,12 @@ func (m *Manager) Wake(accountName string) {
 	}
 }
 
-// RefreshAll nudges every account worker to sync now (the "Refresh now" button).
+// RefreshAll nudges every account worker to sync now (the "Refresh now"
+// button). It flips each account to "syncing" immediately so the status bar and
+// health panel reflect the refresh right away; the worker sets "ok" when done.
 func (m *Manager) RefreshAll() {
 	for _, a := range m.accounts {
+		a.setStatus("syncing", "")
 		a.signalWake()
 	}
 }

@@ -22,7 +22,7 @@
     {{if gt (len .Sidebar) 1}}
     <ul class="space-y-0.5">
       <li>
-        <a href="#" data-unified hx-get="/u" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
+        <a href="/" data-unified hx-get="/u" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
            class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150 font-medium">
           {{template "folder_icon" "inbox"}}
           <span class="truncate flex-1">All inboxes</span>
@@ -51,7 +51,7 @@
       <ul class="space-y-0.5">
         {{range .Folders}}
         <li>
-          <a href="#" {{if eq .SpecialUse "inbox"}}data-account-inbox{{end}}{{if eq .SpecialUse "sent"}} data-sent{{end}} hx-get="/f/{{.ID}}" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
+          <a href="/?f={{.ID}}" {{if eq .SpecialUse "inbox"}}data-account-inbox{{end}}{{if eq .SpecialUse "sent"}} data-sent{{end}} hx-get="/f/{{.ID}}" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
              class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
             {{template "folder_icon" .SpecialUse}}
             <span class="truncate flex-1">{{folderLabel .}}</span>

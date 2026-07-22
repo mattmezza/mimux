@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -273,6 +274,19 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		"Prefs":         prefs,
 		"AccountColors": prefs.AccountColors,
 		"TotalUnread":   totalUnread,
+	}
+	// Deep link to a specific folder (?f=<id>) — used by the sidebar links when
+	// navigating in from another full page (filters/drafts), where there is no
+	// #message-list to htmx-swap into.
+	if fid := r.URL.Query().Get("f"); fid != "" {
+		if id, err := strconv.ParseInt(fid, 10, 64); err == nil {
+			if f, _ := s.store.FolderByID(id); f != nil {
+				msgs, _ := s.store.ListMessages(f.ID, listLimit)
+				s.fillList(data, f, msgs, false)
+				s.render(w, "inbox", data)
+				return
+			}
+		}
 	}
 	// Default landing view: unified inbox when more than one account, the
 	// single account's inbox otherwise.

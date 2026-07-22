@@ -9,10 +9,15 @@ import (
 )
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	cap := s.cfg.Sync.MaxMessagesPerSync
+	if cap == 0 {
+		cap = 500
+	}
 	s.render(w, "settings", map[string]any{
-		"CSRF":     auth.EnsureCSRF(w, r, s.secure),
-		"Prefs":    s.store.GetPrefs(),
-		"Accounts": s.cfg.Accounts,
+		"CSRF":       auth.EnsureCSRF(w, r, s.secure),
+		"Prefs":      s.store.GetPrefs(),
+		"Accounts":   s.cfg.Accounts,
+		"MaxPerSync": cap,
 	})
 }
 
