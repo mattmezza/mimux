@@ -41,6 +41,18 @@
 [data-filter="starred"] #message-list li[data-message-row]:not([data-starred]) {
   display: none;
 }
+/* A message just marked read (while open) stays visible under the Unread filter
+   instead of vanishing mid-read; the next list refresh re-filters it out. */
+[data-filter="unread"] #message-list li[data-message-row].just-read {
+  display: flex !important;
+}
+
+/* Brief highlight when a row flips to read, so the change is noticeable. */
+@keyframes read-flash {
+  from { background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 22%, transparent); }
+  to { background-color: transparent; }
+}
+.read-flash { animation: read-flash 700ms ease-out; }
 
 /* h/l section navigation: a subtle ring on the pane that currently has focus. */
 [data-section-focus] {
@@ -49,6 +61,21 @@
 
 /* Sidebar account tree chevron rotates when its section is open. */
 .acct-chevron { transition: transform 150ms ease; }
+
+/* Floating compose FAB (collapsed sidebar): the secondary Refresh springs up
+   into view on hover/focus of the group. */
+.fab-secondary {
+  opacity: 0;
+  transform: translateY(14px) scale(0.85);
+  pointer-events: none;
+  transition: opacity 200ms ease, transform 200ms cubic-bezier(.34, 1.56, .64, 1);
+}
+.fab-group:hover .fab-secondary,
+.fab-group:focus-within .fab-secondary {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
 
 /* --- preference-driven rendering (Settings). Classes live on the inbox root. --- */
 /* Show/hide sender avatars. */

@@ -1,0 +1,21 @@
+{{define "compose_fab"}}
+<!-- Desktop-only floating compose, shown when the sidebar is collapsed (its
+     in-sidebar Compose/Refresh are then hidden). Hovering/focusing the group
+     springs the secondary Refresh button up into view. -->
+<div class="hidden md:block">
+  <div x-show="collapsed" x-cloak class="fab-group fixed bottom-6 right-6 z-30 flex flex-col items-center gap-3">
+    <button type="button" title="Refresh all accounts now" aria-label="Refresh now"
+      hx-post="/refresh" hx-swap="none"
+      hx-on::before-request="this.querySelector('svg').classList.add('animate-spin')"
+      hx-on::after-request="this.querySelector('svg').classList.remove('animate-spin');window.toast&&toast('Syncing all accounts…')"
+      class="fab-secondary w-11 h-11 rounded-full bg-zinc-800 border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700 shadow-lg flex items-center justify-center transition-colors duration-150">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+    </button>
+    <button type="button" title="Compose (c)" aria-label="Compose"
+      hx-get="/compose" hx-target="#compose-root" hx-swap="innerHTML"
+      class="w-14 h-14 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg flex items-center justify-center transition-colors duration-150">
+      <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897l12.682-12.681Z"/></svg>
+    </button>
+  </div>
+</div>
+{{end}}

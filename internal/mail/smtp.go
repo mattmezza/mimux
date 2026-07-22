@@ -43,7 +43,11 @@ func (m *Manager) Send(ctx context.Context, accountName string, in ComposeInput)
 			return "", err
 		}
 	}
-	if err := smtpSend(a.cfg, token, bareAddr(a.cfg.Email), bareRcpts, raw); err != nil {
+	envFrom := bareAddr(a.cfg.Email)
+	if in.From != "" {
+		envFrom = bareAddr(in.From)
+	}
+	if err := smtpSend(a.cfg, token, envFrom, bareRcpts, raw); err != nil {
 		return "", err
 	}
 	if a.cfg.Provider != "gmail" {

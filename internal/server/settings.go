@@ -23,12 +23,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	p := store.Prefs{
-		MarkReadDelay:   atoiDefault(r.PostFormValue("mark_read_delay"), 0),
-		SyncIntervalMin: atoiDefault(r.PostFormValue("sync_interval_min"), 5),
-		PreviewLines:    atoiDefault(r.PostFormValue("preview_lines"), 1),
-		ShowAvatar:      r.PostFormValue("show_avatar") != "",
-		SyncMonths:      atoiDefault(r.PostFormValue("sync_months"), 0),
-		AccountColors:   map[string]string{},
+		MarkReadDelay:    atoiDefault(r.PostFormValue("mark_read_delay"), 0),
+		SyncIntervalMin:  atoiDefault(r.PostFormValue("sync_interval_min"), 5),
+		PreviewLines:     atoiDefault(r.PostFormValue("preview_lines"), 1),
+		ShowAvatar:       r.PostFormValue("show_avatar") != "",
+		ShowAccountBadge: r.PostFormValue("show_account_badge") != "",
+		ShowAttachMarker: r.PostFormValue("show_attach_marker") != "",
+		ShowFavicon:      r.PostFormValue("show_favicon") != "",
+		DarkMessages:     r.PostFormValue("dark_messages") != "",
+		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
+		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),
+		AccountColors:    map[string]string{},
 	}
 	if p.SyncMonths < 0 {
 		p.SyncMonths = 0

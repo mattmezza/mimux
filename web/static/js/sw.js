@@ -2,7 +2,7 @@
 // with the cache as an offline-only fallback. This deliberately avoids serving
 // stale JS/CSS/templates — a cache-first strategy previously pinned old assets
 // in already-open browsers and broke the app after updates.
-const CACHE = "sm-v3";
+const CACHE = "sm-v4";
 const STATIC = [
   "/static/css/dist.css",
   "/static/js/htmx.min.js",

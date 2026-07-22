@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mattmezza/sm/internal/auth"
+	"github.com/mattmezza/sm/internal/config"
 	"github.com/mattmezza/sm/internal/mail"
 	"github.com/mattmezza/sm/internal/store"
 )
@@ -21,11 +22,50 @@ const listLimit = 200
 var templateFuncs = template.FuncMap{
 	"avatarColor":    mail.AvatarColor,
 	"avatarInitials": mail.AvatarInitials,
+	"faviconURL":     mail.FaviconURL,
 	"relTime":        relTime,
 	"folderLabel":    folderLabel,
 	"messageLabels":  mail.MessageLabels,
 	"dict":           dict,
 	"highlight":      highlight,
+	"identities":     identities,
+	"receivedAlias":  receivedAlias,
+}
+
+// accountAliases maps account name -> its configured alias addresses, set once
+// at server construction (setAccountAliases). Lets the pure receivedAlias
+// template func flag "received via <alias>" without per-request plumbing.
+// NOTE: process-global because config is static and the app is single-user;
+// rebuild it if config ever reloads at runtime.
+var accountAliases = map[string][]string{}
+
+func setAccountAliases(accts []config.Account) {
+	m := map[string][]string{}
+	for _, a := range accts {
+		if len(a.Aliases) > 0 {
+			m[a.Name] = a.Aliases
+		}
+	}
+	accountAliases = m
+}
+
+// receivedAlias returns the account alias a message was delivered to (present
+// in its To/Cc), or "" when it arrived at the account's primary address.
+// NOTE: case-insensitive substring match of each bare alias against the
+// joined To/Cc — enough to flag an alias in the UI; switch to per-address
+// parsing if a substring false-positive ever surfaces.
+func receivedAlias(account, to, cc string) string {
+	aliases := accountAliases[account]
+	if len(aliases) == 0 {
+		return ""
+	}
+	hay := strings.ToLower(to + ", " + cc)
+	for _, al := range aliases {
+		if a := strings.ToLower(bareEmail(al)); a != "" && strings.Contains(hay, a) {
+			return al
+		}
+	}
+	return ""
 }
 
 // dict builds a map from alternating key/value args, for passing extra context
@@ -65,6 +105,14 @@ func (s *Server) sidebarData() []sidebarAccount {
 // fillList populates a template data map with a threaded message list. folder
 // is nil for the unified view.
 func (s *Server) fillList(data map[string]any, folder *store.Folder, msgs []store.Message, unified bool) {
+	// The htmx-swapped list fragment (handleFolder/handleUnified) has no Prefs in
+	// its data; supply them so rows can read badge/favicon prefs and colors. The
+	// full-page path (handleInbox) already set these, so don't re-query there.
+	if _, ok := data["Prefs"]; !ok {
+		prefs := s.store.GetPrefs()
+		data["Prefs"] = prefs
+		data["AccountColors"] = prefs.AccountColors
+	}
 	data["Folder"] = folder
 	data["Unified"] = unified
 	data["Threads"] = mail.BuildThreads(msgs)
@@ -167,6 +215,8 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
 		"TranslateEnabled": s.cfg.Translate.APIKey != "",
+		"DarkDefault":      prefs.DarkMessages,
+		"RememberTheme":    prefs.RememberMsgTheme,
 	})
 }
 
@@ -200,6 +250,8 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
 		"TranslateEnabled": s.cfg.Translate.APIKey != "",
+		"DarkDefault":      prefs.DarkMessages,
+		"RememberTheme":    prefs.RememberMsgTheme,
 	})
 }
 

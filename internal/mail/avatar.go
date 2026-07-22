@@ -2,6 +2,7 @@ package mail
 
 import (
 	"crypto/sha256"
+	"net/url"
 	"strings"
 	"unicode"
 )
@@ -38,6 +39,21 @@ func AvatarInitials(name, email string) string {
 		return strings.ToUpper(firstLetter(email))
 	}
 	return "?"
+}
+
+// FaviconURL returns a Google-hosted favicon URL for the sender's email domain,
+// or "" when no usable domain is present. Used as an optional avatar image.
+func FaviconURL(email string) string {
+	at := strings.LastIndex(email, "@")
+	if at < 0 || at == len(email)-1 {
+		return ""
+	}
+	// Trim any stray angle bracket / whitespace from "Name <a@b.com>" forms.
+	domain := strings.ToLower(strings.Trim(strings.TrimSpace(email[at+1:]), "<>"))
+	if domain == "" || !strings.Contains(domain, ".") {
+		return ""
+	}
+	return "https://www.google.com/s2/favicons?domain=" + url.QueryEscape(domain) + "&sz=64"
 }
 
 func firstLetter(s string) string {

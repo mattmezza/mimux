@@ -1,6 +1,6 @@
 {{define "title"}}Inbox — SM{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="smUI()" :data-filter="filter">
+<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="smUI" :data-filter="filter">
   {{template "topbar" .}}
   <div class="flex-1 flex min-h-0 relative">
     {{template "sidebar" .}}
@@ -48,6 +48,7 @@
     class="btn-compose md:hidden fixed bottom-12 right-4 z-30 w-12 h-12 rounded-full bg-indigo-500 hover:bg-indigo-400 text-white shadow-lg flex items-center justify-center">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897l12.682-12.681Z"/></svg>
   </button>
+  {{template "compose_fab" .}}
 </div>
 {{template "help-overlay" .}}
 {{end}}

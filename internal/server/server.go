@@ -44,6 +44,7 @@ func New(cfg *config.Config, st *store.Store, mgr *mail.Manager) (*Server, error
 		secure:  strings.HasPrefix(cfg.Server.BaseURL, "https://"),
 		pending: map[int64]*time.Timer{},
 	}
+	setAccountAliases(cfg.Accounts)
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}
@@ -140,9 +141,12 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
 		r.Get("/health", s.handleHealth)
+		r.Get("/unread", s.handleUnread)
 		r.Post("/refresh", s.handleRefresh)
 		r.Get("/messages/{id}", s.handleMessage)
 		r.Get("/messages/{id}/body", s.handleMessageBody)
+		r.Get("/messages/{id}/attachments", s.handleAttachments)
+		r.Get("/messages/{id}/attachment/{part}", s.handleAttachment)
 		r.Post("/messages/{id}/read", s.handleMarkRead(true))
 		r.Post("/messages/{id}/unread", s.handleMarkRead(false))
 		r.Post("/messages/{id}/star", s.handleStar(true))
@@ -277,8 +281,16 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	}
 	// Deep link to a specific folder (?f=<id>) — used by the sidebar links when
 	// navigating in from another full page (filters/drafts), where there is no
-	// #message-list to htmx-swap into.
-	if fid := r.URL.Query().Get("f"); fid != "" {
+	// #message-list to htmx-swap into. A bookmarked thread URL (?t=<id>&src=<n>)
+	// carries the list scope in src, so a numeric src selects the same folder
+	// (the client then opens the thread into the reading pane, see app.js).
+	fid := r.URL.Query().Get("f")
+	if fid == "" {
+		if src := r.URL.Query().Get("src"); src != "" && src != "u" {
+			fid = src
+		}
+	}
+	if fid != "" {
 		if id, err := strconv.ParseInt(fid, 10, 64); err == nil {
 			if f, _ := s.store.FolderByID(id); f != nil {
 				msgs, _ := s.store.ListMessages(f.ID, listLimit)

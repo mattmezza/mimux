@@ -9,8 +9,10 @@
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
   <script defer src="/static/js/htmx.min.js"></script>
-  <script defer src="/static/js/alpinejs.min.js"></script>
+  <!-- app.js must load before Alpine: it registers the smUI component on the
+       alpine:init event, which Alpine fires the moment its own script runs. -->
   <script defer src="/static/js/app.js"></script>
+  <script defer src="/static/js/alpinejs.min.js"></script>
   {{with .CSRF}}<meta name="csrf-token" content="{{.}}">{{end}}
 </head>
 <body class="h-screen bg-zinc-900 text-zinc-300 antialiased overflow-hidden text-sm">

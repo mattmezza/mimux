@@ -1,6 +1,6 @@
 {{define "thread_detail"}}
 {{$t := .Thread}}{{$latest := .Latest}}
-<div class="h-full flex flex-col" id="message-detail" data-message-id="{{$latest.ID}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
+<div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$latest.ID}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
   <div class="shrink-0 border-b border-zinc-800 p-4 flex items-start gap-3">
     <button type="button" title="Back to list" aria-label="Back to list" onclick="closeReadingPane()"
       class="md:hidden shrink-0 p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
@@ -52,10 +52,12 @@
         <div class="text-xs text-zinc-500 mb-2 space-y-0.5">
           <div><span class="text-zinc-600">From</span> {{if .FromName}}{{.FromName}} {{end}}&lt;{{.FromAddress}}&gt;</div>
           {{if .ToAddresses}}<div><span class="text-zinc-600">To</span> {{.ToAddresses}}</div>{{end}}
+          {{with receivedAlias .Account .ToAddresses .CcAddresses}}<div><span class="text-zinc-600">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
           {{with messageLabels .Labels}}<div class="flex flex-wrap gap-1 pt-0.5">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}
         </div>
+        {{if .HasAttachment}}<div class="mb-2" hx-get="/messages/{{.ID}}/attachments" hx-trigger="revealed" hx-swap="outerHTML"></div>{{end}}
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
-                sandbox="allow-popups allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
+                onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
         <div class="mt-2 flex items-center gap-4">
           <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
             onclick="toggleBodyTheme(this.closest('[data-thread-body]').querySelector('iframe'))">Dark / light</button>
@@ -64,7 +66,7 @@
             onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.parentElement.nextElementSibling)">Translate</button>
           {{end}}
         </div>
-        <div class="mt-1"></div>
+        <div class="mt-1" data-translate-result></div>
       </div>
     </div>
     {{end}}

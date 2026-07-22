@@ -221,7 +221,10 @@ func renderBodyDocument(fragment string, plain bool) string {
 	// with hardcoded black text unreadable, so we always render light here and
 	// let the reading pane offer a per-message dark toggle (see toggleBodyTheme
 	// in app.js, which flips the .sm-dark class below).
-	return `<!doctype html><html><head><meta charset="utf-8">
+	// base target=_blank: links/buttons in email must open in a new tab, not
+	// navigate the sandboxed iframe (which just breaks). Modern browsers imply
+	// rel=noopener for target=_blank, so no reverse-tabnabbing exposure.
+	return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank">
 <style>
   :root { color-scheme: light; }
   html, body { margin: 0; padding: 12px; }
@@ -231,5 +234,15 @@ func renderBodyDocument(fragment string, plain bool) string {
   .sm-plain { white-space: pre-wrap; font-family: ui-monospace, monospace; margin: 0; }
   html.sm-dark, html.sm-dark body { background: #18181b !important; color: #d4d4d8 !important; }
   html.sm-dark a { color: #818cf8 !important; }
+  /* Thin themed scrollbar, matching the app chrome, on both light and dark. */
+  * { scrollbar-width: thin; scrollbar-color: #c4c4cc transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #c4c4cc; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+  html.sm-dark { color-scheme: dark; }
+  html.sm-dark * { scrollbar-color: #3f3f46 transparent; }
+  html.sm-dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
+  html.sm-dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 </style></head><body>` + body + `</body></html>`
 }

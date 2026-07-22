@@ -54,6 +54,9 @@ oauth2_client_secret = "your-client-secret"
 name = "Zoho"
 provider = "zoho"
 email = "you@yourcompany.com"
+# Extra addresses this account can send-as and that are flagged "via <alias>"
+# when a message was received on them:
+# aliases = ["sales@yourcompany.com", "you+newsletter@yourcompany.com"]
 auth = "oauth2"
 oauth2_client_id = "your-zoho-client-id"
 oauth2_client_secret = "your-zoho-client-secret"
