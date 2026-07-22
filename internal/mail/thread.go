@@ -38,10 +38,13 @@ func BuildThreads(msgs []store.Message) []Thread {
 	var thridOrder []string
 	for _, m := range msgs {
 		if m.GmThrID != "" {
-			if _, ok := byThrid[m.GmThrID]; !ok {
-				thridOrder = append(thridOrder, m.GmThrID)
+			// X-GM-THRID is only unique within one mailbox: scope it by account
+			// so two accounts' thread ids can never collide in the unified view.
+			key := m.Account + "\x00" + m.GmThrID
+			if _, ok := byThrid[key]; !ok {
+				thridOrder = append(thridOrder, key)
 			}
-			byThrid[m.GmThrID] = append(byThrid[m.GmThrID], m)
+			byThrid[key] = append(byThrid[key], m)
 		} else {
 			jwzMsgs = append(jwzMsgs, m)
 		}
@@ -174,16 +177,22 @@ func jwzThreads(msgs []store.Message) []Thread {
 
 	// Subject fallback: merge header-less groups (no References/In-Reply-To on
 	// any message) that share a normalized subject.
+	// Subject-only grouping is a weak signal: scope it by account so unrelated
+	// same-subject mail across accounts (two inboxes' "Invoice" messages) can't
+	// collapse in the unified view. Reference/Message-ID linkage above stays
+	// account-agnostic, so a genuine conversation you're on via two accounts
+	// still threads together.
 	bySubject := map[string]int{}
 	var merged [][]store.Message
 	for _, g := range groups {
 		if headerless(g) {
 			if subj := normalizeSubject(threadSubject(g)); subj != "" {
-				if idx, ok := bySubject[subj]; ok {
+				key := g[0].Account + "\x00" + subj
+				if idx, ok := bySubject[key]; ok {
 					merged[idx] = append(merged[idx], g...)
 					continue
 				}
-				bySubject[subj] = len(merged)
+				bySubject[key] = len(merged)
 			}
 		}
 		merged = append(merged, g)

@@ -216,17 +216,20 @@ func renderBodyDocument(fragment string, plain bool) string {
 	if plain {
 		body = `<pre class="sm-plain">` + html.EscapeString(fragment) + `</pre>`
 	}
+	// Email HTML is authored for a light background (like every major webmail
+	// client renders it). Forcing the app's dark theme onto it makes messages
+	// with hardcoded black text unreadable, so we always render light here and
+	// let the reading pane offer a per-message dark toggle (see toggleBodyTheme
+	// in app.js, which flips the .sm-dark class below).
 	return `<!doctype html><html><head><meta charset="utf-8">
 <style>
-  :root { color-scheme: light dark; }
+  :root { color-scheme: light; }
   html, body { margin: 0; padding: 12px; }
   body { font: 14px/1.5 -apple-system, system-ui, sans-serif; color: #18181b; background: #fff; word-wrap: break-word; overflow-wrap: break-word; }
   img, table { max-width: 100%; }
   a { color: #4f46e5; }
   .sm-plain { white-space: pre-wrap; font-family: ui-monospace, monospace; margin: 0; }
-  @media (prefers-color-scheme: dark) {
-    body { color: #d4d4d8; background: #18181b; }
-    a { color: #818cf8; }
-  }
+  html.sm-dark, html.sm-dark body { background: #18181b !important; color: #d4d4d8 !important; }
+  html.sm-dark a { color: #818cf8 !important; }
 </style></head><body>` + body + `</body></html>`
 }

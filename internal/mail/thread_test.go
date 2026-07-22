@@ -160,12 +160,12 @@ func TestThreadMessagesChronological(t *testing.T) {
 
 func TestNormalizeSubject(t *testing.T) {
 	cases := map[string]string{
-		"Re: Hello":              "hello",
-		"RE: FW: Hello":          "hello",
-		"Fwd: [dev-list] Hello":  "hello",
-		"[list] Re: Deploy":      "deploy",
-		"no prefix":              "no prefix",
-		"Re: Re: Re: nested":     "nested",
+		"Re: Hello":             "hello",
+		"RE: FW: Hello":         "hello",
+		"Fwd: [dev-list] Hello": "hello",
+		"[list] Re: Deploy":     "deploy",
+		"no prefix":             "no prefix",
+		"Re: Re: Re: nested":    "nested",
 	}
 	for in, want := range cases {
 		if got := normalizeSubject(in); got != want {
@@ -177,6 +177,71 @@ func TestNormalizeSubject(t *testing.T) {
 func withThrid(m store.Message, thrid string) store.Message {
 	m.GmThrID = thrid
 	return m
+}
+
+func withAccount(m store.Message, acct string) store.Message {
+	m.Account = acct
+	return m
+}
+
+// TestThreadingAccountScoping documents the unified-inbox threading policy:
+// strong signals (a genuine References/Message-ID chain) MAY span accounts —
+// that is the whole point of a unified conversation you're on via two mailboxes
+// — but the weak signals must not. Subject-only grouping and per-mailbox Gmail
+// thread ids are account-scoped, so unrelated same-subject mail and colliding
+// thread ids in two inboxes stay separate.
+func TestThreadingAccountScoping(t *testing.T) {
+	tests := []struct {
+		name string
+		msgs []store.Message
+		want []string
+	}{
+		{
+			// Duplicate Message-ID with no reference linkage (the same newsletter
+			// delivered to two inboxes): the second copy gets its own container
+			// and the account-scoped subject fallback keeps them apart.
+			name: "duplicate newsletter across accounts stays separate",
+			msgs: []store.Message{
+				withAccount(msg("A", "news@x", "", "", "Weekly digest", 1), "acct1"),
+				withAccount(msg("B", "news@x", "", "", "Weekly digest", 2), "acct2"),
+			},
+			want: []string{"A", "B"},
+		},
+		{
+			// A real conversation where messages landed on different accounts
+			// (distinct Message-IDs, proper reference chain): one thread.
+			name: "genuine conversation spans accounts",
+			msgs: []store.Message{
+				withAccount(msg("A", "a@x", "", "", "Deploy", 1), "acct1"),
+				withAccount(msg("B", "b@x", "a@x", "<a@x>", "Re: Deploy", 2), "acct2"),
+				withAccount(msg("C", "c@x", "b@x", "<a@x> <b@x>", "Re: Deploy", 3), "acct1"),
+			},
+			want: []string{"A,B,C"},
+		},
+		{
+			name: "same gm_thrid across accounts stays separate",
+			msgs: []store.Message{
+				withAccount(withThrid(msg("A", "a@x", "", "", "Alpha", 1), "T1"), "acct1"),
+				withAccount(withThrid(msg("B", "b@x", "", "", "Beta", 2), "T1"), "acct2"),
+			},
+			want: []string{"A", "B"},
+		},
+		{
+			name: "same account still threads normally",
+			msgs: []store.Message{
+				withAccount(msg("A", "a@x", "", "", "Hi", 1), "acct1"),
+				withAccount(msg("B", "b@x", "a@x", "<a@x>", "Re: Hi", 2), "acct1"),
+			},
+			want: []string{"A,B"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if gs := groupSets(BuildThreads(tc.msgs)); !equalStrings(gs, tc.want) {
+				t.Errorf("grouping = %v, want %v", gs, tc.want)
+			}
+		})
+	}
 }
 
 func equalStrings(a, b []string) bool {

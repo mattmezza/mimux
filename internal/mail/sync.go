@@ -142,14 +142,29 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	// Window of new UIDs to fetch.
 	var start imap.UID
 	if firstFull {
-		limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
-		if limit == 0 {
-			limit = 500
+		// "Sync history" setting (Settings → how far back to download): when set,
+		// the date window is authoritative — SEARCH SINCE gives the oldest UID to
+		// keep. Otherwise fall back to the message-count cap.
+		if months := a.m.st.GetPrefs().SyncMonths; months > 0 {
+			since := time.Now().AddDate(0, -months, 0)
+			if data, err := c.UIDSearch(&imap.SearchCriteria{Since: since}, nil).Wait(); err == nil {
+				if uids := data.AllUIDs(); len(uids) > 0 {
+					start = minUID(uids)
+				} else {
+					start = sel.UIDNext // nothing in the window
+				}
+			}
 		}
-		if uint32(sel.UIDNext) > limit {
-			start = sel.UIDNext - imap.UID(limit)
-		} else {
-			start = 1
+		if start == 0 { // no history limit, or the search failed: use the count cap
+			limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
+			if limit == 0 {
+				limit = 500
+			}
+			if uint32(sel.UIDNext) > limit {
+				start = sel.UIDNext - imap.UID(limit)
+			} else {
+				start = 1
+			}
 		}
 	} else {
 		start = imap.UID(maxUID) + 1
@@ -196,7 +211,7 @@ func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store
 		Envelope:      true,
 		RFC822Size:    true,
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-		BodySection: []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
+		BodySection:   []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
 	}
 	msgs, err := c.Fetch(set, opts).Collect()
 	if err != nil {
@@ -372,6 +387,17 @@ func hasAttachment(bs imap.BodyStructure) bool {
 		return true
 	})
 	return found
+}
+
+// minUID returns the smallest UID in the set (0 when empty).
+func minUID(uids []imap.UID) imap.UID {
+	var m imap.UID
+	for _, u := range uids {
+		if m == 0 || u < m {
+			m = u
+		}
+	}
+	return m
 }
 
 func hasFlag(flags []imap.Flag, want imap.Flag) bool {

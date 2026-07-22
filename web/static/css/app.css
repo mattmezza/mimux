@@ -20,6 +20,52 @@
   display: none;
 }
 
+/* --- scrollbars: thin and dark on every browser (Firefox + WebKit/Blink). --- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover { background: #52525b; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* --- quick filters: hide list rows that don't match the active filter. The
+   filter is a data-filter attr set (by Alpine) on an ancestor of #message-list,
+   so it keeps working across htmx list swaps with no re-binding. --- */
+[data-filter="unread"] #message-list li[data-message-row]:not([data-unread]),
+[data-filter="starred"] #message-list li[data-message-row]:not([data-starred]) {
+  display: none;
+}
+
+/* h/l section navigation: a subtle ring on the pane that currently has focus. */
+[data-section-focus] {
+  box-shadow: inset 2px 0 0 var(--color-indigo-500, #6366f1);
+}
+
+/* Sidebar account tree chevron rotates when its section is open. */
+.acct-chevron { transition: transform 150ms ease; }
+
+/* --- preference-driven rendering (Settings). Classes live on the inbox root. --- */
+/* Show/hide sender avatars. */
+.hide-avatars .sender-avatar { display: none !important; }
+
+/* List preview lines: 0 hides the snippet, 1–3 clamp it to that many lines. */
+.msg-snippet {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  -webkit-line-clamp: 1;
+}
+.preview-lines-0 .msg-snippet { display: none; }
+.preview-lines-2 .msg-snippet { -webkit-line-clamp: 2; }
+.preview-lines-3 .msg-snippet { -webkit-line-clamp: 3; }
+
 /* Alpine: hide elements gated by x-show before it has initialized them. */
 [x-cloak] { display: none !important; }
 

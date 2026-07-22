@@ -10,6 +10,30 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js");
 }
 
+// --- Alpine UI state (sidebar collapse, per-account tree open/closed, quick
+// filter) persisted in localStorage so it survives reloads. Referenced by
+// x-data="smUI()" on the page roots. ---
+window.smUI = function () {
+  const KEY = "sm.ui";
+  let saved = {};
+  try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
+  return {
+    sidebarOpen: false, // mobile drawer
+    collapsed: !!saved.collapsed, // desktop sidebar hidden
+    filter: saved.filter || "", // "" | "unread" | "starred"
+    accts: saved.accts || {}, // account name -> true when collapsed
+    _save() {
+      try {
+        localStorage.setItem(KEY, JSON.stringify({ collapsed: this.collapsed, filter: this.filter, accts: this.accts }));
+      } catch (_) {}
+    },
+    toggleCollapse() { this.collapsed = !this.collapsed; this._save(); },
+    acctOpen(name) { return !this.accts[name]; }, // default open
+    toggleAcct(name) { this.accts[name] = !this.accts[name]; this._save(); },
+    setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); },
+  };
+};
+
 // --- offline banner: sw.js falls back to the last-cached page when a fetch
 // fails, but the user should know they're looking at stale data. ---
 function updateOfflineBanner() {
@@ -252,6 +276,29 @@ function toggleThreadMessage(header) {
 }
 window.toggleThreadMessage = toggleThreadMessage;
 
+// --- translate: pull the rendered text out of a message-body iframe and POST
+// it to /translate, dropping the result into resultEl. Same-origin iframe, so
+// reading its text is allowed. ---
+window.translateFrame = function (frame, resultEl) {
+  if (!frame || !resultEl || !window.htmx) return;
+  let text = "";
+  try { text = frame.contentDocument?.body?.innerText || ""; } catch (_) {}
+  if (!text.trim()) {
+    resultEl.innerHTML = '<p class="text-xs text-zinc-500 px-4 py-2">Let the message finish loading, then translate.</p>';
+    return;
+  }
+  resultEl.innerHTML = '<p class="text-xs text-zinc-500 px-4 py-2">Translating…</p>';
+  htmx.ajax("POST", "/translate", { values: { text: text.slice(0, 5000) }, target: resultEl, swap: "innerHTML" });
+};
+
+// --- per-message dark/light toggle: email bodies render on a light background
+// (many hardcode black text); this flips just that iframe to dark on demand. ---
+window.toggleBodyTheme = function (frame) {
+  const doc = frame && frame.contentDocument;
+  if (!doc) return;
+  doc.documentElement.classList.toggle("sm-dark");
+};
+
 // --- compose ---
 function openMessageId() {
   return document.getElementById("message-detail")?.dataset.messageId || null;
@@ -286,8 +333,29 @@ document.addEventListener("htmx:afterSwap", (e) => {
   }
   if (e.target && e.target.id === "reading-pane") {
     e.target.querySelector("#message-detail")?.focus({ preventScroll: true });
+    scheduleMarkRead(e.target.querySelector("#message-detail"));
   }
 });
+
+// Mark-as-read-after-N-seconds: when the server defers read-marking (a delay is
+// configured), the opened message carries data-mark-read-pending + a delay. We
+// POST /read once it's been on screen that long, cancelling if the user leaves
+// the message first.
+let markReadTimer = null;
+function scheduleMarkRead(detail) {
+  if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
+  if (!detail || !detail.dataset.markReadPending) return;
+  const delay = parseInt(detail.dataset.markReadDelay || "0", 10);
+  const id = detail.dataset.messageId;
+  if (!id || !(delay > 0) || !window.htmx) return;
+  markReadTimer = setTimeout(() => {
+    // Only fire if this message is still the one on screen.
+    const cur = document.querySelector("#message-detail");
+    if (cur && cur.dataset.messageId === id) {
+      htmx.ajax("POST", `/messages/${id}/read`, { swap: "none" });
+    }
+  }, delay * 1000);
+}
 
 // Insert an AI-drafted textarea's contents into the compose body (shared by
 // the ai_compose_result and ai_reply_result partials, which both render a
@@ -303,8 +371,35 @@ document.addEventListener("click", (e) => {
   }
 });
 
+// --- h/l: move focus between the three panes (accounts ↔ messages ↔ reading).
+// A subtle inset ring (see [data-section-focus] in app.css) shows which pane
+// holds focus. ---
+function sectionEls() {
+  return [document.querySelector("nav"), document.getElementById("message-list"), document.getElementById("reading-pane")];
+}
+let curSection = 1; // start on the message list
+function focusSection(delta) {
+  const secs = sectionEls();
+  curSection = Math.max(0, Math.min(secs.length - 1, curSection + delta));
+  const el = secs[curSection];
+  if (!el) return true;
+  secs.forEach((s) => s && s.removeAttribute("data-section-focus"));
+  el.setAttribute("data-section-focus", "");
+  if (el.id === "message-list") {
+    const row = selectedRow() || listRows()[0];
+    if (row) { selectRow(row); row.focus?.(); }
+  } else if (el.id === "reading-pane") {
+    (el.querySelector("#message-detail") || el).focus?.({ preventScroll: true });
+  } else {
+    el.querySelector("a, button")?.focus();
+  }
+  return true;
+}
+
 let goPending = false;
 const keymap = {
+  "h": () => focusSection(-1),
+  "l": () => focusSection(1),
   "/": () => { const s = document.getElementById("search"); if (s) { s.focus(); return true; } },
   "?": () => toggleHelp(),
   "c": () => openCompose(""),

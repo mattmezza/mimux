@@ -1,10 +1,10 @@
 {{define "message_row"}}
 <li id="msg-{{.ID}}"
-    hx-get="/messages/{{.ID}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms"
+    hx-get="/messages/{{.ID}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-indicator="#reading-skeleton"
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
-    data-message-row data-folder="{{.FolderID}}" tabindex="-1"
+    data-message-row data-folder="{{.FolderID}}" {{if not .IsRead}}data-unread{{end}}{{if .IsStarred}} data-starred{{end}} tabindex="-1"
     class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150 outline-none focus:bg-zinc-800">
-  <div class="shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white select-none"
+  <div class="sender-avatar shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold text-white select-none"
        style="background-color:{{avatarColor .FromAddress}}">{{avatarInitials .FromName .FromAddress}}</div>
   <div class="min-w-0 flex-1">
     <div class="flex items-center gap-2">
@@ -15,7 +15,7 @@
     <div class="truncate {{if .IsRead}}text-zinc-400{{else}}text-zinc-100 font-medium{{end}}">
       {{if .HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}
     </div>
-    <div class="truncate text-zinc-500 text-xs">{{.Snippet}}</div>
+    <div class="msg-snippet text-zinc-500 text-xs">{{.Snippet}}</div>
   </div>
   <button title="{{if .IsStarred}}Unstar{{else}}Star{{end}} (s)" aria-label="{{if .IsStarred}}Unstar{{else}}Star{{end}}" onclick="event.stopPropagation()"
     hx-post="/messages/{{.ID}}/{{if .IsStarred}}unstar{{else}}star{{end}}"

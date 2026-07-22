@@ -115,6 +115,14 @@ func (s *Store) RecountUnread(id int64) error {
 	return err
 }
 
+// TotalInboxUnread sums unread across every account's inbox folder — the badge
+// count for "All inboxes".
+func (s *Store) TotalInboxUnread() (int, error) {
+	var n int
+	err := s.DB.QueryRow(`SELECT COALESCE(SUM(unread_count), 0) FROM folders WHERE special_use = 'inbox'`).Scan(&n)
+	return n, err
+}
+
 // ClearFolderMessages drops all messages in a folder (UIDVALIDITY change reset).
 func (s *Store) ClearFolderMessages(id int64) error {
 	_, err := s.DB.Exec(`DELETE FROM messages WHERE folder_id = ?`, id)

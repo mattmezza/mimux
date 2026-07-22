@@ -138,6 +138,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/oauth/{name}/start", s.handleOAuthStart)
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
+		r.Get("/health", s.handleHealth)
+		r.Post("/refresh", s.handleRefresh)
 		r.Get("/messages/{id}", s.handleMessage)
 		r.Get("/messages/{id}/body", s.handleMessageBody)
 		r.Post("/messages/{id}/read", s.handleMarkRead(true))
@@ -154,6 +156,8 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/compose/draft", s.handleComposeDraftSave)
 		r.Get("/drafts", s.handleDraftsPage)
 		r.Post("/drafts/{id}/delete", s.handleDraftDelete)
+		r.Get("/settings", s.handleSettings)
+		r.Post("/settings", s.handleSettingsSave)
 		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
 		r.Mount("/translate", translate.Routes(s.store, translate.NewClient(s.cfg.Translate.APIKey, s.cfg.Translate.TargetLanguage)))
 		r.Mount("/ai", ai.Routes(ai.NewClient(s.cfg.AI.OpenRouterAPIKey, s.cfg.AI.Model)))
@@ -257,13 +261,18 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
+	prefs := s.store.GetPrefs()
+	totalUnread, _ := s.store.TotalInboxUnread()
 	data := map[string]any{
-		"CSRF":     auth.EnsureCSRF(w, r, s.secure),
-		"Accounts": s.cfg.Accounts,
-		"Sidebar":  s.sidebarData(),
-		"Statuses": s.mail.Status(),
-		"Unified":  len(s.cfg.Accounts) > 1,
-		"Saved":    s.savedSearches(),
+		"CSRF":          auth.EnsureCSRF(w, r, s.secure),
+		"Accounts":      s.cfg.Accounts,
+		"Sidebar":       s.sidebarData(),
+		"Statuses":      s.mail.Status(),
+		"Unified":       len(s.cfg.Accounts) > 1,
+		"Saved":         s.savedSearches(),
+		"Prefs":         prefs,
+		"AccountColors": prefs.AccountColors,
+		"TotalUnread":   totalUnread,
 	}
 	// Default landing view: unified inbox when more than one account, the
 	// single account's inbox otherwise.
