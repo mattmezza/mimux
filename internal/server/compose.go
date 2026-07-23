@@ -267,8 +267,8 @@ func (s *Server) handleComposePreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	// mail.RenderMarkdown already runs bluemonday, so this fragment is safe to
-	// emit into the preview pane as-is.
+	// #nosec G705 -- RenderMarkdown escapes raw HTML (goldmark default) and runs
+	// the bluemonday emailPolicy on its output; the fragment is sanitized.
 	_, _ = io.WriteString(w, mail.RenderMarkdown(r.PostFormValue("body")))
 }
 
