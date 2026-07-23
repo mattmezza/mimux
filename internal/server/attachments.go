@@ -41,6 +41,29 @@ func (s *Server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "attachments", map[string]any{"MsgID": msg.ID, "Attachments": views})
 }
 
+// handleExtBanner lazy-loads the "external images blocked" banner for one
+// message inside a thread (hx-get on reveal, mirroring the attachments strip).
+// The single-message view renders this banner eagerly instead (see
+// handleMessage) since there's only ever one message to check there.
+func (s *Server) handleExtBanner(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	allow := false
+	if msg.FromAddress != "" {
+		allow, _ = s.store.SenderAllowsExternal(msg.FromAddress)
+	}
+	_, blocked, err := s.mail.Body(r.Context(), msg, allow, false)
+	if err != nil || allow || !blocked {
+		// Leaves the placeholder div in place (harmless, empty) — htmx does not
+		// swap on 204, matching the "nothing to show" case elsewhere (attachments).
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	s.renderPartial(w, "ext_banner", map[string]any{"ID": msg.ID, "Scope": "[data-thread-body]"})
+}
+
 // handleAttachment streams one attachment part. Inline by default (for preview);
 // ?dl=1 forces a download. Served under a locked-down CSP + sandbox so a
 // malicious HTML attachment can't run script in our origin.

@@ -12,13 +12,14 @@
       </button>
       <div class="flex-1"></div>
       {{range .QABar}}{{template "qa_btn_t" (dict "ID" . "D" $ "Menu" false)}}{{end}}
-      {{if .QAMenu}}
+      {{if or .QAMenu .Folders}}
       <details class="msg-actions-more">
         <summary class="list-none p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer transition-colors duration-150" aria-label="More actions" title="More actions">
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm6 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm6 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
         </summary>
         <div class="msg-actions-more-menu">
           {{range .QAMenu}}{{template "qa_btn_t" (dict "ID" . "D" $ "Menu" true)}}{{end}}
+          {{template "qa_move" (dict "M" $latest "Row" $t.RootID "Folders" .Folders "Cur" .CurrentFolder)}}
         </div>
       </details>
       {{end}}
@@ -55,6 +56,10 @@
           {{with messageLabels .Labels}}<div class="flex flex-wrap gap-1 pt-0.5">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}
         </div>
         {{if .HasAttachment}}<div class="mb-2" hx-get="/messages/{{.ID}}/attachments" hx-trigger="revealed" hx-swap="outerHTML"></div>{{end}}
+        {{/* External-images banner, lazy like attachments above — whether images
+             were blocked is only known once the body is parsed, and we don't want
+             to force that fetch for every collapsed message just to check. */}}
+        <div hx-get="/messages/{{.ID}}/ext-banner" hx-trigger="revealed" hx-swap="outerHTML"></div>
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
                 onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
         <div class="mt-2 flex items-center gap-1 flex-wrap">
