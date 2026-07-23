@@ -11,6 +11,10 @@
     <span>Ready</span>
     {{end}}
   </span>
-  <button title="Keyboard shortcuts" onclick="document.dispatchEvent(new CustomEvent('sm:help'))" class="hover:text-zinc-300 transition-colors duration-150">Press ? for shortcuts</button>
+  <div class="flex items-center gap-4">
+    <a href="https://github.com/mattmezza/sm/releases/tag/{{.Version}}" target="_blank" rel="noopener" title="Open release page" class="hover:text-zinc-300 transition-colors duration-150">{{.Version}}</a>
+    <button title="About" onclick="document.dispatchEvent(new CustomEvent('sm:about'))" class="hover:text-zinc-300 transition-colors duration-150">ℹ</button>
+    <button title="Keyboard shortcuts" onclick="document.dispatchEvent(new CustomEvent('sm:help'))" class="hover:text-zinc-300 transition-colors duration-150">Press ? for shortcuts</button>
+  </div>
 </footer>
 {{end}}

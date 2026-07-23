@@ -28,7 +28,7 @@ func serverWith(t *testing.T, accounts []config.Account, seed func(*store.Store)
 		seed(st)
 	}
 	cfg := &config.Config{Server: config.Server{BaseURL: "http://localhost"}, Accounts: accounts}
-	srv, err := New(cfg, st, mail.NewManager(cfg, st))
+	srv, err := New(cfg, st, mail.NewManager(cfg, st), "test")
 	if err != nil {
 		t.Fatal(err)
 	}
