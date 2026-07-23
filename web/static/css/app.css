@@ -109,6 +109,10 @@
 /* --- preference-driven rendering (Settings). Classes live on the inbox root. --- */
 /* Show/hide sender avatars. */
 .hide-avatars .sender-avatar { display: none !important; }
+/* #5: "Hide avatars on mobile" setting — desktop unaffected. */
+@media (max-width: 767px) {
+  .hide-avatars-mobile .sender-avatar { display: none !important; }
+}
 
 /* List preview lines: wrap the snippet to N lines that fit the list column
    (0 hides it). The snippet is one collapsed string; line-clamp bounds how many
