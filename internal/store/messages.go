@@ -29,7 +29,10 @@ type Message struct {
 }
 
 // UpsertMessage inserts a message or, on UID conflict, updates the mutable
-// flag/metadata fields (envelope is immutable so it is only set on insert).
+// flag/metadata fields. date is re-asserted from the (deterministic) envelope
+// so a re-fetch heals rows written before the INTERNALDATE fallback landed,
+// where a missing Date: header had been now()-stamped and floated old mail to
+// the top; for correct rows excluded.date equals the stored value (a no-op).
 func (s *Store) UpsertMessage(m *Message) error {
 	_, err := s.DB.Exec(`
 		INSERT INTO messages
@@ -37,7 +40,7 @@ func (s *Store) UpsertMessage(m *Message) error {
 			 to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(folder_id, uid) DO UPDATE SET
-			is_read = excluded.is_read, is_starred = excluded.is_starred,
+			date = excluded.date, is_read = excluded.is_read, is_starred = excluded.is_starred,
 			has_attachment = excluded.has_attachment, snippet = excluded.snippet, labels = excluded.labels`,
 		m.Account, m.FolderID, m.UID, m.MessageID, m.InReplyTo, m.Refs, m.FromName, m.FromAddress,
 		m.ToAddresses, m.CcAddresses, m.Subject, m.Date.UTC().Format(time.RFC3339), m.Size,
