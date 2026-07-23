@@ -65,6 +65,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.ctx = ctx
 	m.mu.Unlock()
 	m.Reload()
+	go m.runScheduler(ctx)
 }
 
 // Reload reconciles the running workers with the accounts in the DB: it starts

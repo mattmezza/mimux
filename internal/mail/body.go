@@ -18,6 +18,11 @@ type messageBody struct {
 	htmlContent string
 	textContent string
 	inline      map[string]inlinePart // keyed by lowercased Content-ID
+	// calendar holds the raw bytes of the first text/calendar part (or .ics
+	// attachment), so the invite card is parsed from the cached body with no
+	// extra IMAP fetch. nil when the message carries no calendar payload.
+	calendar       []byte
+	calendarInline bool // true once an inline text/calendar was captured (beats a later .ics)
 	// listUnsubscribe/listUnsubscribePost carry the raw RFC 2369 / RFC 8058
 	// headers (unparsed) so ParseListUnsubscribe can run at render time.
 	listUnsubscribe     string
@@ -32,6 +37,7 @@ type bodyDTO struct {
 	HTML                string
 	Text                string
 	Inline              map[string]inlineDTO
+	Calendar            []byte
 	ListUnsubscribe     string
 	ListUnsubscribePost string
 }
@@ -45,6 +51,7 @@ type inlineDTO struct {
 func encodeBody(b *messageBody) ([]byte, error) {
 	dto := bodyDTO{
 		HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{},
+		Calendar:        b.calendar,
 		ListUnsubscribe: b.listUnsubscribe, ListUnsubscribePost: b.listUnsubscribePost,
 	}
 	for k, v := range b.inline {
@@ -65,6 +72,7 @@ func decodeBody(blob []byte) (*messageBody, error) {
 	}
 	b := &messageBody{
 		htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{},
+		calendar:        dto.Calendar,
 		listUnsubscribe: dto.ListUnsubscribe, listUnsubscribePost: dto.ListUnsubscribePost,
 	}
 	for k, v := range dto.Inline {
@@ -113,8 +121,23 @@ func parseBody(raw []byte) *messageBody {
 			return nil
 		}
 		data, _ := io.ReadAll(io.LimitReader(part.Body, 25<<20)) // NOTE: 25MB/part cap guards against decompression bombs
-		disp, _, _ := part.Header.ContentDisposition()
+		disp, dparams, _ := part.Header.ContentDisposition()
+		_, ctparams, _ := part.Header.ContentType()
 		cid := strings.Trim(part.Header.Get("Content-ID"), "<> ")
+		fname := strings.ToLower(dparams["filename"] + " " + ctparams["name"])
+		// Capture a calendar payload for the invite card. Prefer an inline
+		// text/calendar (it carries METHOD); an .ics attachment is a fallback
+		// only if no inline part was seen. First inline text/calendar wins.
+		isICS := mt == "text/calendar" || strings.Contains(fname, ".ics")
+		if isICS && bytes.Contains(data, []byte("BEGIN:VCALENDAR")) {
+			if mt == "text/calendar" {
+				if !b.calendarInline {
+					b.calendar, b.calendarInline = data, true
+				}
+			} else if b.calendar == nil {
+				b.calendar = data
+			}
+		}
 		switch {
 		case mt == "text/html" && !strings.EqualFold(disp, "attachment"):
 			// Keep the first non-empty HTML body only. Concatenating sibling

@@ -1,9 +1,22 @@
 // SM app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
 
+// The active quick filter, read from its canonical DOM reflection (the
+// :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.
+function activeFilter() {
+  return document.querySelector("[data-filter]")?.dataset.filter || "";
+}
+
 // Send the CSRF token on every htmx mutation.
 document.addEventListener("htmx:configRequest", (e) => {
   const meta = document.querySelector('meta[name="csrf-token"]');
   if (meta) e.detail.headers["X-CSRF-Token"] = meta.content;
+  // Under the Unread filter, opening a message/thread must not mark it read.
+  // Signal the server to skip the mark-read-at-open (and not set the delayed
+  // pending flag either). POSTs (manual toggle) are unaffected.
+  if (activeFilter() === "unread" && (e.detail.verb || "").toLowerCase() === "get"
+      && /^\/(messages|t)\/\d+/.test(e.detail.path || "")) {
+    e.detail.headers["X-SM-No-Auto-Read"] = "1";
+  }
 });
 
 if ("serviceWorker" in navigator) {
@@ -643,19 +656,225 @@ function replyCompose(mode) {
   if (!id) return true;
   return openCompose(`?reply=${id}&mode=${mode}`);
 }
-function closeCompose() {
+// Serialized snapshot of the compose's initial state, taken after prefill and
+// editor init (htmx:afterSwap below). closeCompose() compares the live state to
+// this to decide whether to show the close guard. Null when compose is closed.
+let composeBaseline = null;
+let composeCloseAfterSave = false;
+
+// composeState serializes the user-editable fields into a comparable string.
+// The WYSIWYG body is read as the contenteditable's innerHTML — the same
+// browser-normalized form the baseline was captured in, so a no-op open/close
+// compares equal. Non-wysiwyg reads the textarea directly.
+function composeState() {
+  const form = document.getElementById("compose-form");
+  if (!form) return null;
+  const g = (n) => form.querySelector(`[name="${n}"]`)?.value ?? "";
+  const editor = document.getElementById("compose-wysiwyg");
+  const body = editor ? editor.innerHTML : g("body");
+  return JSON.stringify([g("from"), g("to"), g("cc"), g("bcc"), g("subject"), body]);
+}
+function snapshotComposeBaseline() { composeBaseline = composeState(); }
+function markComposeClean() { snapshotComposeBaseline(); }
+function isComposeDirty() {
+  return composeBaseline !== null && composeState() !== composeBaseline;
+}
+window.markComposeClean = markComposeClean;
+
+// forceCloseCompose tears down the compose without any guard — used after a
+// send/schedule/discard/save-and-close, where there is nothing left to protect.
+function forceCloseCompose() {
   const root = document.getElementById("compose-root");
   if (root) root.innerHTML = "";
   if (preComposeFocus && document.contains(preComposeFocus)) preComposeFocus.focus();
   preComposeFocus = null;
+  composeBaseline = null;
+  composeCloseAfterSave = false;
+}
+window.forceCloseCompose = forceCloseCompose;
+
+// closeCompose is every user-initiated close path (X button, Escape). Dirty →
+// show the guard modal; clean → close immediately with no modal.
+function closeCompose() {
+  if (isComposeDirty()) {
+    document.getElementById("compose-close-guard")?.removeAttribute("hidden");
+    return;
+  }
+  forceCloseCompose();
 }
 window.closeCompose = closeCompose;
+
+function composeGuardKeep() {
+  const m = document.getElementById("compose-close-guard");
+  if (m) m.hidden = true;
+}
+function composeGuardDiscard() {
+  const m = document.getElementById("compose-close-guard");
+  if (m) m.hidden = true;
+  // Discard only drops the newer edits; any draft row saved earlier this session
+  // stays as-is (we simply don't UPDATE it).
+  forceCloseCompose();
+}
+function composeGuardSave() {
+  const m = document.getElementById("compose-close-guard");
+  if (m) m.hidden = true;
+  composeCloseAfterSave = true;
+  document.getElementById("compose-save-draft")?.click();
+}
+window.composeGuardKeep = composeGuardKeep;
+window.composeGuardDiscard = composeGuardDiscard;
+window.composeGuardSave = composeGuardSave;
+
+// onDraftSaved runs after the "Save draft" hx-post returns: confirm, mark the
+// session clean, and finish a save-and-close if the guard requested one.
+function onDraftSaved(event) {
+  if (!event.detail.successful) return;
+  toast("Draft saved");
+  markComposeClean();
+  if (composeCloseAfterSave) forceCloseCompose();
+}
+window.onDraftSaved = onDraftSaved;
+
+// --- send later / undo send / schedule / attachment reminder ---
+// Attachment-hint keywords (English + Italian). Mirrors mail.attachWords in
+// internal/mail/attachhint.go — keep the two in sync.
+const attachKeywords = /\b(attach|attached|attachment|attachments|attaching|enclosed|allegato|allegati|allegata|allegate|allego)\b/i;
+
+function setSendMode(m) {
+  const el = document.getElementById("compose-send-mode");
+  if (el) el.value = m;
+}
+
+// Fires the compose submit after the attachment-reminder gate. skipGate=true
+// bypasses it ("Send anyway"). The primary Send button, "Send now" and the
+// schedule/Ctrl+Enter paths all route through here so the gate is enforced once.
+function submitCompose(skipGate) {
+  const form = document.getElementById("compose-form");
+  if (!form) return true;
+  document.querySelector("details.send-more[open]")?.removeAttribute("open");
+  syncComposeEditor();
+  if (!skipGate && needsAttachmentReminder(form)) {
+    const modal = document.getElementById("attach-reminder-modal");
+    if (modal) { modal.hidden = false; return true; }
+  }
+  form.requestSubmit();
+  return true;
+}
+window.submitCompose = submitCompose;
+window.setSendMode = setSendMode;
+
+function needsAttachmentReminder(form) {
+  const files = form.querySelector('input[type=file][name="attachments"]');
+  if (files && files.files && files.files.length) return false;
+  const subject = form.querySelector('[name="subject"]')?.value || "";
+  const body = form.querySelector('textarea[name="body"]')?.value || "";
+  // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
+  const text = (subject + " " + body).replace(/<[^>]+>/g, " ");
+  return attachKeywords.test(text);
+}
+
+// Handles the 204 from POST /compose: close compose, then show the right toast
+// (Undo for delayed send, a confirmation for scheduled send). Non-204 responses
+// re-render the form inline with an error, so we leave those alone.
+function onComposeResponse(event) {
+  const xhr = event.detail.xhr;
+  if (!xhr || xhr.status !== 204) return;
+  const outboxId = xhr.getResponseHeader("SM-Outbox-Id");
+  const scheduled = xhr.getResponseHeader("SM-Scheduled");
+  forceCloseCompose();
+  if (outboxId) {
+    toast("Sending…", {
+      onUndo: () => {
+        if (!window.htmx) return;
+        htmx.ajax("POST", `/outbox/${outboxId}/undo`, { target: "#compose-root", swap: "innerHTML" });
+      },
+    });
+  } else if (scheduled) {
+    const d = new Date(scheduled);
+    toast("Scheduled for " + (isNaN(d) ? scheduled : d.toLocaleString()) + ".");
+  }
+}
+window.onComposeResponse = onComposeResponse;
+
+// --- schedule picker ---
+function openSchedulePicker() {
+  document.querySelector("details.send-more[open]")?.removeAttribute("open");
+  const tz = document.getElementById("schedule-tz");
+  if (tz && !tz.options.length) {
+    let zones = [];
+    try { zones = Intl.supportedValuesOf("timeZone"); } catch (e) { zones = []; }
+    const local = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (!zones.length) zones = [local, "UTC"];
+    for (const z of zones) {
+      const o = document.createElement("option");
+      o.value = z; o.textContent = z;
+      if (z === local) o.selected = true;
+      tz.appendChild(o);
+    }
+  }
+  const when = document.getElementById("schedule-when");
+  if (when && !when.value) {
+    const d = new Date(Date.now() + 3600000);
+    d.setSeconds(0, 0);
+    const pad = (n) => String(n).padStart(2, "0");
+    when.value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  const modal = document.getElementById("schedule-modal");
+  if (modal) modal.hidden = false;
+}
+window.openSchedulePicker = openSchedulePicker;
+
+// Interpret a wall-clock "YYYY-MM-DDTHH:MM" as local time in IANA zone tz and
+// return the corresponding UTC Date. Uses Intl to read tz's offset; DST-boundary
+// hours are approximated (acceptable for a send scheduler).
+function zonedWallToUTC(wall, tz) {
+  const [d, t] = wall.split("T");
+  const [Y, Mo, D] = d.split("-").map(Number);
+  const [H, Mi] = t.split(":").map(Number);
+  const guess = Date.UTC(Y, Mo - 1, D, H, Mi);
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz, hour12: false, year: "numeric", month: "2-digit",
+    day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const p = Object.fromEntries(dtf.formatToParts(new Date(guess)).map((x) => [x.type, x.value]));
+  const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  return new Date(guess - (asUTC - guess));
+}
+
+function confirmSchedule() {
+  const when = document.getElementById("schedule-when")?.value;
+  const tz = document.getElementById("schedule-tz")?.value;
+  if (!when) { toast("Pick a date and time."); return; }
+  const utc = zonedWallToUTC(when, tz);
+  if (isNaN(utc.getTime())) { toast("Invalid date."); return; }
+  document.getElementById("compose-send-at").value = utc.toISOString();
+  setSendMode("schedule");
+  const modal = document.getElementById("schedule-modal");
+  if (modal) modal.hidden = true;
+  submitCompose();
+}
+window.confirmSchedule = confirmSchedule;
+
+// Localize [data-utc] timestamps (e.g. the Drafts-page Scheduled list) to the
+// viewer's zone. Server renders a UTC fallback so no-JS still reads sensibly.
+function localizeTimes() {
+  document.querySelectorAll(".local-time[data-utc]").forEach((el) => {
+    const d = new Date(el.dataset.utc);
+    if (!isNaN(d)) el.textContent = d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  });
+}
+document.addEventListener("DOMContentLoaded", localizeTimes);
 
 // Focus management: compose opens onto the "To" field; a message opening
 // moves focus into the reading pane so keyboard/AT users land somewhere sane.
 document.addEventListener("htmx:afterSwap", (e) => {
   if (e.target && e.target.id === "compose-root" && e.target.firstElementChild) {
     initComposeEditor();
+    // Snapshot the initial state (after prefill + WYSIWYG normalization) so the
+    // close guard can tell real edits from a no-op open. Every entry point —
+    // new, reply prefill, reopened draft, undo-send — swaps here, so each gets
+    // its own clean baseline.
+    snapshotComposeBaseline();
     e.target.querySelector('[name="to"]')?.focus();
   }
   if (e.target && e.target.id === "reading-pane") {
@@ -664,9 +883,10 @@ document.addEventListener("htmx:afterSwap", (e) => {
     if (detail && detail.dataset.markReadPending) {
       // Delay configured: flip the row once the timer fires.
       scheduleMarkRead(detail);
-    } else if (detail) {
+    } else if (detail && activeFilter() !== "unread") {
       // Delay 0 (or already read): the server marked it read at open, so flip
-      // the list row now to match.
+      // the list row now to match. Under the Unread filter the server skips the
+      // read, so we must not flip the row either.
       markRowRead(detail.dataset.messageId);
     }
   }
@@ -717,6 +937,8 @@ function markRowUnread(id) {
   const subject = row.querySelector(".row-subject");
   if (subject) { subject.classList.add("text-zinc-100", "font-medium"); subject.classList.remove("text-zinc-400"); }
 }
+window.markRowUnread = markRowUnread;
+window.markRowRead = markRowRead;
 
 // Toggle a row's read/unread state in place (the POST response is ignored —
 // swapping the single-message fragment would corrupt thread rows).
@@ -804,26 +1026,29 @@ function scheduleMarkRead(detail) {
   const id = detail.dataset.messageId;
   if (!id || !(delay > 0) || !window.htmx) return;
   markReadTimer = setTimeout(() => {
-    // Only fire if this message is still the one on screen.
+    // Only fire if this message is still the one on screen, and the user hasn't
+    // switched to the Unread filter mid-read (which turns off auto-read).
     const cur = document.querySelector("#message-detail");
-    if (cur && cur.dataset.messageId === id) {
+    if (cur && cur.dataset.messageId === id && activeFilter() !== "unread") {
       htmx.ajax("POST", `/messages/${id}/read`, { swap: "none" }).then(() => markRowRead(id));
     }
   }, delay * 1000);
 }
 
-// Insert an AI-drafted textarea's contents into the compose body (shared by
-// the ai_compose_result and ai_reply_result partials, which both render a
-// textarea followed by a ".ai-insert-draft" button). Mode-aware: the WYSIWYG
-// editor takes the AI text as paragraphs; plain/markdown take it as raw text.
-document.addEventListener("click", (e) => {
-  const btn = e.target.closest(".ai-insert-draft");
-  if (!btn) return;
-  const draft = btn.previousElementSibling;
-  if (!draft || !("value" in draft)) return;
+// Insert an AI draft above the (possibly quoted) compose body, mode-aware.
+// In WYSIWYG mode `content` is a sanitized HTML fragment (isHTML=true) and goes
+// straight into the contenteditable; plain/markdown modes get raw text prepended
+// to the body textarea. The server already formats output per compose mode.
+function insertAIDraft(content, isHTML) {
   const editor = document.getElementById("compose-wysiwyg");
+  if (editor && isHTML) {
+    editor.innerHTML = content + editor.innerHTML;
+    syncComposeEditor();
+    return;
+  }
   if (editor) {
-    const html = draft.value.split(/\n{2,}/).map((p) =>
+    // plain text into a wysiwyg editor (shouldn't normally happen): paragraph-ize
+    const html = content.split(/\n{2,}/).map((p) =>
       `<p>${escapeHTML(p).replace(/\n/g, "<br>")}</p>`).join("");
     editor.innerHTML = html + editor.innerHTML;
     syncComposeEditor();
@@ -831,9 +1056,97 @@ document.addEventListener("click", (e) => {
   }
   const body = document.querySelector('#compose-form textarea[name="body"]');
   if (body) {
-    body.value = draft.value + (body.value ? "\n\n" + body.value : "");
+    body.value = content + (body.value ? "\n\n" + body.value : "");
     body.dispatchEvent(new Event("input", { bubbles: true }));
   }
+}
+
+// aiAssist drives the compose "Draft with AI" panel (partials/compose.html).
+// Replies fetch candidate directions from POST /ai/options; picking one (or the
+// free-text box) generates a formatted draft via POST /ai/draft; refine chips
+// hit POST /ai/refine. Everything is JSON; the draft is only committed to the
+// editor on "Insert", so refining never clobbers the quoted thread.
+document.addEventListener("alpine:init", () => {
+  Alpine.data("aiAssist", (init) => ({
+    kind: init.kind,
+    mode: init.mode,
+    isReply: init.kind === "reply" || init.kind === "reply_all",
+    starters: ["Follow up", "Introduction", "Thank you"],
+    open: false,
+    loading: false,
+    loadingMsg: "",
+    stage: "menu",
+    options: [],
+    showFree: false,
+    freeInput: "",
+    draft: "",
+    draftIsHTML: false,
+
+    toggle() {
+      this.open = !this.open;
+      if (this.open && this.isReply && !this.options.length && !this.loading) this.loadOptions();
+    },
+    ctx() { return this.$refs.ctx ? this.$refs.ctx.textContent.trim() : ""; },
+    subjectEl() { return document.querySelector('#compose-form [name="subject"]'); },
+
+    async post(url, body) {
+      const meta = document.querySelector('meta[name="csrf-token"]');
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "X-CSRF-Token": meta ? meta.content : "" },
+        body: new URLSearchParams(body).toString(),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "AI request failed.");
+      return data;
+    },
+
+    async loadOptions() {
+      this.loading = true; this.loadingMsg = "Reading the message…";
+      try {
+        const data = await this.post("/ai/options", { context: this.ctx() });
+        this.options = data.options || [];
+      } catch (e) { this.open = false; toast(e.message); }
+      finally { this.loading = false; }
+    },
+
+    async generate(direction) {
+      this.loading = true; this.loadingMsg = "Writing your draft…";
+      const wantSubject = !this.isReply && this.subjectEl() && !this.subjectEl().value.trim();
+      try {
+        const data = await this.post("/ai/draft", {
+          mode: this.mode,
+          context: this.isReply ? this.ctx() : "",
+          direction,
+          want_subject: wantSubject ? "1" : "0",
+        });
+        this.draft = data.draft || "";
+        this.draftIsHTML = this.mode === "html";
+        if (wantSubject && data.subject) {
+          const s = this.subjectEl();
+          s.value = data.subject;
+          s.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        this.stage = "draft";
+      } catch (e) { toast(e.message); }
+      finally { this.loading = false; }
+    },
+
+    async refine(action) {
+      this.loading = true; this.loadingMsg = "Refining…";
+      try {
+        const data = await this.post("/ai/refine", { mode: this.mode, text: this.draft, action });
+        this.draft = data.draft || this.draft;
+      } catch (e) { toast(e.message); }
+      finally { this.loading = false; }
+    },
+
+    insert() {
+      if (!this.draft.trim()) return;
+      insertAIDraft(this.draft, this.draftIsHTML);
+      this.open = false; this.stage = "menu"; this.freeInput = ""; this.showFree = false;
+    },
+  }));
 });
 
 function escapeHTML(s) {
@@ -843,16 +1156,15 @@ function escapeHTML(s) {
 }
 
 // --- WYSIWYG / markdown compose editor ---
-// Syncs the contenteditable into the hidden textarea[name=body] and fires an
-// input event so htmx's debounced autosave picks it up. Called on edit, after a
-// toolbar command, before form submit, and on AI insert.
+// Syncs the contenteditable into the hidden textarea[name=body] so the current
+// content rides along on the next save/submit. Called on edit, after a toolbar
+// command, before form submit, on AI insert, and before an explicit save.
 function syncComposeEditor() {
   const editor = document.getElementById("compose-wysiwyg");
   if (!editor) return;
   const body = document.querySelector('#compose-form textarea[name="body"]');
   if (!body) return;
   body.value = editor.innerHTML;
-  body.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
 let composeSavedRange = null;
@@ -896,7 +1208,7 @@ function initComposeEditor() {
     editor.dataset.wired = "1";
     editor.addEventListener("input", syncComposeEditor);
     editor.addEventListener("keydown", (e) => {
-      if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); editor.closest("form").requestSubmit(); }
+      if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); submitCompose(); }
     });
   }
   const toolbar = document.querySelector("[data-compose-toolbar]");
@@ -1042,15 +1354,21 @@ function toggleAbout() {
 document.addEventListener("sm:about", toggleAbout);
 
 document.addEventListener("keydown", (e) => {
-  // Ctrl+Enter sends from the compose body field (draft is already autosaved).
+  // Ctrl+Enter sends from the compose body field (submit syncs the editor).
   if (e.ctrlKey && e.key === "Enter" && e.target?.matches?.('#compose-form textarea[name="body"]')) {
-    e.target.closest("form")?.requestSubmit();
+    submitCompose();
     e.preventDefault();
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const composeRoot = document.getElementById("compose-root");
   if (e.key === "Escape" && composeRoot && composeRoot.firstElementChild) {
+    // Dismiss a stacked modal first (guard > schedule/attachment), else the
+    // guard routes the close. Only one modal is ever open at a time.
+    for (const id of ["compose-close-guard", "schedule-modal", "attach-reminder-modal"]) {
+      const m = document.getElementById(id);
+      if (m && !m.hidden) { m.hidden = true; e.preventDefault(); return; }
+    }
     closeCompose();
     e.preventDefault();
     return;
@@ -1083,3 +1401,26 @@ document.addEventListener("keydown", (e) => {
   const fn = keymap[e.key];
   if (fn && fn() !== false) e.preventDefault();
 });
+
+// --- Outgoing page: live countdown for "Sending soon" rows. Ticks every second
+// over whatever .out-countdown[data-send-at] elements are in the DOM right now,
+// so htmx list-poll swaps (which replace the rows) are picked up automatically
+// with no rebinding. No-op on pages that have none. ---
+(function () {
+  function tick() {
+    const els = document.querySelectorAll(".out-countdown[data-send-at]");
+    if (!els.length) return;
+    const now = Date.now();
+    els.forEach((el) => {
+      const t = new Date(el.dataset.sendAt).getTime();
+      if (isNaN(t)) return;
+      const s = Math.round((t - now) / 1000);
+      el.textContent = s > 0 ? `Sending in ${s}s…` : "Sending…";
+    });
+  }
+  setInterval(tick, 1000);
+  document.addEventListener("DOMContentLoaded", tick);
+  document.addEventListener("htmx:afterSwap", (e) => {
+    if (e.target && e.target.id === "outgoing-list") tick();
+  });
+})();

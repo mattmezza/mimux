@@ -11,25 +11,39 @@ var promptsFS embed.FS
 
 var prompts = template.Must(template.ParseFS(promptsFS, "prompts/*.tmpl"))
 
-func systemPrompt() string {
+func exec(name string, data any) (string, error) {
 	var buf bytes.Buffer
-	if err := prompts.ExecuteTemplate(&buf, "system.tmpl", nil); err != nil {
+	err := prompts.ExecuteTemplate(&buf, name, data)
+	return buf.String(), err
+}
+
+// systemPrompt is the format/tone/brevity/language-aware instruction shared by
+// the draft and refine calls.
+func systemPrompt(p Prefs, format string) string {
+	s, err := exec("system.tmpl", map[string]string{
+		"Format":   format,
+		"Tone":     p.Tone,
+		"Brevity":  p.Brevity,
+		"Language": p.Language,
+	})
+	if err != nil {
 		panic(err) // static template, only fails on programmer error
 	}
-	return buf.String()
+	return s
 }
 
-func composePrompt(topic string) (string, error) {
-	var buf bytes.Buffer
-	err := prompts.ExecuteTemplate(&buf, "compose.tmpl", map[string]string{"Topic": topic})
-	return buf.String(), err
+func optionsPrompt(threadContext string, n int) (string, error) {
+	return exec("options.tmpl", map[string]any{"ThreadContext": threadContext, "N": n})
 }
 
-func replyPrompt(threadContext, instructions string) (string, error) {
-	var buf bytes.Buffer
-	err := prompts.ExecuteTemplate(&buf, "reply.tmpl", map[string]string{
+func draftPrompt(threadContext, direction string, wantSubject bool) (string, error) {
+	return exec("draft.tmpl", map[string]any{
 		"ThreadContext": threadContext,
-		"Instructions":  instructions,
+		"Direction":     direction,
+		"WantSubject":   wantSubject,
 	})
-	return buf.String(), err
+}
+
+func refinePrompt(text, action string) (string, error) {
+	return exec("refine.tmpl", map[string]string{"Text": text, "Action": action})
 }

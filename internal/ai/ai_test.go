@@ -9,14 +9,14 @@ import (
 	"testing"
 )
 
-func TestCompose_Disabled(t *testing.T) {
+func TestDraft_Disabled(t *testing.T) {
 	c := &Client{Model: "test-model"}
-	if _, err := c.Compose(context.Background(), "hello"); err != ErrDisabled {
+	if _, err := c.Draft(context.Background(), "plain", "", "hello", false); err != ErrDisabled {
 		t.Fatalf("err = %v, want ErrDisabled", err)
 	}
 }
 
-func TestCompose_Success(t *testing.T) {
+func TestDraft_FreshCompose(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
 			t.Errorf("Authorization = %q", got)
@@ -26,50 +26,95 @@ func TestCompose_Success(t *testing.T) {
 		if req.Model != "test-model" || len(req.Messages) != 2 {
 			t.Errorf("unexpected request: %+v", req)
 		}
-		if !strings.Contains(req.Messages[1].Content, "vacation request") {
-			t.Errorf("prompt missing topic: %q", req.Messages[1].Content)
+		// system prompt carries the prefs + format
+		if !strings.Contains(req.Messages[0].Content, "Markdown") ||
+			!strings.Contains(req.Messages[0].Content, "friendly") ||
+			!strings.Contains(req.Messages[0].Content, "concise") {
+			t.Errorf("system prompt missing prefs/format: %q", req.Messages[0].Content)
+		}
+		if !strings.Contains(req.Messages[1].Content, "renew my domain") {
+			t.Errorf("user prompt missing topic: %q", req.Messages[1].Content)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"Dear team, ..."}}]}`))
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Subject: Domain renewal\n\nHi, please renew it."}}]}`))
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "test-key", Model: "test-model", HTTPClient: srv.Client()}
+	c := &Client{APIKey: "test-key", Model: "test-model", HTTPClient: srv.Client(),
+		Prefs: Prefs{Tone: "friendly", Brevity: "concise"}}
 	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
-	draft, err := c.Compose(context.Background(), "vacation request")
+	res, err := c.Draft(context.Background(), "markdown", "", "renew my domain", true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if draft != "Dear team, ..." {
-		t.Errorf("Compose = %q", draft)
+	if res.Subject != "Domain renewal" || res.Draft != "Hi, please renew it." {
+		t.Errorf("Draft = %+v", res)
 	}
 }
 
-func TestReply_APIError(t *testing.T) {
+func TestOptions_ParsesJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if !strings.Contains(req.Messages[1].Content, "exactly 4") {
+			t.Errorf("options prompt missing count: %q", req.Messages[1].Content)
+		}
+		// wrap the array in prose + code fence to test tolerant parsing
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"choices\":[{\"message\":{\"content\":\"Sure!\\n```json\\n[{\\\"label\\\":\\\"Accept\\\",\\\"gist\\\":\\\"Confirm attendance\\\"},{\\\"label\\\":\\\"Decline\\\",\\\"gist\\\":\\\"Politely say no\\\"}]\\n```\"}}]}"))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{ReplyOptions: 4}}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	opts, err := c.Options(context.Background(), "Are you coming?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(opts) != 2 || opts[0].Label != "Accept" || opts[1].Gist != "Politely say no" {
+		t.Errorf("Options = %+v", opts)
+	}
+}
+
+func TestRefine_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = w.Write([]byte(`{"error":{"message":"invalid key"}}`))
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "bad-key", Model: "test-model", HTTPClient: srv.Client()}
+	c := &Client{APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
 	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
-	if _, err := c.Reply(context.Background(), "thread", "be brief"); err == nil {
+	if _, err := c.Refine(context.Background(), "plain", "hello", "shorter"); err == nil {
 		t.Fatal("expected error")
 	}
 }
 
-func TestPromptTemplates(t *testing.T) {
-	if !strings.Contains(systemPrompt(), "plain-text") {
-		t.Errorf("system prompt missing expected content: %q", systemPrompt())
+func TestRefine_UnknownAction(t *testing.T) {
+	c := &Client{APIKey: "k", Model: "m"}
+	if _, err := c.Refine(context.Background(), "plain", "hi", "bogus"); err == nil {
+		t.Fatal("expected error for unknown action")
 	}
-	got, err := composePrompt("renew my domain")
-	if err != nil || !strings.Contains(got, "renew my domain") {
-		t.Errorf("composePrompt = %q, err=%v", got, err)
+}
+
+func TestSplitSubject(t *testing.T) {
+	subj, body := splitSubject("Subject: Hello there\n\nThe body.")
+	if subj != "Hello there" || body != "The body." {
+		t.Errorf("got subj=%q body=%q", subj, body)
 	}
-	got, err = replyPrompt("Alice: hi\nBob: hello", "keep it short")
-	if err != nil || !strings.Contains(got, "Alice: hi") || !strings.Contains(got, "keep it short") {
-		t.Errorf("replyPrompt = %q, err=%v", got, err)
+	if s, b := splitSubject("No subject here."); s != "" || b != "No subject here." {
+		t.Errorf("got subj=%q body=%q", s, b)
+	}
+}
+
+func TestSystemPrompt_Language(t *testing.T) {
+	auto := systemPrompt(Prefs{}.withDefaults(), "plain")
+	if !strings.Contains(auto, "same language") || !strings.Contains(auto, "plain text") {
+		t.Errorf("auto system prompt = %q", auto)
+	}
+	fixed := systemPrompt(Prefs{Language: "Italian"}.withDefaults(), "html")
+	if !strings.Contains(fixed, "Italian") || !strings.Contains(fixed, "HTML") {
+		t.Errorf("fixed system prompt = %q", fixed)
 	}
 }
 

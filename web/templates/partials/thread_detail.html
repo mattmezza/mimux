@@ -30,6 +30,7 @@
   </div>
   <div class="flex-1 overflow-y-auto divide-y divide-zinc-800">
     {{range $t.Messages}}
+    {{$msg := .}}
     {{$expanded := or (not .IsRead) (eq .ID $latest.ID)}}
     <div data-thread-msg class="{{if $expanded}}expanded{{end}}">
       <button type="button" onclick="toggleThreadMessage(this)"
@@ -56,15 +57,8 @@
         {{if .HasAttachment}}<div class="mb-2" hx-get="/messages/{{.ID}}/attachments" hx-trigger="revealed" hx-swap="outerHTML"></div>{{end}}
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
                 onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
-        <div class="mt-2 flex items-center gap-4">
-          <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
-            onclick="toggleBodyTheme(this.closest('[data-thread-body]').querySelector('iframe'))">Dark / light</button>
-          <button type="button" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors duration-150"
-            onclick="var f=this.closest('[data-thread-body]').querySelector('iframe');f.src='/messages/{{.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')">Re-fetch</button>
-          {{if $.TranslateEnabled}}
-          <button type="button" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors duration-150"
-            onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.parentElement.nextElementSibling)">Translate</button>
-          {{end}}
+        <div class="mt-2 flex items-center gap-1 flex-wrap">
+          {{range $.QAMsg}}{{template "qa_btn_m" (dict "ID" . "M" $msg "D" $)}}{{end}}
         </div>
         <div class="mt-1" data-translate-result></div>
       </div>
@@ -74,38 +68,170 @@
 </div>
 {{end}}
 
-{{/* qa_btn_t renders one quick action for a thread header (the subset that
-     makes sense thread-wide; the server filters the id lists). Context:
+{{/* qa_btn_t renders one quick action for a thread header. Mirrors qa_btn's
+     markup/styling exactly, but acts on the thread's LATEST message ($latest)
+     and targets the thread row (msg-{RootID}) for list-side updates. Context:
      dict ID=<action id> D=<thread_detail data> Menu=<bool>. */}}
 {{define "qa_btn_t"}}
 {{- $d := .D}}{{$t := $d.Thread}}{{$latest := $d.Latest}}{{$menu := .Menu -}}
-{{- $btn := "p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" -}}
+{{- $btn := "p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 transition-colors duration-150" -}}
 {{- $ic := "w-4 h-4" -}}
 {{- if $menu -}}
-  {{- $btn = "qa-menu-item w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700/60 transition-colors duration-150 text-left whitespace-nowrap" -}}
+  {{- $btn = "qa-menu-item w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/60 transition-colors duration-150 text-left whitespace-nowrap" -}}
   {{- $ic = "w-4 h-4 shrink-0" -}}
 {{- end -}}
 {{if eq .ID "reply"}}
-<button title="Reply (R)" aria-label="Reply" hx-get="/compose?reply={{$latest.ID}}&mode=reply" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}}">
+<button title="Reply (R)" aria-label="Reply" hx-get="/compose?reply={{$latest.ID}}&mode=reply" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 6 6v3"/></svg>
   {{if $menu}}<span>Reply</span>{{end}}
 </button>
 {{else if eq .ID "replyall"}}
-<button title="Reply all (A)" aria-label="Reply all" hx-get="/compose?reply={{$latest.ID}}&mode=all" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}}">
+<button title="Reply all (A)" aria-label="Reply all" hx-get="/compose?reply={{$latest.ID}}&mode=all" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 17 5 12l5-5M15 17l-5-5 5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h9a5 5 0 0 1 5 5v1"/></svg>
   {{if $menu}}<span>Reply all</span>{{end}}
 </button>
 {{else if eq .ID "forward"}}
-<button title="Forward (F)" aria-label="Forward" hx-get="/compose?reply={{$latest.ID}}&mode=forward" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}}">
+<button title="Forward (F)" aria-label="Forward" hx-get="/compose?reply={{$latest.ID}}&mode=forward" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H8a6 6 0 0 0-6 6v3"/></svg>
   {{if $menu}}<span>Forward</span>{{end}}
 </button>
 {{else if eq .ID "archive"}}
 <button title="Archive (e)" aria-label="Archive" hx-post="/messages/{{$latest.ID}}/archive" hx-swap="none"
   hx-on::after-request="closeReadingPane();removeRowAnimated(document.getElementById('msg-{{$t.RootID}}'));toastUndo('Archived','{{$latest.ID}}','{{$latest.FolderID}}')"
-  class="{{$btn}}">
+  class="{{$btn}} hover:text-zinc-100">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m6 4.125 2.25 2.25m0 0 2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/></svg>
   {{if $menu}}<span>Archive</span>{{end}}
+</button>
+{{else if eq .ID "star"}}
+{{/* NOTE: swap="none" + toggleStarBtn — the /star endpoint returns a
+     single-message_row that would clobber the thread <li>; the header button
+     flips visually, the list row's star indicator refreshes on next list load. */}}
+<button title="{{if $latest.IsStarred}}Unstar{{else}}Star{{end}} (s)" aria-label="{{if $latest.IsStarred}}Unstar{{else}}Star{{end}}"
+  hx-post="/messages/{{$latest.ID}}/{{if $latest.IsStarred}}unstar{{else}}star{{end}}" hx-swap="none"
+  hx-on::after-request="toggleStarBtn(this)"
+  class="star-btn {{$btn}} hover:text-amber-400{{if $latest.IsStarred}} text-amber-400{{end}}">
+  <svg class="{{$ic}}" fill="{{if $latest.IsStarred}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.5a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z"/></svg>
+  {{if $menu}}<span>{{if $latest.IsStarred}}Unstar{{else}}Star{{end}}</span>{{end}}
+</button>
+{{else if eq .ID "unread"}}
+{{/* NOTE: swap="none" + markRow* — same reason as star; matches the
+     single-message view (no pane close). State-aware like message_detail:
+     under the Unread quick filter the latest opens still-unread, so offer
+     Mark read instead. */}}
+<button title="Mark {{if $latest.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $latest.IsRead}}unread{{else}}read{{end}}"
+  hx-post="/messages/{{$latest.ID}}/{{if $latest.IsRead}}unread{{else}}read{{end}}" hx-swap="none"
+  hx-on::after-request="{{if $latest.IsRead}}markRowUnread{{else}}markRowRead{{end}}('{{$t.RootID}}')" class="{{$btn}} hover:text-indigo-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
+  {{if $menu}}<span>Mark {{if $latest.IsRead}}unread{{else}}read{{end}}</span>{{end}}
+</button>
+{{else if eq .ID "dark"}}
+<button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"
+  onclick="document.querySelectorAll('#message-detail [data-thread-body] iframe').forEach(function(f){toggleBodyTheme(f)})"
+  class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/></svg>
+  {{if $menu}}<span>Dark / light message</span>{{end}}
+</button>
+{{else if eq .ID "translate"}}
+<button type="button" title="Translate" aria-label="Translate"
+  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)translateFrame(f,f.closest('[data-thread-body]').querySelector('[data-translate-result]'))"
+  class="{{$btn}} hover:text-indigo-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
+  {{if $menu}}<span>Translate</span>{{end}}
+</button>
+{{else if eq .ID "refetch"}}
+<button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"
+  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)f.src='/messages/{{$latest.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')"
+  class="{{$btn}} hover:text-sky-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+  {{if $menu}}<span>Re-fetch from server</span>{{end}}
+</button>
+{{else if eq .ID "spam"}}
+<button title="Spam (!)" aria-label="Mark as spam" hx-post="/messages/{{$latest.ID}}/spam" hx-swap="none"
+  hx-on::after-request="closeReadingPane();removeRowAnimated(document.getElementById('msg-{{$t.RootID}}'));toastUndo('Marked as spam','{{$latest.ID}}','{{$latest.FolderID}}')"
+  class="{{$btn}} hover:text-orange-400">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
+  {{if $menu}}<span>Mark as spam</span>{{end}}
+</button>
+{{else if eq .ID "delete"}}
+<button title="Delete (d)" aria-label="Delete" hx-post="/messages/{{$latest.ID}}/delete" hx-swap="none"
+  hx-on::after-request="closeReadingPane();removeRowAnimated(document.getElementById('msg-{{$t.RootID}}'));toastUndo('Deleted','{{$latest.ID}}','{{$latest.FolderID}}')"
+  class="{{$btn}} hover:text-red-400">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
+  {{if $menu}}<span>Delete</span>{{end}}
+</button>
+{{end}}
+{{end}}
+
+{{/* qa_btn_m renders one quiet icon button for a SPECIFIC message inside a
+     thread (the expanded-message footer row). Same markup/accents as qa_btn's
+     bar buttons, but everything acts on $m (this message). dark/refetch/
+     translate use this.closest('[data-thread-body]') so they hit their own
+     iframe. spam/delete drop this message's block (undo toast) — the thread
+     list row stays. Context: dict ID=<action id> M=<message> D=<thread data>. */}}
+{{define "qa_btn_m"}}
+{{- $m := .M}}{{$d := .D}}{{$t := $d.Thread -}}
+{{- $btn := "p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 transition-colors duration-150" -}}
+{{- $ic := "w-4 h-4" -}}
+{{if eq .ID "reply"}}
+<button title="Reply (R)" aria-label="Reply" hx-get="/compose?reply={{$m.ID}}&mode=reply" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 15 3 9m0 0 6-6M3 9h12a6 6 0 0 1 6 6v3"/></svg>
+</button>
+{{else if eq .ID "replyall"}}
+<button title="Reply all (A)" aria-label="Reply all" hx-get="/compose?reply={{$m.ID}}&mode=all" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10 17 5 12l5-5M15 17l-5-5 5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M5 12h9a5 5 0 0 1 5 5v1"/></svg>
+</button>
+{{else if eq .ID "forward"}}
+<button title="Forward (F)" aria-label="Forward" hx-get="/compose?reply={{$m.ID}}&mode=forward" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H8a6 6 0 0 0-6 6v3"/></svg>
+</button>
+{{else if eq .ID "star"}}
+{{/* NOTE: swap="none" + toggleStarBtn — starring a non-latest message
+     can't cleanly repaint the thread list row; the button flips locally, the
+     row's star indicator refreshes on next list load. */}}
+<button title="{{if $m.IsStarred}}Unstar{{else}}Star{{end}} (s)" aria-label="{{if $m.IsStarred}}Unstar{{else}}Star{{end}}"
+  hx-post="/messages/{{$m.ID}}/{{if $m.IsStarred}}unstar{{else}}star{{end}}" hx-swap="none"
+  hx-on::after-request="toggleStarBtn(this)"
+  class="star-btn {{$btn}} hover:text-amber-400{{if $m.IsStarred}} text-amber-400{{end}}">
+  <svg class="{{$ic}}" fill="{{if $m.IsStarred}}currentColor{{else}}none{{end}}" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.5a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z"/></svg>
+</button>
+{{else if eq .ID "unread"}}
+{{/* State-aware per message. Marking unread bolds the thread's list row;
+     marking read doesn't flip it (siblings may still be unread — the next
+     list refresh reconciles). */}}
+<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}"
+  hx-post="/messages/{{$m.ID}}/{{if $m.IsRead}}unread{{else}}read{{end}}" hx-swap="none"
+  hx-on::after-request="{{if $m.IsRead}}markRowUnread('{{$t.RootID}}'){{end}}" class="{{$btn}} hover:text-indigo-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
+</button>
+{{else if eq .ID "dark"}}
+<button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"
+  onclick="toggleBodyTheme(this.closest('[data-thread-body]').querySelector('iframe'))"
+  class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"/></svg>
+</button>
+{{else if eq .ID "translate"}}
+<button type="button" title="Translate" aria-label="Translate"
+  onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.closest('[data-thread-body]').querySelector('[data-translate-result]'))"
+  class="{{$btn}} hover:text-indigo-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
+</button>
+{{else if eq .ID "refetch"}}
+<button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"
+  onclick="var f=this.closest('[data-thread-body]').querySelector('iframe');f.src='/messages/{{$m.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')"
+  class="{{$btn}} hover:text-sky-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+</button>
+{{else if eq .ID "spam"}}
+<button title="Spam (!)" aria-label="Mark as spam" hx-post="/messages/{{$m.ID}}/spam" hx-swap="none"
+  hx-on::after-request="removeRowAnimated(this.closest('[data-thread-msg]'));toastUndo('Marked as spam','{{$m.ID}}','{{$m.FolderID}}')"
+  class="{{$btn}} hover:text-orange-400">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z"/></svg>
+</button>
+{{else if eq .ID "delete"}}
+<button title="Delete (d)" aria-label="Delete" hx-post="/messages/{{$m.ID}}/delete" hx-swap="none"
+  hx-on::after-request="removeRowAnimated(this.closest('[data-thread-msg]'));toastUndo('Deleted','{{$m.ID}}','{{$m.FolderID}}')"
+  class="{{$btn}} hover:text-red-400">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
 </button>
 {{end}}
 {{end}}

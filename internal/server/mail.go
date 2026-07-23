@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"html"
 	"html/template"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +28,8 @@ var templateFuncs = template.FuncMap{
 	"avatarInitials": mail.AvatarInitials,
 	"faviconURL":     mail.FaviconURL,
 	"relTime":        relTime,
+	"untilTime":      untilTime,
+	"outSnippet":     outSnippet,
 	"folderLabel":    folderLabel,
 	"messageLabels":  mail.MessageLabels,
 	"dict":           dict,
@@ -91,8 +95,34 @@ func (s *Server) quickActionLists(pref string, supported map[string]bool) (bar, 
 	return keep(bar), keep(menu)
 }
 
-// threadQuickActions are the ids that make sense on a whole-thread header.
-var threadQuickActions = map[string]bool{"reply": true, "replyall": true, "forward": true, "archive": true}
+// threadMsgActions builds the per-message action row shown in each expanded
+// thread message: the configured-visible actions (bar then menu order) except
+// archive, with dark, refetch and translate(when enabled) always included —
+// they replace the old per-message text-link footer, so they show even if the
+// user placed them Hidden. NOTE: bar∪menu order, not a separate pref.
+func threadMsgActions(bar, menu []string, translate bool) []string {
+	seen := map[string]bool{"archive": true}
+	var out []string
+	add := func(id string) {
+		if seen[id] {
+			return
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	for _, id := range bar {
+		add(id)
+	}
+	for _, id := range menu {
+		add(id)
+	}
+	add("dark")
+	add("refetch")
+	if translate {
+		add("translate")
+	}
+	return out
+}
 
 // accountAliases maps account name -> its configured alias addresses, set once
 // at server construction (setAccountAliases). Lets the pure receivedAlias
@@ -269,25 +299,30 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	// honoring the mark-read delay the same way as handleMessage.
 	prefs := s.store.GetPrefs()
 	latest := thread.LatestMessage()
-	wasUnread := !latest.IsRead
+	// Under the Unread quick filter the client asks us not to auto-read on open
+	// (X-SM-No-Auto-Read); marking becomes fully manual there.
+	noAutoRead := r.Header.Get("X-SM-No-Auto-Read") == "1"
+	wasUnread := !latest.IsRead && !noAutoRead
 	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(latest.ID, true)
 		_ = s.store.RecountUnread(latest.FolderID)
 		msgCopy := latest
 		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, &msgCopy, true) })
 	}
-	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, threadQuickActions)
+	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
+	translateOn := s.store.GetAppConfig().TranslateAPIKey != ""
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
 		"Latest":           latest,
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
-		"TranslateEnabled": s.store.GetAppConfig().TranslateAPIKey != "",
+		"TranslateEnabled": translateOn,
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
 		"QABar":            qaBar,
 		"QAMenu":           qaMenu,
+		"QAMsg":            threadMsgActions(qaBar, qaMenu, translateOn),
 	})
 }
 
@@ -298,9 +333,11 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Opening marks the message read. With a mark-read delay configured, the
 	// client schedules the read after N seconds instead (see app.js); at delay 0
-	// we mark it now (locally + on the server in the background).
+	// we mark it now (locally + on the server in the background). Under the Unread
+	// quick filter the client sends X-SM-No-Auto-Read so opening never marks read
+	// (neither now nor via MarkReadPending) — marking is fully manual there.
 	prefs := s.store.GetPrefs()
-	wasUnread := !msg.IsRead
+	wasUnread := !msg.IsRead && r.Header.Get("X-SM-No-Auto-Read") != "1"
 	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(msg.ID, true)
 		_ = s.store.RecountUnread(msg.FolderID)
@@ -575,4 +612,37 @@ func relTime(t time.Time) string {
 	default:
 		return t.Format("Jan 2006")
 	}
+}
+
+// untilTime is relTime's future-facing twin: a coarse "in N …" label for a
+// scheduled send. The live per-second countdown for imminent sends is done
+// client-side (app.js); this is the human label for anything further out.
+func untilTime(t time.Time) string {
+	d := time.Until(t)
+	switch {
+	case d < 30*time.Second:
+		return "now"
+	case d < time.Hour:
+		return "in " + strconv.Itoa(int(d.Minutes())+1) + " min"
+	case d < 24*time.Hour:
+		return "in " + strconv.Itoa(int(d.Hours())) + "h"
+	case d < 48*time.Hour:
+		return "tomorrow"
+	default:
+		return "in " + strconv.Itoa(int(d.Hours()/24)) + " days"
+	}
+}
+
+var tagRe = regexp.MustCompile(`<[^>]*>`)
+
+// outSnippet renders a short plain-text preview of an outbox body (which may be
+// HTML, markdown or plain). NOTE: a crude tag-strip + whitespace-collapse,
+// not a real HTML parse — good enough for a one-line queue preview.
+func outSnippet(body string) string {
+	s := html.UnescapeString(tagRe.ReplaceAllString(body, " "))
+	s = strings.Join(strings.Fields(s), " ")
+	if len(s) > 100 {
+		s = strings.TrimSpace(s[:100]) + "…"
+	}
+	return s
 }

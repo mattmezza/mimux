@@ -55,6 +55,11 @@
   {{end}}
   {{if .TranslateEnabled}}<div id="translate-result" data-translate-result class="shrink-0 empty:hidden border-b border-zinc-800"></div>{{end}}
   {{if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
+  {{/* Calendar invite card. Always lazy-loaded — whether a message carries an
+       inline text/calendar part is only known after parsing its body; the
+       endpoint reuses the cached parsed body (no extra IMAP fetch) and renders
+       empty when there's no invite. */}}
+  <div hx-get="/messages/{{$m.ID}}/invite" hx-trigger="load" hx-swap="outerHTML"></div>
   <iframe id="body-frame" onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" src="/messages/{{$m.ID}}/body"
           class="flex-1 w-full border-0 bg-white" title="Message body"></iframe>
   {{if .Unsub.Kind}}
@@ -132,10 +137,12 @@
   {{if $menu}}<span>{{if $m.IsStarred}}Unstar{{else}}Star{{end}}</span>{{end}}
 </button>
 {{else if eq .ID "unread"}}
-<button title="Mark unread (u)" aria-label="Mark unread" hx-post="/messages/{{$m.ID}}/unread" hx-target="#msg-{{$m.ID}}" hx-swap="outerHTML"
+{{/* State-aware: normally a message is read on open so this marks it unread;
+     under the Unread filter it opens still-unread, so it offers Mark read. */}}
+<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}" hx-post="/messages/{{$m.ID}}/{{if $m.IsRead}}unread{{else}}read{{end}}" hx-target="#msg-{{$m.ID}}" hx-swap="outerHTML"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
-  {{if $menu}}<span>Mark unread</span>{{end}}
+  {{if $menu}}<span>Mark {{if $m.IsRead}}unread{{else}}read{{end}}</span>{{end}}
 </button>
 {{else if eq .ID "dark"}}
 <button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"
