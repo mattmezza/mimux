@@ -8,7 +8,7 @@
     class="hidden md:inline-flex -ml-1.5 p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150">
     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 5.25h16.5v13.5H3.75zM9 5.25v13.5"/></svg>
   </button>
-  <a href="/" class="flex items-center gap-2 shrink-0">
+  <a href="/" class="hidden md:flex items-center gap-2 shrink-0">
     <img src="/static/icons/favicon.svg" alt="SM" class="w-6 h-6">
   </a>
   <div class="flex-1 flex justify-center">
@@ -23,11 +23,11 @@
              hx-get="/search/suggest" hx-trigger="input changed delay:150ms, focus"
              hx-target="#search-suggest" hx-swap="innerHTML" hx-include="#search-form"
              hx-on:focus="document.getElementById('search-suggest').classList.remove('hidden')"
-             class="flex-1 bg-transparent px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none">
+             class="flex-1 min-w-0 bg-transparent px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none">
       <div id="search-suggest" class="hidden absolute top-full left-0 right-0 mt-1 z-50 rounded-md bg-zinc-900 border border-zinc-700 shadow-xl max-h-96 overflow-y-auto"></div>
     </form>
   </div>
-  <div class="flex items-center gap-2 shrink-0">
+  <div class="hidden md:flex items-center gap-2 shrink-0">
     <a href="/settings" title="Settings" aria-label="Settings" class="p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150">
       <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.343 3.94c.09-.542.56-.94 1.11-.94h1.093c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 0 1 1.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.559.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.894.149c-.424.07-.764.383-.929.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 0 1-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 0 1-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.506-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 0 1 .12-1.45l.773-.773a1.125 1.125 0 0 1 1.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"/></svg>
     </a>

@@ -1,6 +1,6 @@
 {{define "statusbar"}}
 <footer id="statusbar" hx-get="/statusbar" hx-trigger="sm:sync from:body, every 60s" hx-swap="outerHTML"
-        class="h-6 shrink-0 flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-[11px] text-zinc-500">
+        class="h-6 shrink-0 hidden md:flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-[11px] text-zinc-500">
   <span id="sync-status" class="flex items-center gap-3">
     {{range .Statuses}}
     <span class="flex items-center gap-1.5" title="{{.Message}}">
