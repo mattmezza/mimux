@@ -940,6 +940,61 @@ function markRowUnread(id) {
 window.markRowUnread = markRowUnread;
 window.markRowRead = markRowRead;
 
+// Flip one thread-detail message block's read indicator in place (dot + bold),
+// mirroring markRowRead/Unread but for thread_detail's markup.
+function setThreadMsgRead(block, read) {
+  if (!block || read === !block.hasAttribute("data-unread")) return;
+  const sender = block.querySelector(".thread-sender");
+  if (read) {
+    block.removeAttribute("data-unread");
+    block.querySelector(".thread-unread-dot")?.remove();
+    if (sender) { sender.classList.remove("text-zinc-100", "font-semibold"); sender.classList.add("text-zinc-300"); }
+  } else {
+    block.setAttribute("data-unread", "");
+    const hdr = block.querySelector(".thread-msg-hdr");
+    if (hdr && !hdr.querySelector(".thread-unread-dot")) {
+      const dot = document.createElement("span");
+      dot.className = "thread-unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0";
+      hdr.insertBefore(dot, hdr.firstElementChild);
+    }
+    if (sender) { sender.classList.add("text-zinc-100", "font-semibold"); sender.classList.remove("text-zinc-300"); }
+  }
+}
+
+// Recompute the thread's list row from the pane: unread iff any message unread.
+// The pane root (#message-detail) carries data-message-id === thread RootID.
+function syncThreadRow(pane) {
+  const rootId = pane && pane.dataset.messageId;
+  if (!rootId) return;
+  if (pane.querySelector("[data-thread-msg][data-unread]")) markRowUnread(rootId);
+  else markRowRead(rootId);
+}
+
+// Thread header "Mark thread read/unread": flip every message in the pane and
+// persist each change, then repaint the row. NOTE: one POST per changed
+// message — threads are small; a bulk endpoint would need a thread_id the store
+// doesn't have (threading is derived from headers at render time).
+function markThreadRead(read) {
+  const pane = document.getElementById("message-detail");
+  if (!pane || !window.htmx) return;
+  pane.querySelectorAll("[data-thread-msg]").forEach((block) => {
+    if (read === !block.hasAttribute("data-unread")) return; // already in desired state
+    const id = block.dataset.msgId;
+    setThreadMsgRead(block, read);
+    if (id) htmx.ajax("POST", `/messages/${id}/${read ? "read" : "unread"}`, { swap: "none" });
+  });
+  syncThreadRow(pane);
+}
+
+// Per-message read/unread inside a thread (the POST is declarative on the
+// button; here we just reflect it in the pane + row).
+function onThreadMsgToggled(btn, read) {
+  setThreadMsgRead(btn.closest("[data-thread-msg]"), read);
+  syncThreadRow(document.getElementById("message-detail"));
+}
+window.markThreadRead = markThreadRead;
+window.onThreadMsgToggled = onThreadMsgToggled;
+
 // Toggle a row's read/unread state in place (the POST response is ignored —
 // swapping the single-message fragment would corrupt thread rows).
 function toggleRowRead(row) {
