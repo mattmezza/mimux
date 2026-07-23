@@ -179,7 +179,17 @@ function cycleScope() {
   input.value = next;
   pill.textContent = next;
 }
-document.getElementById("scope-pill")?.addEventListener("click", cycleScope);
+// #11: on iOS Safari, tapping this button right after the adjacent search
+// input had focus can blur the input without firing "click" (the tap is
+// swallowed as a focus-dismiss gesture), so the pill looks unresponsive on
+// mobile. Handle touchend directly and skip the synthesized click that would
+// otherwise double-fire cycleScope().
+(function () {
+  const pill = document.getElementById("scope-pill");
+  if (!pill) return;
+  pill.addEventListener("click", cycleScope);
+  pill.addEventListener("touchend", (e) => { e.preventDefault(); cycleScope(); });
+})();
 
 // Keep the search form's folder context in sync with the visible list.
 function syncSearchFolder() {
