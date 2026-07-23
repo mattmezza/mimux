@@ -643,12 +643,25 @@ document.addEventListener("dblclick", (e) => {
 // double-tap window: a second tap within it cancels the open and toggles
 // read/unread instead; otherwise the held tap opens the message as normal.
 // Desktop mouse clicks never fire touchend, so this doesn't touch that path.
+// A touch that moved more than MOVE_THRESHOLD px between start and end is a
+// scroll/drag, not a tap — ignored entirely so lifting a finger mid-scroll
+// doesn't open whatever row happens to be underneath.
 (function () {
   const DOUBLE_TAP_MS = 300;
+  const MOVE_THRESHOLD = 10;
   let pendingRow = null, pendingTimer = null;
+  let startX = 0, startY = 0;
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0];
+    if (!t) return;
+    startX = t.clientX;
+    startY = t.clientY;
+  }, { passive: true });
   document.addEventListener("touchend", (e) => {
     const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
     if (!row || (e.target.closest && e.target.closest(".star-btn"))) return;
+    const t = e.changedTouches[0];
+    if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > MOVE_THRESHOLD) return;
     e.preventDefault(); // suppress the synthesized click; we drive it ourselves
     if (pendingRow === row) {
       clearTimeout(pendingTimer);
