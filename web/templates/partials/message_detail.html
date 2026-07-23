@@ -17,6 +17,10 @@
           {{if $m.CcAddresses}}<div><span class="text-zinc-500">Cc</span> {{$m.CcAddresses}}</div>{{end}}
           {{with receivedAlias $m.Account $m.ToAddresses $m.CcAddresses}}<div><span class="text-zinc-500">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
           <div class="text-zinc-500">{{$m.Date.Format "Mon, 2 Jan 2006 15:04"}}</div>
+          {{if .Unsub.Kind}}
+          <div><button type="button" class="text-zinc-500 hover:text-red-400 underline decoration-dotted underline-offset-2"
+            onclick="document.getElementById('unsub-modal-{{$m.ID}}').hidden=false">Unsubscribe</button></div>
+          {{end}}
         </div>
       </div>
       <div class="w-full md:w-auto shrink-0 flex flex-wrap items-center justify-end gap-1">
@@ -90,5 +94,31 @@
   {{if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
   <iframe id="body-frame" onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" src="/messages/{{$m.ID}}/body"
           class="flex-1 w-full border-0 bg-white" title="Message body"></iframe>
+  {{if .Unsub.Kind}}
+  <div id="unsub-modal-{{$m.ID}}" hidden
+       class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
+       onclick="this.hidden = true">
+    <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm" onclick="event.stopPropagation()">
+      <h2 class="text-zinc-100 font-semibold mb-2">Unsubscribe from this sender?</h2>
+      <p class="text-zinc-400 text-xs mb-4">
+        {{if eq .Unsub.Kind "one-click"}}This sends a one-click unsubscribe request to {{.Unsub.URL}}.
+        {{else if eq .Unsub.Kind "mailto"}}This sends an unsubscribe email to {{.Unsub.Mailto}}.
+        {{else}}This opens the sender's unsubscribe page in a new tab.{{end}}
+      </p>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+          onclick="document.getElementById('unsub-modal-{{$m.ID}}').hidden = true">Cancel</button>
+        {{if eq .Unsub.Kind "link"}}
+        <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-red-600 hover:bg-red-500 text-white"
+          onclick="window.open('{{.Unsub.URL}}', '_blank', 'noopener'); document.getElementById('unsub-modal-{{$m.ID}}').hidden = true">Unsubscribe</button>
+        {{else}}
+        <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-red-600 hover:bg-red-500 text-white"
+          hx-post="/messages/{{$m.ID}}/unsubscribe" hx-swap="none"
+          onclick="document.getElementById('unsub-modal-{{$m.ID}}').hidden = true">Unsubscribe</button>
+        {{end}}
+      </div>
+    </div>
+  </div>
+  {{end}}
 </div>
 {{end}}

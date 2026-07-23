@@ -247,6 +247,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		allow, _ = s.store.SenderAllowsExternal(msg.FromAddress)
 	}
 	_, blocked, err := s.mail.Body(r.Context(), msg, allow, false)
+	unsub, _ := s.mail.UnsubscribeInfo(r.Context(), msg)
 	s.renderPartial(w, "message_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Msg":              msg,
@@ -258,6 +259,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"TranslateEnabled": s.cfg.Translate.APIKey != "",
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
+		"Unsub":            unsub,
 	})
 }
 
@@ -416,6 +418,27 @@ func (s *Server) handleAllowSender(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg.FromAddress != "" {
 		_ = s.store.SetSenderAllowsExternal(msg.FromAddress, true)
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleUnsubscribe performs the server-side half of a one-click/mailto
+// unsubscribe (link-only unsubscribes are opened client-side and never post
+// here) and reports the result as a toast over the existing SSE channel.
+func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	info, err := s.mail.UnsubscribeInfo(r.Context(), msg)
+	if err != nil || info.Kind == mail.UnsubNone || info.Kind == mail.UnsubLink {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if err := s.mail.Unsubscribe(r.Context(), msg, info); err != nil {
+		s.mail.Toast("Unsubscribe failed: " + err.Error())
+	} else {
+		s.mail.Toast("Unsubscribed")
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

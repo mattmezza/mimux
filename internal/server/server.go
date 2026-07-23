@@ -156,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/messages/{id}/spam", s.handleMove("spam"))
 		r.Post("/messages/{id}/undo-move", s.handleUndoMove)
 		r.Post("/messages/{id}/allow-sender", s.handleAllowSender)
+		r.Post("/messages/{id}/unsubscribe", s.handleUnsubscribe)
 		r.Get("/compose", s.handleComposeNew)
 		r.Post("/compose", s.handleComposeSend)
 		r.Post("/compose/draft", s.handleComposeDraftSave)
