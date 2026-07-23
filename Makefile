@@ -58,8 +58,7 @@ setup: ## Install development dependencies
 	go install github.com/air-verse/air@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	npm install
-	cp -n config.example.toml config.toml 2>/dev/null || true
-	@echo "Done. Edit config.toml and run 'make dev'."
+	@echo "Done. Run 'make dev' — SM boots with zero config; add accounts from Settings → Accounts."
 
 .PHONY: help
 help: ## Show this help

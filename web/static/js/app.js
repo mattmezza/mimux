@@ -326,6 +326,15 @@ window.removeRowAnimated = removeRowAnimated;
 function closeReadingPane() {
   const rp = document.getElementById("reading-pane");
   if (rp) rp.innerHTML = '<p id="reading-pane-empty">Select a message to read it here.</p>';
+  // Opening a thread pushes ?t=<id>&src=<src> (bookmarkable); drop it now so a
+  // refresh on the list reloads the list, not the closed message.
+  const p = new URLSearchParams(location.search);
+  if (p.has("t")) {
+    p.delete("t");
+    p.delete("src");
+    const qs = p.toString();
+    history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : ""));
+  }
 }
 window.closeReadingPane = closeReadingPane;
 
@@ -523,7 +532,74 @@ window.applyBodyTheme = function (frame) {
     if (saved) wantDark = saved === "dark";
   }
   doc.documentElement.classList.toggle("sm-dark", wantDark);
+  fitBodyWidth(frame);
+  setupBodyZoom(frame);
 };
+
+// --- email body zoom: fit-to-width by default, pinch / ctrl+wheel to zoom ---
+// Transform-based, NOT CSS zoom (zoom on the iframe's <html> crushed layouts
+// on mobile engines — see 9e45774): scale the body from the top-left and widen
+// its layout box by the inverse, so the visual width always equals the iframe
+// width. Zooming in narrows the layout width, so text reflows larger instead
+// of forcing horizontal panning.
+function bodyZoom(frame, scale) {
+  const doc = frame.contentDocument;
+  if (!doc || !doc.body) return;
+  frame.dataset.zoom = scale;
+  const b = doc.body;
+  if (Math.abs(scale - 1) < 0.001) {
+    b.style.transform = b.style.width = b.style.boxSizing = doc.documentElement.style.height = "";
+    return;
+  }
+  b.style.transformOrigin = "0 0";
+  b.style.transform = "scale(" + scale + ")";
+  b.style.boxSizing = "border-box";
+  b.style.width = 100 / scale + "%";
+  // The layout height doesn't scale with the transform; clamp the document to
+  // the visual height so zooming out doesn't leave a dead scroll area.
+  doc.documentElement.style.height = b.getBoundingClientRect().height + "px";
+}
+function fitBodyWidth(frame) {
+  const doc = frame.contentDocument;
+  if (!doc || !doc.body || !frame.clientWidth) return;
+  bodyZoom(frame, 1); // reset so the natural width is measurable
+  const fit = Math.min(1, frame.clientWidth / doc.documentElement.scrollWidth);
+  frame.dataset.fitZoom = fit;
+  if (fit < 1) bodyZoom(frame, fit);
+}
+function setupBodyZoom(frame) {
+  const doc = frame.contentDocument;
+  if (!doc) return;
+  // Listeners go on each freshly loaded document, so re-loads never stack.
+  const clamp = (z) => Math.min(4, Math.max(+frame.dataset.fitZoom || 1, z));
+  doc.addEventListener("wheel", (e) => {
+    if (!e.ctrlKey) return; // plain scrolling stays scrolling
+    e.preventDefault();
+    bodyZoom(frame, clamp((+frame.dataset.zoom || 1) * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+  }, { passive: false });
+  let pinch = null;
+  const dist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  doc.addEventListener("touchstart", (e) => {
+    if (e.touches.length === 2) pinch = { d: dist(e), z: +frame.dataset.zoom || 1 };
+  }, { passive: true });
+  doc.addEventListener("touchmove", (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault(); // keep the page itself from scrolling/zooming
+    bodyZoom(frame, clamp(pinch.z * (dist(e) / pinch.d)));
+  }, { passive: false });
+  doc.addEventListener("touchend", () => { pinch = null; });
+}
+// Re-fit on rotation/resize (e.g. phone flipped landscape), debounced since
+// resize fires continuously while dragging a desktop window.
+let fitResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(fitResizeTimer);
+  fitResizeTimer = setTimeout(() => {
+    document.querySelectorAll('iframe[src*="/body"]').forEach((f) => {
+      if (f.contentDocument) fitBodyWidth(f);
+    });
+  }, 150);
+});
 // The detail-pane star button posts to /star or /unstar and syncs the
 // matching list row (hx-target/hx-swap above), but the button itself isn't
 // part of that swapped fragment — flip its own state here so the next click
@@ -579,6 +655,7 @@ window.closeCompose = closeCompose;
 // moves focus into the reading pane so keyboard/AT users land somewhere sane.
 document.addEventListener("htmx:afterSwap", (e) => {
   if (e.target && e.target.id === "compose-root" && e.target.firstElementChild) {
+    initComposeEditor();
     e.target.querySelector('[name="to"]')?.focus();
   }
   if (e.target && e.target.id === "reading-pane") {
@@ -593,6 +670,14 @@ document.addEventListener("htmx:afterSwap", (e) => {
       markRowRead(detail.dataset.messageId);
     }
   }
+});
+
+// "⋯" quick-action menus (details/summary): close on outside click, and after
+// a menu action is chosen (native behavior would leave them hanging open).
+document.addEventListener("click", (e) => {
+  document.querySelectorAll("details.msg-actions-more[open]").forEach((d) => {
+    if (!d.contains(e.target) || e.target.closest(".msg-actions-more-menu button")) d.removeAttribute("open");
+  });
 });
 
 // Flip a list row from unread to read in place: drop the dot, un-bold the text,
@@ -729,17 +814,139 @@ function scheduleMarkRead(detail) {
 
 // Insert an AI-drafted textarea's contents into the compose body (shared by
 // the ai_compose_result and ai_reply_result partials, which both render a
-// textarea followed by a ".ai-insert-draft" button).
+// textarea followed by a ".ai-insert-draft" button). Mode-aware: the WYSIWYG
+// editor takes the AI text as paragraphs; plain/markdown take it as raw text.
 document.addEventListener("click", (e) => {
   const btn = e.target.closest(".ai-insert-draft");
   if (!btn) return;
   const draft = btn.previousElementSibling;
+  if (!draft || !("value" in draft)) return;
+  const editor = document.getElementById("compose-wysiwyg");
+  if (editor) {
+    const html = draft.value.split(/\n{2,}/).map((p) =>
+      `<p>${escapeHTML(p).replace(/\n/g, "<br>")}</p>`).join("");
+    editor.innerHTML = html + editor.innerHTML;
+    syncComposeEditor();
+    return;
+  }
   const body = document.querySelector('#compose-form textarea[name="body"]');
-  if (body && draft && "value" in draft) {
-    body.value = draft.value;
+  if (body) {
+    body.value = draft.value + (body.value ? "\n\n" + body.value : "");
     body.dispatchEvent(new Event("input", { bubbles: true }));
   }
 });
+
+function escapeHTML(s) {
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// --- WYSIWYG / markdown compose editor ---
+// Syncs the contenteditable into the hidden textarea[name=body] and fires an
+// input event so htmx's debounced autosave picks it up. Called on edit, after a
+// toolbar command, before form submit, and on AI insert.
+function syncComposeEditor() {
+  const editor = document.getElementById("compose-wysiwyg");
+  if (!editor) return;
+  const body = document.querySelector('#compose-form textarea[name="body"]');
+  if (!body) return;
+  body.value = editor.innerHTML;
+  body.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+let composeSavedRange = null;
+function saveComposeRange() {
+  const sel = window.getSelection();
+  const editor = document.getElementById("compose-wysiwyg");
+  if (sel && sel.rangeCount && editor && editor.contains(sel.anchorNode)) {
+    composeSavedRange = sel.getRangeAt(0);
+  }
+}
+// Track the editor selection on every change — crucially this fires even when a
+// drag-selection is released outside the editor (e.g. over the toolbar), which
+// an editor-local mouseup would miss, leaving a stale range for the next
+// command. One global listener; a no-op when no editor is on the page.
+document.addEventListener("selectionchange", saveComposeRange);
+
+function restoreComposeRange() {
+  const editor = document.getElementById("compose-wysiwyg");
+  if (!editor) return;
+  editor.focus();
+  if (composeSavedRange) {
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(composeSavedRange);
+  }
+}
+function execCompose(cmd, val) {
+  restoreComposeRange();
+  document.execCommand(cmd, false, val ?? null);
+  saveComposeRange();
+  syncComposeEditor();
+}
+
+// initComposeEditor is idempotent: a data-wired flag on each element guards
+// against being called more than once for the same DOM (a re-fired htmx swap
+// would otherwise double-bind the toolbar → toggle commands cancel out and the
+// link prompt shows twice).
+function initComposeEditor() {
+  const editor = document.getElementById("compose-wysiwyg");
+  if (editor && !editor.dataset.wired) {
+    editor.dataset.wired = "1";
+    editor.addEventListener("input", syncComposeEditor);
+    editor.addEventListener("keydown", (e) => {
+      if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); editor.closest("form").requestSubmit(); }
+    });
+  }
+  const toolbar = document.querySelector("[data-compose-toolbar]");
+  if (toolbar && !toolbar.dataset.wired) {
+    toolbar.dataset.wired = "1";
+    // Pressing any toolbar BUTTON must not steal focus/selection from the
+    // editor, so execCommand acts on the still-focused editor. Selects and the
+    // color <input> are not buttons, so they keep their native behavior.
+    toolbar.addEventListener("mousedown", (e) => {
+      if (e.target.closest("button")) e.preventDefault();
+    });
+    toolbar.addEventListener("click", (e) => {
+      const cmdBtn = e.target.closest("[data-cmd]");
+      if (cmdBtn) { execCompose(cmdBtn.dataset.cmd); return; }
+      const blockBtn = e.target.closest("[data-cmd-block]");
+      if (blockBtn) { execCompose("formatBlock", blockBtn.dataset.cmdBlock); return; }
+      if (e.target.closest("[data-cmd-unlink]")) { execCompose("unlink"); return; }
+      if (e.target.closest("[data-cmd-link]")) {
+        const url = prompt("Link URL:");
+        if (url) execCompose("createLink", url);
+      }
+    });
+    const font = toolbar.querySelector("[data-cmd-font]");
+    if (font) font.addEventListener("change", () => { if (font.value) execCompose("fontName", font.value); font.selectedIndex = 0; });
+    const size = toolbar.querySelector("[data-cmd-size]");
+    if (size) size.addEventListener("change", () => { if (size.value) execCompose("fontSize", size.value); size.selectedIndex = 0; });
+    const color = toolbar.querySelector("[data-cmd-color]");
+    if (color) color.addEventListener("input", () => execCompose("foreColor", color.value));
+  }
+  // Markdown Write/Preview tabs.
+  const tabs = document.querySelector("[data-md-tabs]");
+  if (tabs && !tabs.dataset.wired) {
+    tabs.dataset.wired = "1";
+    const write = document.querySelector("[data-md-write]");
+    const preview = document.querySelector("[data-md-preview]");
+    tabs.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-md-tab]");
+      if (!t) return;
+      const showPreview = t.dataset.mdTab === "preview";
+      write.classList.toggle("hidden", showPreview);
+      preview.classList.toggle("hidden", !showPreview);
+      tabs.querySelectorAll("[data-md-tab]").forEach((b) => b.classList.toggle("md-tab-active", b === t));
+    });
+  }
+}
+
+// Ensure the hidden body textarea is current before the form submits.
+document.addEventListener("submit", (e) => {
+  if (e.target && e.target.id === "compose-form") syncComposeEditor();
+}, true);
 
 // --- h/l: move focus between the three panes (accounts ↔ messages ↔ reading).
 // A subtle inset ring (see [data-section-focus] in app.css) shows which pane

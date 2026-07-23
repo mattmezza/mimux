@@ -66,7 +66,7 @@ func buildEmailPolicy() *bluemonday.Policy {
 	p.AllowElements(
 		"p", "div", "span", "br", "hr", "pre", "blockquote",
 		"h1", "h2", "h3", "h4", "h5", "h6",
-		"b", "strong", "i", "em", "u", "s", "strike", "sub", "sup", "small", "mark", "code", "kbd",
+		"b", "strong", "i", "em", "u", "s", "strike", "del", "ins", "sub", "sup", "small", "mark", "code", "kbd",
 		"ul", "ol", "li", "dl", "dt", "dd",
 		"table", "thead", "tbody", "tfoot", "tr", "td", "th", "caption", "colgroup", "col",
 		"figure", "figcaption", "address", "cite", "abbr", "center", "font",

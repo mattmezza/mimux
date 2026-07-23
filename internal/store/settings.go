@@ -21,31 +21,84 @@ type Prefs struct {
 	DarkMessages     bool              // open message bodies in dark mode by default (default false)
 	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
 	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
+	MaxPerSync       int               // max messages to fetch per account per poll cycle (default 500)
 	AccountColors    map[string]string // account name -> hex color, e.g. "#6366f1"
 	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
+	SearchScope      string            // topbar search default scope: "all", "account", or "folder" (default "all")
+	ComposeMode      string            // compose editor mode: "plain", "html", or "markdown" (default "html")
 }
 
-// AllQuickActions lists every optional action shown in the message "more" menu
-// (id, label), in their default display order. Reply/Archive are always shown
-// and not included here.
+// AllQuickActions lists every message action the user can place in the action
+// bar, in the "⋯" menu, or hide entirely — in their default display order.
 var AllQuickActions = []struct{ ID, Label string }{
-	{"dark", "Toggle dark/light message"},
-	{"translate", "Translate"},
-	{"refetch", "Re-fetch from server"},
+	{"reply", "Reply"},
+	{"unread", "Mark read / unread"},
+	{"archive", "Archive"},
 	{"replyall", "Reply all"},
 	{"forward", "Forward"},
 	{"star", "Star / unstar"},
-	{"unread", "Mark unread"},
+	{"dark", "Toggle dark/light message"},
+	{"translate", "Translate"},
+	{"refetch", "Re-fetch from server"},
 	{"spam", "Mark as spam"},
 	{"delete", "Delete"},
 }
 
+// defaultQuickActions: reply / mark-unread / archive directly in the bar,
+// everything else one click away in the "⋯" menu.
 func defaultQuickActions() string {
-	ids := make([]string, len(AllQuickActions))
-	for i, a := range AllQuickActions {
-		ids[i] = a.ID
+	bar := []string{"reply", "unread", "archive"}
+	var menu []string
+	for _, a := range AllQuickActions {
+		if a.ID != "reply" && a.ID != "unread" && a.ID != "archive" {
+			menu = append(menu, a.ID)
+		}
 	}
-	return strings.Join(ids, ",")
+	return JoinQuickActions(bar, menu)
+}
+
+// SplitQuickActions parses the ordered "id=bar,id=menu,..." preference into
+// the two placement lists (ids absent from the string are hidden). Legacy
+// pre-placement values ("id,id,...") get the original fixed bar plus the
+// stored ids as the menu.
+func SplitQuickActions(pref string) (bar, menu []string) {
+	known := map[string]bool{}
+	for _, a := range AllQuickActions {
+		known[a.ID] = true
+	}
+	legacy := pref != "" && !strings.Contains(pref, "=")
+	seen := map[string]bool{"": true}
+	if legacy {
+		bar = []string{"reply", "unread", "archive"}
+		for _, id := range bar {
+			seen[id] = true
+		}
+	}
+	for _, e := range strings.Split(pref, ",") {
+		id, place, _ := strings.Cut(e, "=")
+		if !known[id] || seen[id] {
+			continue
+		}
+		seen[id] = true
+		if legacy || place == "menu" {
+			menu = append(menu, id)
+		} else if place == "bar" {
+			bar = append(bar, id)
+		}
+	}
+	return bar, menu
+}
+
+// JoinQuickActions is the inverse of SplitQuickActions.
+func JoinQuickActions(bar, menu []string) string {
+	parts := make([]string, 0, len(bar)+len(menu))
+	for _, id := range bar {
+		parts = append(parts, id+"=bar")
+	}
+	for _, id := range menu {
+		parts = append(parts, id+"=menu")
+	}
+	return strings.Join(parts, ",")
 }
 
 func defaultPrefs() Prefs {
@@ -61,8 +114,11 @@ func defaultPrefs() Prefs {
 		DarkMessages:     false,
 		RememberMsgTheme: false,
 		SyncMonths:       0,
+		MaxPerSync:       500,
 		AccountColors:    map[string]string{},
 		QuickActions:     defaultQuickActions(),
+		SearchScope:      "all",
+		ComposeMode:      "html",
 	}
 }
 
@@ -133,8 +189,19 @@ func (s *Store) GetPrefs() Prefs {
 			p.SyncMonths = n
 		}
 	}
+	if v, ok := s.getSetting("max_per_sync"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			p.MaxPerSync = n
+		}
+	}
 	if v, ok := s.getSetting("quick_actions"); ok {
 		p.QuickActions = v
+	}
+	if v, ok := s.getSetting("search_scope"); ok && (v == "all" || v == "account" || v == "folder") {
+		p.SearchScope = v
+	}
+	if v, ok := s.getSetting("compose_mode"); ok && (v == "plain" || v == "html" || v == "markdown") {
+		p.ComposeMode = v
 	}
 	rows, err := s.DB.Query(`SELECT key, value FROM app_settings WHERE key LIKE ?`, accountColorPrefix+"%")
 	if err != nil {
@@ -166,7 +233,10 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"dark_messages":      boolStr(p.DarkMessages),
 		"remember_msg_theme": boolStr(p.RememberMsgTheme),
 		"sync_months":        strconv.Itoa(p.SyncMonths),
+		"max_per_sync":       strconv.Itoa(p.MaxPerSync),
 		"quick_actions":      p.QuickActions,
+		"search_scope":       p.SearchScope,
+		"compose_mode":       p.ComposeMode,
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color
@@ -184,4 +254,52 @@ func boolStr(b bool) string {
 		return "1"
 	}
 	return "0"
+}
+
+// AppConfig holds the integration credentials that used to live in config.toml's
+// [translate] and [ai] sections. Kept out of Prefs because Prefs is handed to
+// templates and these values are secret.
+type AppConfig struct {
+	TranslateAPIKey string
+	TranslateTarget string // ISO code, default "en"
+	AIKey           string // OpenRouter API key
+	AIModel         string // default "anthropic/claude-sonnet-4-6"
+}
+
+func (s *Store) GetAppConfig() AppConfig {
+	c := AppConfig{TranslateTarget: "en", AIModel: "anthropic/claude-sonnet-4-6"}
+	if v, ok := s.getSetting("translate_api_key"); ok {
+		c.TranslateAPIKey = v
+	}
+	if v, ok := s.getSetting("translate_target"); ok && v != "" {
+		c.TranslateTarget = v
+	}
+	if v, ok := s.getSetting("ai_openrouter_key"); ok {
+		c.AIKey = v
+	}
+	if v, ok := s.getSetting("ai_model"); ok && v != "" {
+		c.AIModel = v
+	}
+	return c
+}
+
+func (s *Store) SaveAppConfig(c AppConfig) error {
+	if c.TranslateTarget == "" {
+		c.TranslateTarget = "en"
+	}
+	if c.AIModel == "" {
+		c.AIModel = "anthropic/claude-sonnet-4-6"
+	}
+	kv := map[string]string{
+		"translate_api_key": c.TranslateAPIKey,
+		"translate_target":  c.TranslateTarget,
+		"ai_openrouter_key": c.AIKey,
+		"ai_model":          c.AIModel,
+	}
+	for k, v := range kv {
+		if err := s.setSetting(k, v); err != nil {
+			return err
+		}
+	}
+	return nil
 }

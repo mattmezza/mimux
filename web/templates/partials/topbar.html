@@ -11,13 +11,16 @@
   <a href="/" class="hidden md:flex items-center gap-2 shrink-0">
     <img src="/static/icons/favicon.svg" alt="SM" class="w-6 h-6">
   </a>
-  <div class="flex-1 flex justify-center">
+  {{/* min-w-0: lets the search form actually shrink to the space left in the
+       header instead of overflowing off-screen on narrow viewports. */}}
+  <div class="flex-1 min-w-0 flex justify-center">
     <form id="search-form" hx-get="/search" hx-target="#message-list" hx-swap="outerHTML" hx-indicator="#list-skeleton"
           hx-on::after-request="document.getElementById('search-suggest').classList.add('hidden')"
           class="relative w-full max-w-xl flex items-center rounded-md bg-zinc-800 border border-transparent focus-within:border-indigo-500 focus-within:bg-zinc-900 transition-colors duration-150">
+      {{$scope := "all"}}{{with .Prefs}}{{if .SearchScope}}{{$scope = .SearchScope}}{{end}}{{end}}
       <button type="button" id="scope-pill" title="Search scope — Tab to cycle"
-              class="shrink-0 ml-1.5 my-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors duration-150">account</button>
-      <input type="hidden" name="scope" id="search-scope" value="account">
+              class="shrink-0 ml-1.5 my-1 px-2 py-0.5 rounded text-[11px] font-medium bg-zinc-700 text-zinc-200 hover:bg-zinc-600 transition-colors duration-150">{{$scope}}</button>
+      <input type="hidden" name="scope" id="search-scope" value="{{$scope}}">
       <input type="hidden" name="folder" id="search-folder" value="0">
       <input id="search" name="q" type="search" autocomplete="off" placeholder="Search mail — try from:alice or has:attachment"
              hx-get="/search/suggest" hx-trigger="input changed delay:150ms, focus"

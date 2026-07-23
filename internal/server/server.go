@@ -46,11 +46,27 @@ func New(cfg *config.Config, st *store.Store, mgr *mail.Manager, version string)
 		version: version,
 		pending: map[int64]*time.Timer{},
 	}
-	setAccountAliases(cfg.Accounts)
+	s.refreshAccounts()
 	if err := s.parseTemplates(); err != nil {
 		return nil, err
 	}
 	return s, nil
+}
+
+// accounts returns the current DB-backed accounts (a snapshot refreshed by
+// refreshAccounts). Single accessor used everywhere the account list is read.
+func (s *Server) accounts() []config.Account { return s.cfg.Accounts }
+
+// refreshAccounts reloads the account snapshot from the DB into cfg and rebuilds
+// the alias lookup. Call after any account mutation and at startup.
+func (s *Server) refreshAccounts() {
+	accts, err := s.store.ListAccounts()
+	if err != nil {
+		slog.Error("refreshAccounts", "err", err)
+		return
+	}
+	s.cfg.Accounts = accts
+	setAccountAliases(accts)
 }
 
 // parseTemplates builds one template set per page, each including the base
@@ -166,13 +182,27 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/compose", s.handleComposeNew)
 		r.Post("/compose", s.handleComposeSend)
 		r.Post("/compose/draft", s.handleComposeDraftSave)
+		r.Post("/compose/preview", s.handleComposePreview)
 		r.Get("/drafts", s.handleDraftsPage)
 		r.Post("/drafts/{id}/delete", s.handleDraftDelete)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsSave)
+		r.Get("/settings/accounts", s.handleAccountsManager)
+		r.Post("/settings/accounts", s.handleAccountSave)
+		r.Post("/settings/accounts/{name}/delete", s.handleAccountDelete)
+		r.Get("/settings/export", s.handleConfigExport)
+		r.Post("/settings/import", s.handleConfigImport)
 		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
-		r.Mount("/translate", translate.Routes(s.store, translate.NewClient(s.cfg.Translate.APIKey, s.cfg.Translate.TargetLanguage)))
-		r.Mount("/ai", ai.Routes(ai.NewClient(s.cfg.AI.OpenRouterAPIKey, s.cfg.AI.Model)))
+		// Clients are built per request so translate/AI keys edited in Settings
+		// take effect without a restart.
+		r.Mount("/translate", translate.Routes(s.store, func() *translate.Client {
+			c := s.store.GetAppConfig()
+			return translate.NewClient(c.TranslateAPIKey, c.TranslateTarget)
+		}))
+		r.Mount("/ai", ai.Routes(func() *ai.Client {
+			c := s.store.GetAppConfig()
+			return ai.NewClient(c.AIKey, c.AIModel)
+		}))
 	})
 	return r
 }

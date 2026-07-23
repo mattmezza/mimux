@@ -22,10 +22,10 @@ func testServer(t *testing.T) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	cfg := &config.Config{
-		Server:   config.Server{BaseURL: "https://mail.example.com"},
-		Accounts: []config.Account{{Name: "Personal", Provider: "gmail", Email: "me@gmail.com", Auth: "oauth2", OAuth2ClientID: "cid", OAuth2ClientSecret: "secret"}},
+	if err := st.UpsertAccount(config.Account{Name: "Personal", Provider: "gmail", Email: "me@gmail.com", Auth: "oauth2", OAuth2ClientID: "cid", OAuth2ClientSecret: "secret"}); err != nil {
+		t.Fatal(err)
 	}
+	cfg := &config.Config{Server: config.Server{BaseURL: "https://mail.example.com"}}
 	srv, err := New(cfg, st, mail.NewManager(cfg, st), "test")
 	if err != nil {
 		t.Fatal(err)

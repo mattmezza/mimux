@@ -3,6 +3,7 @@ package mail
 import (
 	"bytes"
 	"fmt"
+	"html"
 	"io"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"github.com/mattmezza/sm/internal/config"
 )
 
+func htmlesc(s string) string { return html.EscapeString(s) }
+
 // ComposeInput is everything needed to build one outgoing message: a new
 // compose, reply, reply-all or forward all funnel through this. Addresses are
 // raw RFC 5322 strings ("Name <addr>" or bare "addr"), as stored/typed.
@@ -19,10 +22,26 @@ type ComposeInput struct {
 	To, Cc, Bcc []string
 	Subject     string
 	Body        string
+	Mode        string // "plain" (default), "html" (Body is HTML) or "markdown" (Body is markdown)
 	From        string // send-as address (account primary or an alias); "" = account default
 	InReplyTo   string // original Message-ID (no angle brackets), "" for a new message
 	References  string // full References header value to reuse (see ComputeReferences), "" for a new message
 	Attachments []OutAttachment
+}
+
+// bodyParts derives the (plainText, htmlBody) pair to send for this input's
+// mode. htmlBody == "" means send text/plain only (plain mode). For html and
+// markdown modes both parts are produced and shipped as multipart/alternative.
+func (in ComposeInput) bodyParts() (plain, htmlBody string) {
+	switch in.Mode {
+	case "html":
+		safe := SanitizeComposeHTML(in.Body)
+		return htmlToText(safe), WrapHTMLEmail(safe)
+	case "markdown":
+		return in.Body, WrapHTMLEmail(RenderMarkdown(in.Body))
+	default:
+		return in.Body, ""
+	}
 }
 
 // OutAttachment is one file to attach to an outgoing message. Data is the raw
@@ -63,6 +82,23 @@ func QuoteBody(date time.Time, from, body string) string {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+// QuoteBodyHTML renders the reply quote for html (WYSIWYG) mode: an empty
+// paragraph to type into, then the original wrapped in a <blockquote> with line
+// breaks preserved. Body is plain text (the stored snippet), HTML-escaped.
+func QuoteBodyHTML(date time.Time, from, body string) string {
+	var b strings.Builder
+	b.WriteString("<p><br></p><blockquote>")
+	fmt.Fprintf(&b, "On %s, %s wrote:<br>", date.Format("Mon, 2 Jan 2006 15:04"), htmlesc(from))
+	for i, line := range strings.Split(body, "\n") {
+		if i > 0 {
+			b.WriteString("<br>")
+		}
+		b.WriteString(htmlesc(line))
+	}
+	b.WriteString("</blockquote>")
 	return b.String()
 }
 
@@ -243,46 +279,110 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 		h.Set("References", in.References)
 	}
 
+	plain, htmlBody := in.bodyParts()
+
 	var buf bytes.Buffer
-	if len(in.Attachments) > 0 {
-		if err := writeMultipart(&buf, h, in); err != nil {
+	switch {
+	case len(in.Attachments) > 0:
+		if err := writeMultipart(&buf, h, in, plain, htmlBody); err != nil {
 			return nil, "", err
 		}
-		return buf.Bytes(), messageID, nil
-	}
-	h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
-	w, err := emmail.CreateSingleInlineWriter(&buf, h)
-	if err != nil {
-		return nil, "", err
-	}
-	if _, err := io.WriteString(w, toCRLF(in.Body)); err != nil {
-		return nil, "", err
-	}
-	if err := w.Close(); err != nil {
-		return nil, "", err
+	case htmlBody != "":
+		if err := writeAlternative(&buf, h, plain, htmlBody); err != nil {
+			return nil, "", err
+		}
+	default:
+		h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		w, err := emmail.CreateSingleInlineWriter(&buf, h)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := io.WriteString(w, toCRLF(plain)); err != nil {
+			return nil, "", err
+		}
+		if err := w.Close(); err != nil {
+			return nil, "", err
+		}
 	}
 	return buf.Bytes(), messageID, nil
 }
 
-// writeMultipart emits a multipart/mixed message: the text body as an inline
-// part followed by one base64-encoded attachment per file. CreateWriter sets
-// the Content-Type to multipart/mixed, overriding any on h.
-func writeMultipart(buf *bytes.Buffer, h emmail.Header, in ComposeInput) error {
-	mw, err := emmail.CreateWriter(buf, h)
+// writeTextParts writes the text/plain part, and (when htmlBody != "") a
+// text/html part, into an already-created multipart/alternative InlineWriter.
+func writeTextParts(iw *emmail.InlineWriter, plain, htmlBody string) error {
+	var tp emmail.InlineHeader
+	tp.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+	tw, err := iw.CreatePart(tp)
 	if err != nil {
 		return err
 	}
-	var th emmail.InlineHeader
-	th.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
-	tw, err := mw.CreateSingleInline(th)
-	if err != nil {
-		return err
-	}
-	if _, err := io.WriteString(tw, toCRLF(in.Body)); err != nil {
+	if _, err := io.WriteString(tw, toCRLF(plain)); err != nil {
 		return err
 	}
 	if err := tw.Close(); err != nil {
 		return err
+	}
+	if htmlBody == "" {
+		return nil
+	}
+	var hp emmail.InlineHeader
+	hp.SetContentType("text/html", map[string]string{"charset": "utf-8"})
+	hw, err := iw.CreatePart(hp)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(hw, toCRLF(htmlBody)); err != nil {
+		return err
+	}
+	return hw.Close()
+}
+
+// writeAlternative emits a top-level multipart/alternative message with a
+// text/plain and a text/html part (html/markdown compose, no attachments).
+func writeAlternative(buf *bytes.Buffer, h emmail.Header, plain, htmlBody string) error {
+	iw, err := emmail.CreateInlineWriter(buf, h)
+	if err != nil {
+		return err
+	}
+	if err := writeTextParts(iw, plain, htmlBody); err != nil {
+		return err
+	}
+	return iw.Close()
+}
+
+// writeMultipart emits a multipart/mixed message: the body followed by one
+// base64-encoded attachment per file. When htmlBody != "" the body is a nested
+// multipart/alternative (text/plain + text/html); otherwise a single
+// text/plain part. CreateWriter sets Content-Type to multipart/mixed.
+func writeMultipart(buf *bytes.Buffer, h emmail.Header, in ComposeInput, plain, htmlBody string) error {
+	mw, err := emmail.CreateWriter(buf, h)
+	if err != nil {
+		return err
+	}
+	if htmlBody != "" {
+		iw, err := mw.CreateInline()
+		if err != nil {
+			return err
+		}
+		if err := writeTextParts(iw, plain, htmlBody); err != nil {
+			return err
+		}
+		if err := iw.Close(); err != nil {
+			return err
+		}
+	} else {
+		var th emmail.InlineHeader
+		th.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+		tw, err := mw.CreateSingleInline(th)
+		if err != nil {
+			return err
+		}
+		if _, err := io.WriteString(tw, toCRLF(plain)); err != nil {
+			return err
+		}
+		if err := tw.Close(); err != nil {
+			return err
+		}
 	}
 	for _, at := range in.Attachments {
 		ct := at.ContentType

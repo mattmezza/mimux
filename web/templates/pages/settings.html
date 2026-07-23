@@ -1,152 +1,413 @@
 {{define "title"}}Settings — SM{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col min-h-0">
+<div class="h-full flex flex-col min-h-0"
+     x-data="{
+       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','integrations','backup'],
+       tab: 'appearance',
+       init() {
+         const h = (location.hash.slice(1) || localStorage.getItem('sm.settingsTab') || '').trim();
+         if (this.tabs.includes(h)) this.tab = h;
+         this.$watch('tab', (t) => {
+           localStorage.setItem('sm.settingsTab', t);
+           history.replaceState(null, '', '#' + t);
+         });
+       }
+     }">
   <header class="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-zinc-800 bg-zinc-900">
     <a href="/" class="p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" title="Back to inbox" aria-label="Back to inbox">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
     </a>
     <h1 class="text-base font-semibold text-zinc-100">Settings</h1>
   </header>
-  <main class="flex-1 overflow-y-auto">
-    <form method="post" action="/settings" class="max-w-2xl mx-auto w-full p-6 space-y-8">
-      <input type="hidden" name="csrf_token" value="{{.CSRF}}">
 
-      <section class="space-y-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Appearance</h2>
-        <label class="block space-y-1">
-          <span class="text-sm text-zinc-200">App theme</span>
-          {{/* Client-side only (localStorage) for flash-free switching: no name attr,
-               so it is not part of the POST. Wired to window.setTheme in app.js. */}}
-          <select id="theme-select" onchange="setTheme(this.value)"
-            class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-            <option value="system">System</option>
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-          </select>
-          <span class="block text-xs text-zinc-500">Applies instantly. Saved in this browser.</span>
-        </label>
-        <script>
-          (function () {
-            var s = document.getElementById("theme-select");
-            if (s) s.value = localStorage.getItem("sm.theme") || "system";
-          })();
-        </script>
-      </section>
+  <form method="post" action="/settings" hx-post="/settings" hx-swap="none"
+        hx-on::after-request="if (event.detail.successful) { toast('Settings saved'); } else { toast(&quot;Couldn't save settings — please try again.&quot;); }"
+        class="flex-1 min-h-0 flex flex-col">
+    <input type="hidden" name="csrf_token" value="{{.CSRF}}">
 
-      <section class="space-y-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Reading</h2>
+    <div class="flex-1 min-h-0 flex flex-col md:flex-row w-full max-w-4xl mx-auto">
+      {{/* Nav: horizontal scrollable segmented tabs on mobile, vertical list on desktop. */}}
+      <nav class="shrink-0 border-b border-zinc-800 md:border-b-0 md:border-r md:w-52 md:py-4">
+        <ul class="flex md:flex-col gap-1 overflow-x-auto px-2 py-2 md:px-3 md:py-0">
+          <template x-for="t in [
+            {id:'appearance', label:'Appearance'},
+            {id:'reading', label:'Reading'},
+            {id:'composing', label:'Composing'},
+            {id:'quick-actions', label:'Quick actions'},
+            {id:'syncing', label:'Syncing'},
+            {id:'search', label:'Search'},
+            {id:'accounts', label:'Accounts'},
+            {id:'integrations', label:'Integrations'},
+            {id:'backup', label:'Backup & restore'}
+          ]" :key="t.id">
+            <li class="shrink-0 md:shrink">
+              <button type="button" @click="tab = t.id" x-text="t.label"
+                :class="tab === t.id ? 'bg-indigo-500/15 text-indigo-300 md:bg-zinc-800 md:text-zinc-100' : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'"
+                class="w-full text-left whitespace-nowrap px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-150"></button>
+            </li>
+          </template>
+        </ul>
+      </nav>
 
-        <label class="block space-y-1">
-          <span class="text-sm text-zinc-200">Mark as read after N seconds of viewing (0 = immediately)</span>
-          <input type="number" name="mark_read_delay" min="0" value="{{.Prefs.MarkReadDelay}}"
-            class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-        </label>
+      {{/* Panels: x-show keeps hidden inputs in the DOM (still submitted). */}}
+      <div class="flex-1 min-h-0 overflow-y-auto">
+        <div class="max-w-2xl w-full p-6">
 
-        <label class="block space-y-1">
-          <span class="text-sm text-zinc-200">Message preview lines</span>
-          <input type="number" name="preview_lines" min="0" max="3" value="{{.Prefs.PreviewLines}}"
-            class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="show_avatar" value="1" {{if .Prefs.ShowAvatar}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Show sender avatar</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="show_favicon" value="1" {{if .Prefs.ShowFavicon}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Use sender's website icon as avatar</span>
-          <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="hide_avatar_mobile" value="1" {{if .Prefs.HideAvatarMobile}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Hide avatars on mobile</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="show_account_badge" value="1" {{if .Prefs.ShowAccountBadge}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Show account badge in message list</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="show_attach_marker" value="1" {{if .Prefs.ShowAttachMarker}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Show attachment marker in message list</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="dark_messages" value="1" {{if .Prefs.DarkMessages}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Open messages in dark mode by default</span>
-        </label>
-
-        <label class="flex items-center gap-2">
-          <input type="checkbox" name="remember_msg_theme" value="1" {{if .Prefs.RememberMsgTheme}}checked{{end}}
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
-        </label>
-
-        <div class="space-y-1">
-          <span class="block text-sm text-zinc-200">Quick actions shown in a message's "⋯" menu</span>
-          <div class="space-y-1.5">
-            {{range .AllQuickActions}}
-            <label class="flex items-center gap-2">
-              <input type="checkbox" name="quick_actions" value="{{.ID}}" {{if hasQA .ID $.Prefs.QuickActions}}checked{{end}}
-                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-              <span class="text-sm text-zinc-200">{{.Label}}</span>
+          <section x-show="tab === 'appearance'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Appearance</h2>
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">App theme</span>
+              {{/* Client-side only (localStorage) for flash-free switching: no name attr,
+                   so it is not part of the POST. Wired to window.setTheme in app.js. */}}
+              <select id="theme-select" onchange="setTheme(this.value)"
+                class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                <option value="system">System</option>
+                <option value="dark">Dark</option>
+                <option value="light">Light</option>
+              </select>
+              <span class="block text-xs text-zinc-500">Applies instantly. Saved in this browser.</span>
             </label>
+            <script>
+              (function () {
+                var s = document.getElementById("theme-select");
+                if (s) s.value = localStorage.getItem("sm.theme") || "system";
+              })();
+            </script>
+          </section>
+
+          <section x-show="tab === 'reading'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Reading</h2>
+
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Mark as read after N seconds of viewing (0 = immediately)</span>
+              <input type="number" name="mark_read_delay" min="0" value="{{.Prefs.MarkReadDelay}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+            </label>
+
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Message preview lines</span>
+              <input type="number" name="preview_lines" min="0" max="3" value="{{.Prefs.PreviewLines}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="show_avatar" value="1" {{if .Prefs.ShowAvatar}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Show sender avatar</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="show_favicon" value="1" {{if .Prefs.ShowFavicon}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Use sender's website icon as avatar</span>
+              <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="hide_avatar_mobile" value="1" {{if .Prefs.HideAvatarMobile}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Hide avatars on mobile</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="show_account_badge" value="1" {{if .Prefs.ShowAccountBadge}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Show account badge in message list</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="show_attach_marker" value="1" {{if .Prefs.ShowAttachMarker}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Show attachment marker in message list</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="dark_messages" value="1" {{if .Prefs.DarkMessages}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Open messages in dark mode by default</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="remember_msg_theme" value="1" {{if .Prefs.RememberMsgTheme}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
+            </label>
+          </section>
+
+          <section x-show="tab === 'composing'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Composing</h2>
+            <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200">Editor mode</legend>
+              <p class="text-xs text-zinc-500">How the compose window works when you write a new message.</p>
+              <div class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="compose_mode" value="plain" {{if eq .Prefs.ComposeMode "plain"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">Plain text</span>
+                    <span class="block text-xs text-zinc-500">Classic plain-text emails, no formatting.</span>
+                  </span>
+                </label>
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="compose_mode" value="html" {{if eq .Prefs.ComposeMode "html"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">HTML (rich text)</span>
+                    <span class="block text-xs text-zinc-500">A WYSIWYG editor with fonts and formatting, sent as HTML.</span>
+                  </span>
+                </label>
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="compose_mode" value="markdown" {{if eq .Prefs.ComposeMode "markdown"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">Markdown</span>
+                    <span class="block text-xs text-zinc-500">Write Markdown with a GitHub-style preview; sent as HTML.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </section>
+
+          <section x-show="tab === 'quick-actions'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Message quick actions</h2>
+            <div class="space-y-2" x-data="qaEditor">
+              <p class="text-xs text-zinc-500">Pick which actions sit directly in the action bar, which fold into the "⋯" menu (one click away), and in what order they appear.</p>
+              <input type="hidden" name="quick_actions" :value="serialized()">
+              <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+                <template x-for="(a, i) in actions" :key="a.id">
+                  <li class="flex items-center gap-3 pl-1.5 pr-3 py-1.5" :class="a.place === 'hidden' && 'opacity-60'">
+                    <span class="flex flex-col">
+                      <button type="button" @click="move(i, -1)" :disabled="i === 0" aria-label="Move up"
+                        class="p-0.5 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-700 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-zinc-500 transition-colors duration-150">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m4.5 15.75 7.5-7.5 7.5 7.5"/></svg>
+                      </button>
+                      <button type="button" @click="move(i, 1)" :disabled="i === actions.length - 1" aria-label="Move down"
+                        class="p-0.5 rounded text-zinc-500 hover:text-zinc-100 hover:bg-zinc-700 disabled:opacity-25 disabled:hover:bg-transparent disabled:hover:text-zinc-500 transition-colors duration-150">
+                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+                      </button>
+                    </span>
+                    <span class="flex-1 text-sm text-zinc-200" x-text="a.label"></span>
+                    <span class="flex rounded-md border border-zinc-700 overflow-hidden text-xs shrink-0" role="group" :aria-label="'Placement for ' + a.label">
+                      <template x-for="p in ['bar', 'menu', 'hidden']" :key="p">
+                        <button type="button" @click="a.place = p" x-text="labels[p]" :aria-pressed="a.place === p"
+                          class="px-2.5 py-1 border-l border-zinc-700 first:border-l-0 transition-colors duration-150"
+                          :class="a.place === p ? 'bg-indigo-500 text-white' : 'text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'"></button>
+                      </template>
+                    </span>
+                  </li>
+                </template>
+              </ul>
+              <p class="text-xs text-zinc-500">"Bar" shows the action right in the message header; "Menu" tucks it behind "⋯".</p>
+            </div>
+            <script>
+              document.addEventListener("alpine:init", () => {
+                Alpine.data("qaEditor", () => ({
+                  actions: {{.QAEditor}},
+                  labels: { bar: "Bar", menu: "Menu", hidden: "Hidden" },
+                  move(i, d) {
+                    const j = i + d;
+                    if (j < 0 || j >= this.actions.length) return;
+                    const [a] = this.actions.splice(i, 1);
+                    this.actions.splice(j, 0, a);
+                  },
+                  serialized() {
+                    return this.actions.filter((a) => a.place !== "hidden").map((a) => a.id + "=" + a.place).join(",");
+                  },
+                }));
+              });
+            </script>
+          </section>
+
+          <section x-show="tab === 'syncing'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Syncing</h2>
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Check for new mail every N minutes</span>
+              <input type="number" name="sync_interval_min" min="1" value="{{.Prefs.SyncIntervalMin}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+            </label>
+
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Max messages per account per sync</span>
+              <input type="number" name="max_per_sync" min="1" value="{{.Prefs.MaxPerSync}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <span class="block text-xs text-zinc-500">Caps how many of the newest messages each folder downloads per cycle.</span>
+            </label>
+
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Sync history — how far back to download</span>
+              <select name="sync_months"
+                class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                <option value="0"{{if eq .Prefs.SyncMonths 0}} selected{{end}}>Everything (up to {{.Prefs.MaxPerSync}} newest per folder)</option>
+                <option value="1"{{if eq .Prefs.SyncMonths 1}} selected{{end}}>Last 1 month</option>
+                <option value="3"{{if eq .Prefs.SyncMonths 3}} selected{{end}}>Last 3 months</option>
+                <option value="6"{{if eq .Prefs.SyncMonths 6}} selected{{end}}>Last 6 months</option>
+                <option value="12"{{if eq .Prefs.SyncMonths 12}} selected{{end}}>Last 12 months</option>
+                <option value="24"{{if eq .Prefs.SyncMonths 24}} selected{{end}}>Last 24 months</option>
+              </select>
+              <span class="block text-xs text-zinc-500">Applies on the next first-time sync of each folder. Already-downloaded mail stays.</span>
+            </label>
+          </section>
+
+          <section x-show="tab === 'search'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Search</h2>
+            <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200">Default search scope</legend>
+              <p class="text-xs text-zinc-500">Where the top-bar search starts. You can still change scope per search with the pill (Tab cycles it).</p>
+              <div class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="search_scope" value="all" {{if eq .Prefs.SearchScope "all"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">All</span>
+                    <span class="block text-xs text-zinc-500">Search every folder of every account.</span>
+                  </span>
+                </label>
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="search_scope" value="account" {{if eq .Prefs.SearchScope "account"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">Account</span>
+                    <span class="block text-xs text-zinc-500">Search all folders of the account whose folder you're currently viewing.</span>
+                  </span>
+                </label>
+                <label class="flex gap-3 px-3 py-2.5 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150">
+                  <input type="radio" name="search_scope" value="folder" {{if eq .Prefs.SearchScope "folder"}}checked{{end}}
+                    class="mt-0.5 border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="space-y-0.5">
+                    <span class="block text-sm text-zinc-200">Folder</span>
+                    <span class="block text-xs text-zinc-500">Search only the folder you're currently viewing.</span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </section>
+
+          <section x-show="tab === 'accounts'" x-cloak class="space-y-6">
+            <div class="space-y-3">
+              <h2 class="text-sm font-semibold text-zinc-100">Accounts</h2>
+              <p class="text-xs text-zinc-500">Add, edit and remove the email accounts SM syncs. Changes take effect immediately — no restart needed.</p>
+              {{template "accounts_manager" (dict "CSRF" .CSRF "Accounts" .AccountViews "Presets" .Presets)}}
+            </div>
+            <script>
+              document.addEventListener("alpine:init", () => {
+                // ponytail: oauth providers hardcoded to mirror account.SupportsOAuth;
+                // add here if a new OAuth preset lands.
+                const OAUTH = ["gmail", "zoho"];
+                const blank = () => ({ name:"", sender_name:"", provider:"", email:"", auth:"password",
+                  password:"", oauth2_client_id:"", oauth2_client_secret:"",
+                  imap_host:"", imap_port:"", smtp_host:"", smtp_port:"", aliases:[] });
+                Alpine.data("acctMgr", () => ({
+                  showForm: false, editing: false, hasPassword: false, hasSecret: false, showSecret: false,
+                  f: blank(),
+                  get canOAuth() { return OAUTH.includes(this.f.provider); },
+                  startAdd() { this.f = blank(); this.editing=false; this.hasPassword=false; this.hasSecret=false; this.showSecret=false; this.showForm=true; },
+                  edit(json) {
+                    const a = typeof json === "string" ? JSON.parse(json) : json;
+                    this.f = { name:a.name, sender_name:a.sender_name||"", provider:a.provider||"", email:a.email||"",
+                      auth:a.auth||"password", password:"", oauth2_client_id:a.oauth2_client_id||"", oauth2_client_secret:"",
+                      imap_host:a.imap_host||"", imap_port:a.imap_port||"", smtp_host:a.smtp_host||"", smtp_port:a.smtp_port||"",
+                      aliases:(a.aliases||[]).map(x => ({ name:x.name||"", email:x.email||"" })) };
+                    this.editing=true; this.hasPassword=!!a.has_password; this.hasSecret=!!a.has_secret; this.showSecret=false; this.showForm=true;
+                  },
+                  onProvider() { if (!this.canOAuth && this.f.auth === "oauth2") this.f.auth = "password"; },
+                  cancel() { this.showForm=false; },
+                }));
+              });
+            </script>
+
+            {{if .Accounts}}
+            <div class="space-y-3">
+              <h2 class="text-sm font-semibold text-zinc-100">Account colors</h2>
+              <p class="text-xs text-zinc-500">The dot and badge color used to tell each account apart in the message list.</p>
+              {{range .Accounts}}
+                {{$c := index $.Prefs.AccountColors .Name}}{{if not $c}}{{$c = "#6366f1"}}{{end}}
+                <label class="flex items-center gap-3">
+                  <input type="color" name="color:{{.Name}}" value="{{$c}}"
+                    class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
+                  <span class="text-sm text-zinc-200">{{.Name}}</span>
+                </label>
+              {{end}}
+            </div>
             {{end}}
-          </div>
+          </section>
+
+          <section x-show="tab === 'integrations'" x-cloak class="space-y-6"
+                   x-data="{ showT: false, showA: false }">
+            <div class="space-y-3">
+              <h2 class="text-sm font-semibold text-zinc-100">Translation</h2>
+              <p class="text-xs text-zinc-500">Google Translate API key. Leave blank to disable the Translate action.</p>
+              <label class="block space-y-1">
+                <span class="text-sm text-zinc-200">API key</span>
+                <span class="flex gap-2 max-w-md">
+                  <input :type="showT ? 'text' : 'password'" name="translate_api_key" value="{{.AppConfig.TranslateAPIKey}}" autocomplete="off"
+                    class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  <button type="button" @click="showT=!showT" class="shrink-0 px-2 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100" x-text="showT ? 'Hide' : 'Show'"></button>
+                </span>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm text-zinc-200">Target language</span>
+                <input type="text" name="translate_target" value="{{.AppConfig.TranslateTarget}}" placeholder="en"
+                  class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              </label>
+            </div>
+
+            <div class="space-y-3 pt-2 border-t border-zinc-800">
+              <h2 class="text-sm font-semibold text-zinc-100">AI (OpenRouter)</h2>
+              <p class="text-xs text-zinc-500">OpenRouter API key powers AI-assisted compose and reply. Leave blank to disable.</p>
+              <label class="block space-y-1">
+                <span class="text-sm text-zinc-200">API key</span>
+                <span class="flex gap-2 max-w-md">
+                  <input :type="showA ? 'text' : 'password'" name="ai_openrouter_key" value="{{.AppConfig.AIKey}}" autocomplete="off"
+                    class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  <button type="button" @click="showA=!showA" class="shrink-0 px-2 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100" x-text="showA ? 'Hide' : 'Show'"></button>
+                </span>
+              </label>
+              <label class="block space-y-1">
+                <span class="text-sm text-zinc-200">Model</span>
+                <input type="text" name="ai_model" value="{{.AppConfig.AIModel}}" placeholder="anthropic/claude-sonnet-4-6"
+                  class="w-full max-w-md rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              </label>
+              <p class="text-xs text-zinc-500">Keys are saved with the Save button below.</p>
+            </div>
+          </section>
+
+          <section x-show="tab === 'backup'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Backup &amp; restore</h2>
+            <p class="text-xs text-zinc-500">Export or restore a single portable file covering your <strong class="text-zinc-300">entire configuration</strong> — accounts and their credentials, aliases, OAuth tokens, sync options, Translate/AI keys, and all preferences. It does not include your synced mail or login sessions.</p>
+            <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+              The exported file contains your account <strong>passwords</strong> and API keys in plain text. Store it somewhere safe and never share it.
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <a href="/settings/export" download
+                class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-200 text-sm hover:bg-zinc-700 transition-colors duration-150">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3"/></svg>
+                Export config
+              </a>
+              <label class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-200 text-sm hover:bg-zinc-700 cursor-pointer transition-colors duration-150">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5"/></svg>
+                Import config
+                <input type="file" name="file" accept="application/json,.json" class="hidden"
+                  hx-post="/settings/import" hx-encoding="multipart/form-data" hx-trigger="change"
+                  hx-swap="none"
+                  hx-on::after-request="if(event.detail.successful){toast(event.detail.xhr.responseText);htmx.ajax('GET','/settings/accounts',{target:'#accounts-manager',swap:'outerHTML'});}else{toast(event.detail.xhr.responseText||'Import failed')}">
+              </label>
+            </div>
+            <p class="text-xs text-zinc-500">Importing upserts everything in the file (accounts are matched by name) and applies account changes immediately.</p>
+          </section>
+
         </div>
-      </section>
-
-      <section class="space-y-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Syncing</h2>
-        <label class="block space-y-1">
-          <span class="text-sm text-zinc-200">Check for new mail every N minutes</span>
-          <input type="number" name="sync_interval_min" min="1" value="{{.Prefs.SyncIntervalMin}}"
-            class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-        </label>
-
-        <label class="block space-y-1">
-          <span class="text-sm text-zinc-200">Sync history — how far back to download</span>
-          <select name="sync_months"
-            class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-            <option value="0"{{if eq .Prefs.SyncMonths 0}} selected{{end}}>Everything (up to {{.MaxPerSync}} newest per folder)</option>
-            <option value="1"{{if eq .Prefs.SyncMonths 1}} selected{{end}}>Last 1 month</option>
-            <option value="3"{{if eq .Prefs.SyncMonths 3}} selected{{end}}>Last 3 months</option>
-            <option value="6"{{if eq .Prefs.SyncMonths 6}} selected{{end}}>Last 6 months</option>
-            <option value="12"{{if eq .Prefs.SyncMonths 12}} selected{{end}}>Last 12 months</option>
-            <option value="24"{{if eq .Prefs.SyncMonths 24}} selected{{end}}>Last 24 months</option>
-          </select>
-          <span class="block text-xs text-zinc-500">Applies on the next first-time sync of each folder. Already-downloaded mail stays.</span>
-        </label>
-      </section>
-
-      {{if .Accounts}}
-      <section class="space-y-4">
-        <h2 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Account colors</h2>
-        {{range .Accounts}}
-          {{$c := index $.Prefs.AccountColors .Name}}{{if not $c}}{{$c = "#6366f1"}}{{end}}
-          <label class="flex items-center gap-3">
-            <input type="color" name="color:{{.Name}}" value="{{$c}}"
-              class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
-            <span class="text-sm text-zinc-200">{{.Name}}</span>
-          </label>
-        {{end}}
-      </section>
-      {{end}}
-
-      <div class="pt-2">
-        <button type="submit"
-          class="px-4 py-2 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Save</button>
       </div>
-    </form>
-  </main>
+    </div>
+
+    {{/* One persistent Save button for every screen. */}}
+    <div class="shrink-0 border-t border-zinc-800 bg-zinc-900 px-6 py-3">
+      <div class="max-w-4xl mx-auto flex justify-end">
+        <button id="settings-save" type="submit"
+          class="px-4 py-2 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">
+          <span class="idle">Save</span><span class="saving">Saving…</span>
+        </button>
+      </div>
+    </div>
+  </form>
 </div>
 {{end}}

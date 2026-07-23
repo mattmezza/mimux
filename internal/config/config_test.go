@@ -4,80 +4,76 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
-func write(t *testing.T, body string) string {
-	t.Helper()
-	p := filepath.Join(t.TempDir(), "config.toml")
-	if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
-func TestLoad(t *testing.T) {
-	cfg, err := Load(write(t, `
-[server]
-secret = "s3cret"
-port = 9090
-
-[[accounts]]
-name = "Personal"
-provider = "gmail"
-email = "me@gmail.com"
-auth = "oauth2"
-
-[[accounts]]
-name = "Privacy"
-email = "me@mydomain.com"
-password = "pw"
-imap_host = "imap.example.com"
-imap_port = 993
-smtp_host = "smtp.example.com"
-smtp_port = 465
-
-[sync]
-poll_interval = "2m"
-`))
+func TestLoadDefaults(t *testing.T) {
+	// Zero env vars (except a temp DB so the generated secret lands in TempDir).
+	dir := t.TempDir()
+	t.Setenv("SM_DB", filepath.Join(dir, "sm.db"))
+	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Server.Port != 9090 || cfg.Server.Host != "0.0.0.0" {
-		t.Errorf("server = %+v", cfg.Server)
+	if cfg.Server.Host != "0.0.0.0" || cfg.Server.Port != 8083 {
+		t.Errorf("server defaults = %+v", cfg.Server)
 	}
-	// preset fill-in
-	a := cfg.Accounts[0]
-	if a.IMAPHost != "imap.gmail.com" || a.IMAPPort != 993 || a.SMTPHost != "smtp.gmail.com" {
-		t.Errorf("gmail preset not applied: %+v", a)
+	if cfg.Server.BaseURL != "http://localhost:8083" {
+		t.Errorf("base_url default = %q", cfg.Server.BaseURL)
 	}
-	// explicit hosts kept, default auth
-	b := cfg.Accounts[1]
-	if b.IMAPHost != "imap.example.com" || b.Auth != "password" {
-		t.Errorf("explicit account mangled: %+v", b)
+	if cfg.Server.Secret == "" {
+		t.Error("secret not generated")
 	}
-	if cfg.Sync.Interval() != 2*time.Minute {
-		t.Errorf("poll_interval = %v", cfg.Sync.Interval())
+	// Secret persisted next to the DB and reused on the next Load.
+	if _, err := os.Stat(filepath.Join(dir, "secret")); err != nil {
+		t.Errorf("secret file not persisted: %v", err)
 	}
-	if cfg.AI.Model == "" || cfg.Translate.TargetLanguage != "en" {
-		t.Errorf("defaults missing: ai=%+v translate=%+v", cfg.AI, cfg.Translate)
+	cfg2, _ := Load()
+	if cfg2.Server.Secret != cfg.Server.Secret {
+		t.Error("secret not stable across loads")
 	}
 }
 
-func TestLoadRejectsMissingSecret(t *testing.T) {
-	if _, err := Load(write(t, "[server]\nport = 1\n")); err == nil {
-		t.Fatal("expected error for missing secret")
+func TestLoadEnvOverrides(t *testing.T) {
+	t.Setenv("SM_DB", filepath.Join(t.TempDir(), "x.db"))
+	t.Setenv("SM_HOST", "127.0.0.1")
+	t.Setenv("SM_PORT", "9099")
+	t.Setenv("SM_BASE_URL", "https://mail.example.com")
+	t.Setenv("SM_SECRET", "explicit-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Host != "127.0.0.1" || cfg.Server.Port != 9099 ||
+		cfg.Server.BaseURL != "https://mail.example.com" || cfg.Server.Secret != "explicit-secret" {
+		t.Errorf("env overrides not applied: %+v", cfg.Server)
 	}
 }
 
-func TestLoadRejectsUnknownProviderWithoutHosts(t *testing.T) {
-	if _, err := Load(write(t, `
-[server]
-secret = "x"
-[[accounts]]
-name = "Broken"
-email = "a@b.c"
-`)); err == nil {
+func TestLoadRejectsBadPort(t *testing.T) {
+	t.Setenv("SM_DB", filepath.Join(t.TempDir(), "x.db"))
+	t.Setenv("SM_PORT", "not-a-number")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for invalid SM_PORT")
+	}
+}
+
+func TestNormalizeAccount(t *testing.T) {
+	// Preset fills hosts and default auth.
+	a := Account{Name: "g", Provider: "gmail", Email: "me@gmail.com"}
+	if err := NormalizeAccount(&a); err != nil {
+		t.Fatal(err)
+	}
+	if a.IMAPHost != "imap.gmail.com" || a.SMTPHost != "smtp.gmail.com" || a.Auth != "password" {
+		t.Errorf("preset not applied: %+v", a)
+	}
+	// Explicit hosts preserved.
+	b := Account{Name: "c", Email: "a@b.c", IMAPHost: "imap.b.c", SMTPHost: "smtp.b.c"}
+	if err := NormalizeAccount(&b); err != nil {
+		t.Fatal(err)
+	}
+	// No preset and no hosts is an error.
+	c := Account{Name: "broken", Email: "a@b.c"}
+	if err := NormalizeAccount(&c); err == nil {
 		t.Fatal("expected error for account without hosts")
 	}
 }

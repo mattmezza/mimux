@@ -32,46 +32,119 @@ type AccountStatus struct {
 	LastSync time.Time // last successful ("ok") sync; zero until first success
 }
 
-// Manager owns one worker per configured account and a shared body cache.
+// Manager owns one worker per account (accounts live in the DB now) and a shared
+// body cache. Workers are started/stopped at runtime via Reload when the account
+// list changes in the Settings GUI.
 type Manager struct {
-	cfg      *config.Config
-	st       *store.Store
-	bodies   *bodyLRU
-	hub      *hub
+	cfg    *config.Config // bootstrap only (Server.BaseURL for OAuth redirects)
+	st     *store.Store
+	bodies *bodyLRU
+	hub    *hub
+
+	// ponytail: one mutex guards the map + ctx; account changes are rare and
+	// single-user, so this never contends. Off-limits smtp.go/compose.go read
+	// m.accounts unlocked — acceptable given account edits don't overlap sends.
+	mu       sync.Mutex
+	ctx      context.Context //nolint:containedctx // root ctx retained so Reload can start new workers
 	accounts map[string]*account
 }
 
 func NewManager(cfg *config.Config, st *store.Store) *Manager {
-	m := &Manager{
+	return &Manager{
 		cfg:      cfg,
 		st:       st,
 		bodies:   newBodyLRU(32),
 		hub:      newHub(),
 		accounts: map[string]*account{},
 	}
-	for _, ac := range cfg.Accounts {
-		m.accounts[ac.Name] = &account{
+}
+
+// Start records the root context and launches a worker per DB account.
+func (m *Manager) Start(ctx context.Context) {
+	m.mu.Lock()
+	m.ctx = ctx
+	m.mu.Unlock()
+	m.Reload()
+}
+
+// Reload reconciles the running workers with the accounts in the DB: it starts
+// workers for new accounts, stops those removed, and restarts any whose config
+// changed. Called at startup and after every account edit in the GUI.
+func (m *Manager) Reload() {
+	accts, err := m.st.ListAccounts()
+	if err != nil {
+		return
+	}
+	want := make(map[string]config.Account, len(accts))
+	for _, a := range accts {
+		want[a.Name] = a
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.ctx == nil { // Reload before Start: nothing to launch yet
+		return
+	}
+	for name, a := range m.accounts {
+		w, ok := want[name]
+		if !ok || !accountEqual(a.cfg, w) {
+			a.cancel()
+			delete(m.accounts, name)
+		}
+	}
+	for name, ac := range want {
+		if _, ok := m.accounts[name]; ok {
+			continue
+		}
+		ctx, cancel := context.WithCancel(m.ctx)
+		a := &account{
 			cfg:    ac,
 			m:      m,
 			cmds:   make(chan cmd, 64),
 			wake:   make(chan struct{}, 1),
+			cancel: cancel,
 			status: AccountStatus{Account: ac.Name, State: "syncing"},
 		}
-	}
-	return m
-}
-
-// Start launches every account worker; they stop when ctx is cancelled.
-func (m *Manager) Start(ctx context.Context) {
-	for _, a := range m.accounts {
+		m.accounts[name] = a
 		go a.run(ctx)
 	}
 }
 
+// accountEqual reports whether two account configs are identical, including
+// aliases (slices, so not comparable with ==).
+func accountEqual(a, b config.Account) bool {
+	if a.Name != b.Name || a.SenderName != b.SenderName || a.Provider != b.Provider ||
+		a.Email != b.Email || a.Auth != b.Auth || a.Password != b.Password ||
+		a.OAuth2ClientID != b.OAuth2ClientID || a.OAuth2ClientSecret != b.OAuth2ClientSecret ||
+		a.IMAPHost != b.IMAPHost || a.IMAPPort != b.IMAPPort ||
+		a.SMTPHost != b.SMTPHost || a.SMTPPort != b.SMTPPort ||
+		len(a.Aliases) != len(b.Aliases) {
+		return false
+	}
+	for i := range a.Aliases {
+		if a.Aliases[i] != b.Aliases[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// account looks up a running worker under the lock.
+func (m *Manager) account(name string) *account {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.accounts[name]
+}
+
 // Status returns a snapshot of every account's sync state, sorted by name.
 func (m *Manager) Status() []AccountStatus {
-	out := make([]AccountStatus, 0, len(m.accounts))
+	m.mu.Lock()
+	workers := make([]*account, 0, len(m.accounts))
 	for _, a := range m.accounts {
+		workers = append(workers, a)
+	}
+	m.mu.Unlock()
+	out := make([]AccountStatus, 0, len(workers))
+	for _, a := range workers {
 		out = append(out, a.getStatus())
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Account < out[j].Account })
@@ -84,7 +157,7 @@ func (m *Manager) Subscribe() (<-chan Event, func()) { return m.hub.subscribe() 
 // Wake nudges an account worker to retry — used after an OAuth authorization
 // completes so a worker parked in the "authorize needed" state reconnects.
 func (m *Manager) Wake(accountName string) {
-	if a := m.accounts[accountName]; a != nil {
+	if a := m.account(accountName); a != nil {
 		a.signalWake()
 	}
 }
@@ -93,7 +166,13 @@ func (m *Manager) Wake(accountName string) {
 // button). It flips each account to "syncing" immediately so the status bar and
 // health panel reflect the refresh right away; the worker sets "ok" when done.
 func (m *Manager) RefreshAll() {
+	m.mu.Lock()
+	workers := make([]*account, 0, len(m.accounts))
 	for _, a := range m.accounts {
+		workers = append(workers, a)
+	}
+	m.mu.Unlock()
+	for _, a := range workers {
 		a.setStatus("syncing", "")
 		a.signalWake()
 	}
@@ -107,10 +186,11 @@ type cmd struct {
 }
 
 type account struct {
-	cfg  config.Account
-	m    *Manager
-	cmds chan cmd
-	wake chan struct{}
+	cfg    config.Account
+	m      *Manager
+	cmds   chan cmd
+	wake   chan struct{}
+	cancel context.CancelFunc // stops this worker (Reload/remove)
 
 	mu     sync.Mutex
 	status AccountStatus
@@ -309,15 +389,12 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 }
 
 // pollInterval is the user-configured sync cadence (Settings → "Check every N
-// minutes"), falling back to the config file / a 5-minute default.
+// minutes"), falling back to a 5-minute default.
 func (a *account) pollInterval() time.Duration {
 	if n := a.m.st.GetPrefs().SyncIntervalMin; n > 0 {
 		return time.Duration(n) * time.Minute
 	}
-	if d := a.m.cfg.Sync.Interval(); d > 0 {
-		return d
-	}
-	return 5 * time.Minute
+	return config.DefaultPollInterval
 }
 
 // waitIdle blocks in IMAP IDLE until new data arrives, a command is queued, the

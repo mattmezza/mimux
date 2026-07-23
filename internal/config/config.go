@@ -1,64 +1,81 @@
-// Package config parses the TOML config file. Path comes from SM_CONFIG
-// env var or the -config flag; everything else is config-file-driven.
+// Package config holds bootstrap config only — the settings that cannot live in
+// the database (chicken-and-egg): db path, listen host/port, public base_url and
+// the session secret. Everything else (accounts, sync cadence, translate/AI
+// keys) lives in the DB and is edited from the Settings GUI.
+//
+// Bootstrap comes entirely from environment variables, each with a sane default,
+// so a fresh install with ZERO env vars boots and works:
+//
+//	SM_DB       sqlite path            (default ./data/sm.db)
+//	SM_HOST     bind address           (default 0.0.0.0)
+//	SM_PORT     port                   (default 8083)
+//	SM_BASE_URL public URL             (default http://localhost:<port>)
+//	SM_SECRET   session/CSRF secret    (default: generated once, persisted next
+//	                                     to the DB so sessions survive restarts)
 package config
 
 import (
-	"errors"
+	"bytes"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
-
-	"github.com/BurntSushi/toml"
 
 	"github.com/mattmezza/sm/internal/account"
 )
 
 type Config struct {
-	Server    Server    `toml:"server"`
-	DB        DB        `toml:"db"`
-	Accounts  []Account `toml:"accounts"`
-	Translate Translate `toml:"translate"`
-	AI        AI        `toml:"ai"`
-	Sync      Sync      `toml:"sync"`
+	Server Server
+	DB     DB
+	// Accounts is a runtime snapshot of the DB-backed accounts, refreshed by the
+	// server whenever the account list changes. It is NOT parsed from any file —
+	// it exists so the HTTP layer and compose selector can read the current
+	// accounts through the existing cfg without per-request DB plumbing.
+	Accounts []Account
 }
 
 type Server struct {
-	Host    string `toml:"host"`
-	Port    int    `toml:"port"`
-	BaseURL string `toml:"base_url"`
-	Secret  string `toml:"secret"`
+	Host    string
+	Port    int
+	BaseURL string
+	Secret  string
 }
 
 type DB struct {
-	Path string `toml:"path"`
+	Path string
 }
 
+// Account is one email account. It lives in the DB now (see internal/store);
+// this type stays the in-memory representation the mail engine and templates use.
 type Account struct {
 	// Name is the account's identity/key (folders, tokens, colors, filters are
-	// keyed by it) and the badge label. Comes from `account_name`; falls back to
-	// the legacy `name` when unset (see Load).
-	Name string `toml:"account_name"`
-	// SenderName is the display name on outgoing mail (the From header). Comes
-	// from `name`; falls back to Name when unset.
-	SenderName         string  `toml:"name"`
-	Provider           string  `toml:"provider"`
-	Email              string  `toml:"email"`
-	Aliases            []Alias `toml:"aliases"` // extra identities this account can send/receive as
-	Auth               string  `toml:"auth"`    // "password" | "oauth2"
-	Password           string  `toml:"password"`
-	OAuth2ClientID     string  `toml:"oauth2_client_id"`
-	OAuth2ClientSecret string  `toml:"oauth2_client_secret"`
-	IMAPHost           string  `toml:"imap_host"`
-	IMAPPort           int     `toml:"imap_port"`
-	SMTPHost           string  `toml:"smtp_host"`
-	SMTPPort           int     `toml:"smtp_port"`
+	// keyed by it) and the badge label.
+	Name string
+	// SenderName is the display name on outgoing mail (the From header).
+	SenderName         string
+	Provider           string
+	Email              string
+	Aliases            []Alias // extra identities this account can send/receive as
+	Auth               string  // "password" | "oauth2"
+	Password           string
+	OAuth2ClientID     string
+	OAuth2ClientSecret string
+	IMAPHost           string
+	IMAPPort           int
+	SMTPHost           string
+	SMTPPort           int
 }
 
 // Alias is an extra send/receive identity on an account, with its own sender
 // display name and address.
 type Alias struct {
-	Name  string `toml:"name"`  // display name on outgoing mail sent as this alias
-	Email string `toml:"email"` // the alias address
+	Name  string // display name on outgoing mail sent as this alias
+	Email string // the alias address
 }
 
 // DisplayNameFor returns the From display name to use when sending as addr: the
@@ -77,71 +94,96 @@ func (a Account) DisplayNameFor(addr string) string {
 	return a.Name
 }
 
-type Translate struct {
-	APIKey         string `toml:"api_key"`
-	TargetLanguage string `toml:"target_language"`
+// NormalizeAccount fills sender/identity fallbacks and provider-preset hosts,
+// then validates that IMAP/SMTP hosts are known. Shared by the store loader and
+// import so DB-driven accounts get the same treatment the old TOML loader gave.
+func NormalizeAccount(a *Account) error {
+	if a.Name == "" {
+		a.Name = a.SenderName
+	}
+	if a.SenderName == "" {
+		a.SenderName = a.Name
+	}
+	if p, ok := account.Presets[a.Provider]; ok {
+		if a.IMAPHost == "" {
+			a.IMAPHost, a.IMAPPort = p.IMAPHost, p.IMAPPort
+		}
+		if a.SMTPHost == "" {
+			a.SMTPHost, a.SMTPPort = p.SMTPHost, p.SMTPPort
+		}
+	}
+	if a.IMAPHost == "" || a.SMTPHost == "" {
+		return fmt.Errorf("account %q: no provider preset and no imap/smtp host", a.Name)
+	}
+	if a.Auth == "" {
+		a.Auth = "password"
+	}
+	return nil
 }
 
-type AI struct {
-	OpenRouterAPIKey string `toml:"openrouter_api_key"`
-	Model            string `toml:"model"`
-}
-
-type Sync struct {
-	PollInterval       duration `toml:"poll_interval"`
-	MaxMessagesPerSync int      `toml:"max_messages_per_sync"`
-}
-
-// duration lets TOML hold "5m"-style strings.
-type duration time.Duration
-
-func (d *duration) UnmarshalText(b []byte) error {
-	v, err := time.ParseDuration(string(b))
-	*d = duration(v)
-	return err
-}
-
-func (s Sync) Interval() time.Duration { return time.Duration(s.PollInterval) }
-
-func Load(path string) (*Config, error) {
+// Load builds the bootstrap config from environment variables + defaults,
+// generating and persisting a session secret when SM_SECRET is unset.
+func Load() (*Config, error) {
 	cfg := &Config{
-		Server:    Server{Host: "0.0.0.0", Port: 8080},
-		DB:        DB{Path: "./data/sm.db"},
-		Translate: Translate{TargetLanguage: "en"},
-		AI:        AI{Model: "anthropic/claude-sonnet-4-6"},
-		Sync:      Sync{PollInterval: duration(5 * time.Minute), MaxMessagesPerSync: 500},
+		Server: Server{Host: "0.0.0.0", Port: 8083},
+		DB:     DB{Path: "./data/sm.db"},
 	}
-	if _, err := toml.DecodeFile(path, cfg); err != nil {
-		return nil, fmt.Errorf("config: %w", err)
+	if v := os.Getenv("SM_DB"); v != "" {
+		cfg.DB.Path = v
 	}
-	if cfg.Server.Secret == "" {
-		return nil, errors.New("config: server.secret is required")
+	if v := os.Getenv("SM_HOST"); v != "" {
+		cfg.Server.Host = v
 	}
-	for i := range cfg.Accounts {
-		a := &cfg.Accounts[i]
-		// Back-compat: `name` used to be the identity. When `account_name` is
-		// unset, keep the old behavior (name is both identity and sender name);
-		// otherwise account_name is the identity and name is the sender name.
-		if a.Name == "" {
-			a.Name = a.SenderName
+	if v := os.Getenv("SM_PORT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return nil, fmt.Errorf("config: SM_PORT %q: %w", v, err)
 		}
-		if a.SenderName == "" {
-			a.SenderName = a.Name
-		}
-		if p, ok := account.Presets[a.Provider]; ok {
-			if a.IMAPHost == "" {
-				a.IMAPHost, a.IMAPPort = p.IMAPHost, p.IMAPPort
-			}
-			if a.SMTPHost == "" {
-				a.SMTPHost, a.SMTPPort = p.SMTPHost, p.SMTPPort
-			}
-		}
-		if a.IMAPHost == "" || a.SMTPHost == "" {
-			return nil, fmt.Errorf("config: account %q: no provider preset and no imap/smtp host", a.Name)
-		}
-		if a.Auth == "" {
-			a.Auth = "password"
-		}
+		cfg.Server.Port = n
+	}
+	if v := os.Getenv("SM_BASE_URL"); v != "" {
+		cfg.Server.BaseURL = v
+	} else {
+		cfg.Server.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+	}
+	if v := os.Getenv("SM_SECRET"); v != "" {
+		cfg.Server.Secret = v
+	} else if err := ensureSecret(cfg); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
+
+// ensureSecret loads (or generates and persists) the session secret from a file
+// next to the DB, so it stays stable across restarts without any config.
+func ensureSecret(cfg *Config) error {
+	dir := filepath.Dir(cfg.DB.Path)
+	p := filepath.Join(dir, "secret")
+	if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- path derived from admin's own SM_DB
+		if s := strings.TrimSpace(string(bytes.TrimSpace(b))); s != "" {
+			cfg.Server.Secret = s
+			return nil
+		}
+	}
+	buf := make([]byte, 48)
+	if _, err := rand.Read(buf); err != nil {
+		return fmt.Errorf("config: generate secret: %w", err)
+	}
+	secret := base64.RawURLEncoding.EncodeToString(buf)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return fmt.Errorf("config: create data dir: %w", err)
+	}
+	if err := os.WriteFile(p, []byte(secret), 0o600); err != nil {
+		return fmt.Errorf("config: persist secret: %w", err)
+	}
+	slog.Info("generated session secret", "path", p)
+	cfg.Server.Secret = secret
+	return nil
+}
+
+// Interval and MaxMessagesPerSync defaults now live in the store (Prefs); kept
+// here only as a shared fallback constant for the mail engine.
+const (
+	DefaultPollInterval = 5 * time.Minute
+	DefaultMaxPerSync   = 500
+)

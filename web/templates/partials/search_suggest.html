@@ -39,13 +39,14 @@
   <ul class="space-y-0.5">
     {{range .Saved}}
     <li class="group flex items-center gap-1 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
-      <button hx-get="/search?q={{.Query}}&scope=all" hx-target="#message-list" hx-swap="outerHTML"
+      <button hx-get="/search?q={{.Query}}&scope=all" hx-target="#message-list" hx-swap="outerHTML" @click="sidebarOpen = false"
               class="flex items-center gap-2 flex-1 min-w-0 text-left">
         <svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
         <span class="truncate flex-1" title="{{.Query}}">{{.Name}}</span>
       </button>
       <button hx-post="/search/saved/{{.ID}}/delete" hx-target="#saved-searches" hx-swap="innerHTML"
-              title="Delete" class="shrink-0 opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-zinc-200">✕</button>
+              title="Delete saved search" aria-label="Delete saved search {{.Name}}"
+              class="shrink-0 opacity-60 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 text-zinc-500 hover:text-zinc-200 transition-opacity duration-150">✕</button>
     </li>
     {{end}}
   </ul>

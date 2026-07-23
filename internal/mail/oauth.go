@@ -64,7 +64,7 @@ func OAuthConfig(cfg config.Account, baseURL string) (*oauth2.Config, error) {
 		}
 		c.Scopes = []string{"https://mail.google.com/"}
 	case "zoho":
-		// Zoho is region-specific; .com is the default. See config.example.toml.
+		// Zoho is region-specific; .com is the default. See README OAuth setup.
 		c.Endpoint = oauth2.Endpoint{
 			AuthURL:  "https://accounts.zoho.com/oauth/v2/auth",
 			TokenURL: "https://accounts.zoho.com/oauth/v2/token",
@@ -103,16 +103,11 @@ func (p *persistTokenSource) Token() (*oauth2.Token, error) {
 // refreshing and persisting it as needed. Returns ErrNoToken when the account
 // has not been authorized.
 func (m *Manager) accessToken(ctx context.Context, accountName string) (string, error) {
-	var cfg *config.Account
-	for i := range m.cfg.Accounts {
-		if m.cfg.Accounts[i].Name == accountName {
-			cfg = &m.cfg.Accounts[i]
-			break
-		}
-	}
-	if cfg == nil {
+	a := m.account(accountName)
+	if a == nil {
 		return "", fmt.Errorf("unknown account %q", accountName)
 	}
+	cfg := a.cfg
 	stored, err := m.st.GetToken(accountName)
 	if err != nil {
 		return "", err
@@ -120,7 +115,7 @@ func (m *Manager) accessToken(ctx context.Context, accountName string) (string, 
 	if stored == nil || stored.Access == "" && stored.Refresh == "" {
 		return "", ErrNoToken
 	}
-	oc, err := OAuthConfig(*cfg, m.cfg.Server.BaseURL)
+	oc, err := OAuthConfig(cfg, m.cfg.Server.BaseURL)
 	if err != nil {
 		return "", err
 	}

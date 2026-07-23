@@ -27,22 +27,50 @@
    here doubles as the anchor that keeps this block from being minified away. */
 :root[data-theme="light"] {
   color-scheme: light;
-  --color-zinc-950: #fafafa;
+  /* Surfaces: a cool-gray staircase so canvas / panel / hover / border each read
+     as a distinct step (the old ramp sat within ~15 levels of white and mushed).
+     Contrast ratios (vs #fff canvas) computed, not eyeballed — see report. */
+  --color-zinc-950: #fafafa; /* near-white: markdown textarea bg (must stay light) */
   --color-zinc-900: #ffffff; /* page canvas */
-  --color-zinc-800: #f0f0f2; /* panels, inputs, hover bg, dividers */
-  --color-zinc-750: #e8e8eb; /* row hover */
-  --color-zinc-700: #e0e0e4; /* borders */
-  --color-zinc-600: #cbcbd1; /* stronger borders, checkbox */
-  --color-zinc-500: #71717a; /* muted labels */
-  --color-zinc-400: #52525b; /* secondary text, icons */
-  --color-zinc-300: #3f3f46; /* body text */
-  --color-zinc-200: #27272a; /* strong text */
-  --color-zinc-100: #18181b; /* headings, primary text */
+  --color-zinc-800: #eaecf1; /* panels, inputs, hover bg, dividers (1.18:1 vs canvas) */
+  --color-zinc-750: #dfe2e9; /* row hover (distinctly darker) */
+  --color-zinc-700: #ccd1db; /* borders — decisive (1.53:1) */
+  --color-zinc-600: #b2b8c6; /* stronger borders, checkbox, faint icon outlines */
+  --color-zinc-500: #5b616c; /* muted labels/timestamps/placeholder — 6.2:1 AA */
+  --color-zinc-400: #4c515c; /* secondary text, icons — 7.9:1 */
+  --color-zinc-300: #3a3e46; /* body text — 10.7:1 */
+  --color-zinc-200: #26272b; /* strong text — 14.9:1 */
+  --color-zinc-100: #18181b; /* headings, primary text — 17.7:1 */
+
+  /* Accent + status colors are kept from the dark authoring, but the light steps
+     (indigo/amber/red/orange 300-400) are near-invisible as TEXT on white
+     (indigo-300 ~1.9:1, amber-300 ~1.3:1). These steps are used ONLY as text or
+     as hover-bg (verified: no solid bg/border uses of these exact steps in light),
+     so darkening them here is safe and fixes every link/chip/banner at once. */
+  --color-indigo-300: #4338ca; /* links, "Via alias" chip, active tab text — 7.9:1 */
+  --color-indigo-400: #4f46e5; /* link base (hover→300) — 6.3:1 */
+  --color-amber-300: #b45309;  /* external-images banner, Connect nudge — 5.0:1 */
+  --color-amber-200: #b45309;  /* banner action buttons, backup warning */
+  --color-red-400:   #dc2626;  /* delete/error icons + status word — 4.8:1 */
+  --color-red-300:   #dc2626;  /* AI error text */
+  --color-orange-400:#ea580c;  /* spam action hover icon */
 }
 /* Light scrollbars (the * rule above is dark-tuned). */
 :root[data-theme="light"] * { scrollbar-color: #c4c4c8 transparent; }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb { background: #c4c4c8; }
 :root[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+/* Modal/overlay backdrop: the shared markup uses bg-zinc-950/70, which in light
+   mode is a ~white veil that barely dims the app (the modal floated on shadow
+   alone). Swap it for a real neutral scrim so dialogs separate crisply. Scoped
+   to light; the solid bg-zinc-950 (markdown textarea) is a different utility. */
+:root[data-theme="light"] .bg-zinc-950\/70 { background-color: rgb(24 24 27 / 0.42); }
+
+/* Popup menu shadow is tuned dark (0/.35 black); softer + tighter reads right on
+   a light canvas now that the panel/border give their own separation. */
+:root[data-theme="light"] .msg-actions-more[open] > .msg-actions-more-menu {
+  box-shadow: 0 6px 20px rgb(24 24 27 / .14), 0 2px 6px rgb(24 24 27 / .10);
+}
 
 /* Thread view: hide the collapsed snippet preview once a message is expanded. */
 [data-thread-msg].expanded .thread-snippet {
@@ -145,25 +173,43 @@
 
 /* #7: message action buttons — secondary actions collapse behind an explicit
    "more" (details/summary, no JS needed) toggle at every screen size, so
-   there's always a visible button to reveal the rest of the actions. */
+   there's always a visible button to reveal the rest of the actions. The open
+   menu is a vertical icon+label dropdown (app.js closes it on outside click
+   and after an action is chosen). */
 .msg-actions-more > summary { list-style: none; }
 .msg-actions-more > summary::-webkit-details-marker { display: none; }
 .msg-actions-more { position: relative; }
 .msg-actions-more:not([open]) > .msg-actions-more-menu { display: none; }
+.msg-actions-more[open] > summary {
+  color: var(--color-zinc-100, #f4f4f5);
+  background: var(--color-zinc-800, #27272a);
+}
 .msg-actions-more[open] > .msg-actions-more-menu {
   position: absolute;
   top: 100%;
   right: 0;
-  margin-top: 0.25rem;
+  margin-top: 0.375rem;
   z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 11rem;
   width: max-content;
-  max-width: 12rem;
+  max-width: 15rem;
   background: var(--color-zinc-800, #27272a);
   border: 1px solid var(--color-zinc-700, #3f3f46);
-  border-radius: 0.5rem;
-  padding: 0.25rem;
-  box-shadow: 0 4px 12px rgb(0 0 0 / .3);
+  border-radius: 0.625rem;
+  padding: 0.3125rem;
+  box-shadow: 0 8px 24px rgb(0 0 0 / .35), 0 2px 6px rgb(0 0 0 / .25);
+  animation: menu-pop 130ms ease-out;
 }
+@keyframes menu-pop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+
+/* The pane wrapper receives programmatic focus after a swap (for keyboard
+   users); a giant outline around the whole pane is noise, the inner controls
+   keep their own focus rings. */
+#message-detail:focus, #message-detail:focus-visible { outline: none; }
 
 /* Alpine: hide elements gated by x-show before it has initialized them. */
 [x-cloak] { display: none !important; }
@@ -210,6 +256,13 @@
   opacity: 1;
 }
 
+/* Settings Save button: dim + swap label to "Saving…" while the htmx POST is in
+   flight (the class lands on the enclosing form). */
+.htmx-request #settings-save { opacity: .65; pointer-events: none; }
+#settings-save .saving { display: none; }
+.htmx-request #settings-save .idle { display: none; }
+.htmx-request #settings-save .saving { display: inline; }
+
 /* Compose affordances: a little lift on hover/press, nothing flashy. */
 .btn-compose { transition: transform 150ms ease, background-color 150ms ease; }
 .btn-compose:hover { transform: translateY(-1px); }
@@ -241,8 +294,11 @@
    behind it — no JS needed to track which pane is "active". */
 @media (max-width: 767px) {
   /* Everything in the UI is sized in rem (text, paddings, icons), so bumping
-     the root font scales the whole app up ~12% for touch. */
-  html { font-size: 18px; }
+     the root font scales the whole app up ~12% for touch. overflow-x: clip
+     keeps any stray over-wide element (e.g. a long unbroken string, or
+     mobile-Safari input intrinsic sizing) from making the whole app pannable
+     sideways — the layout is a fixed single column by design. */
+  html { font-size: 18px; overflow-x: clip; }
   /* 16px+ inputs stop iOS Safari from auto-zooming on focus. */
   input, select, textarea { font-size: 16px; }
   /* Breathing room under the last row (the statusbar is hidden on mobile). */
@@ -254,6 +310,10 @@
     inset: 0;
     z-index: 30;
     background-color: var(--color-zinc-900, #18181b);
+    /* The pane keeps its .empty-state class; without this reset its 15vh
+       keyboard-clearance padding (below) shrinks the open message and leaves
+       a dead dark strip at the bottom. */
+    padding: 0;
   }
   #message-list:has(~ #reading-pane:not(:has(#reading-pane-empty))) {
     display: none;
@@ -271,9 +331,11 @@
     flex: none;
     overflow-y: visible;
   }
+  /* Full dynamic-viewport height: once the header is scrolled away the body
+     owns the whole screen, no dead dark strip at the bottom. */
   #message-detail > iframe {
     flex: none;
-    height: 80vh;
+    height: 100dvh;
   }
 
   /* #9: empty-state messages (no matches, all caught up...) sit dead-centered
@@ -322,4 +384,88 @@
   ::view-transition-new(*) {
     animation: none !important;
   }
+}
+
+/* ============================================================================
+   Compose editor (WYSIWYG + markdown preview) — feature: HTML compose.
+   The compose surface is intentionally light/white with dark text in BOTH app
+   themes: it is an honest preview of how the email renders on a white
+   background in the recipient's client.
+   ============================================================================ */
+
+/* Light writing surface, theme-independent. */
+.compose-wysiwyg {
+  background: #ffffff;
+  color: #1a1a1a;
+  font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  word-wrap: break-word;
+}
+.compose-wysiwyg:empty::before {
+  content: "Write your message…";
+  color: #9ca3af;
+}
+.compose-wysiwyg a { color: #2563eb; text-decoration: underline; }
+.compose-wysiwyg blockquote {
+  margin: 0.5em 0;
+  padding-left: 0.8em;
+  border-left: 3px solid #d1d5db;
+  color: #4b5563;
+}
+.compose-wysiwyg ul { list-style: disc; padding-left: 1.5em; }
+.compose-wysiwyg ol { list-style: decimal; padding-left: 1.5em; }
+.compose-wysiwyg p { margin: 0 0 0.5em; }
+.compose-wysiwyg h1, .compose-wysiwyg h2, .compose-wysiwyg h3 { font-weight: 600; margin: 0.4em 0; }
+.compose-wysiwyg pre { background: #f3f4f6; padding: 0.6em; border-radius: 4px; overflow-x: auto; }
+.compose-wysiwyg code { background: #f3f4f6; padding: 0.1em 0.3em; border-radius: 3px; font-size: 0.9em; }
+.compose-wysiwyg table { border-collapse: collapse; }
+.compose-wysiwyg td, .compose-wysiwyg th { border: 1px solid #d1d5db; padding: 0.3em 0.5em; }
+
+/* Toolbar buttons: compact, wrap/scroll on mobile (parent has overflow-x-auto). */
+.ct-btn {
+  min-width: 1.75rem;
+  height: 1.75rem;
+  padding: 0 0.35rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.25rem;
+  color: var(--color-zinc-300, #d4d4d8);
+  font-size: 0.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: background-color 150ms, color 150ms;
+}
+.ct-btn:hover { background: var(--color-zinc-700, #3f3f46); color: var(--color-zinc-100, #f4f4f5); }
+.ct-select {
+  height: 1.75rem;
+  border-radius: 0.25rem;
+  background: var(--color-zinc-900, #18181b);
+  color: var(--color-zinc-300, #d4d4d8);
+  border: 1px solid var(--color-zinc-700, #3f3f46);
+  font-size: 0.75rem;
+  padding: 0 0.25rem;
+  flex-shrink: 0;
+}
+.ct-sep {
+  width: 1px;
+  height: 1.25rem;
+  background: var(--color-zinc-700, #3f3f46);
+  margin: 0 0.25rem;
+  flex-shrink: 0;
+}
+
+/* Markdown Write/Preview tabs. */
+.md-tab {
+  color: var(--color-zinc-400, #a1a1aa);
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: color 150ms, background-color 150ms;
+}
+.md-tab:hover { color: var(--color-zinc-100, #f4f4f5); }
+.md-tab-active {
+  color: var(--color-zinc-100, #f4f4f5);
+  background: var(--color-zinc-800, #27272a);
+  border-color: var(--color-zinc-700, #3f3f46);
 }

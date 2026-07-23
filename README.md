@@ -32,13 +32,14 @@ compose here before publishing)_
 ## Quick start
 
 ```sh
-cp config.example.toml config.toml   # edit: set server.secret at minimum
 docker compose up
 ```
 
-Open http://localhost:8080 — the first visit walks you through creating your
-admin account. See [`config.example.toml`](config.example.toml) for every
-account/provider option, or the full reference table below.
+SM needs **zero configuration** to boot. Open http://localhost:8083 — the first
+visit walks you through creating your admin account, then add your email
+accounts and API keys from **Settings → Accounts / Integrations**. Everything is
+stored in the SQLite DB; the only knobs outside it are the bootstrap env vars
+below.
 
 ## Development
 
@@ -79,37 +80,30 @@ sub-routers.
 
 ## Configuration
 
-Config path comes from `$SM_CONFIG` env or `-config` flag (default: `./config.toml`).
-See [`config.example.toml`](config.example.toml) for examples.
+There is **no config file**. Bootstrap settings — the ones that can't live in
+the DB — come from environment variables, each with a working default, so a
+fresh install with zero env vars boots and runs. Everything else (accounts,
+credentials, sync cadence, translate/AI keys, preferences) is edited in the
+**Settings** GUI and stored in the SQLite DB.
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `server.host` | string | `"0.0.0.0"` | Bind address |
-| `server.port` | int | `8080` | Bind port |
-| `server.base_url` | string | — | Public URL (https:// in production; enables Secure cookies) |
-| `server.secret` | string | — | **Required**: 32+ char random key for sessions & CSRF (generate: `openssl rand -base64 32`) |
-| `db.path` | string | `"./data/sm.db"` | SQLite database path |
-| `accounts[].name` | string | — | Display name for the account |
-| `accounts[].email` | string | — | Email address |
-| `accounts[].provider` | string | — | Provider preset: `gmail`, `zoho`, `purelymail`, or omit for custom |
-| `accounts[].auth` | string | `"password"` | Auth mode: `"password"` or `"oauth2"` |
-| `accounts[].password` | string | — | Password/app-password (if `auth = "password"`) |
-| `accounts[].oauth2_client_id` | string | — | OAuth2 client ID (if `auth = "oauth2"`) |
-| `accounts[].oauth2_client_secret` | string | — | OAuth2 client secret (if `auth = "oauth2"`) |
-| `accounts[].imap_host` | string | *preset* | IMAP host (auto-filled for preset providers) |
-| `accounts[].imap_port` | int | *preset* | IMAP port (auto-filled for preset providers) |
-| `accounts[].smtp_host` | string | *preset* | SMTP host (auto-filled for preset providers) |
-| `accounts[].smtp_port` | int | *preset* | SMTP port (auto-filled for preset providers) |
-| `translate.api_key` | string | `""` | Google Translate API key (empty = disabled) |
-| `translate.target_language` | string | `"en"` | Target language code for translation (e.g., `"en"`, `"es"`, `"fr"`) |
-| `ai.openrouter_api_key` | string | `""` | OpenRouter API key (empty = AI features disabled) |
-| `ai.model` | string | `"anthropic/claude-sonnet-4-6"` | AI model via OpenRouter |
-| `sync.poll_interval` | duration | `"5m"` | IMAP poll interval when IDLE unavailable (e.g., `"5m"`, `"30s"`) |
-| `sync.max_messages_per_sync` | int | `500` | Max messages per account per sync cycle |
+| Env var | Default | Description |
+|---------|---------|-------------|
+| `SM_DB` | `./data/sm.db` | SQLite database path (created if absent) |
+| `SM_HOST` | `0.0.0.0` | Bind address |
+| `SM_PORT` | `8083` | Bind port |
+| `SM_BASE_URL` | `http://localhost:<port>` | Public URL — used for OAuth redirects and email links; `https://` enables Secure cookies |
+| `SM_SECRET` | *(auto)* | Session/CSRF signing secret. When unset it is generated once and persisted to a `secret` file next to the DB, so it stays stable across restarts |
+
+Accounts (name, email, provider preset, password or OAuth2 credentials, custom
+IMAP/SMTP hosts, aliases), the sync cadence and message cap, and the Google
+Translate / OpenRouter keys are all managed under **Settings → Accounts** and
+**Settings → Integrations**. Use **Settings → Accounts → Backup & restore** to
+export/import a portable JSON copy of all of it (it contains your passwords and
+keys in plain text — keep it safe).
 
 ## OAuth setup (Gmail, Zoho)
 
-For accounts with `auth = "oauth2"`:
+For accounts using OAuth2 (choose **OAuth2** in the account editor):
 
 1. **Create an OAuth client** in the provider console:
    - **Gmail** — [Google Cloud Console](https://console.cloud.google.com/) →
@@ -119,32 +113,31 @@ For accounts with `auth = "oauth2"`:
    - **Zoho** — [Zoho API Console](https://api-console.zoho.com/) → *Add
      Client* → *Server-based Application*. Scopes:
      `ZohoMail.accounts.READ ZohoMail.messages.ALL`. SM uses the `.com`
-     region endpoints (see the Zoho note in `config.example.toml`).
-2. **Set the authorized redirect URI** to `<base_url>/oauth/callback`
+     region endpoints (adjust `internal/mail/oauth.go` for other regions).
+2. **Set the authorized redirect URI** to `<SM_BASE_URL>/oauth/callback`
    (e.g. `https://mail.example.com/oauth/callback`). It must match
-   `server.base_url` exactly.
-3. Put `oauth2_client_id` / `oauth2_client_secret` in the account block and
-   set `auth = "oauth2"`.
-4. Start SM and sign in. The account shows **Connect account** in the sidebar
-   until authorized — click it (or visit `/oauth/<name>/start`) to grant
-   consent. Tokens are stored in the DB and refreshed automatically; the sync
-   worker (re)starts on callback.
+   `SM_BASE_URL` exactly.
+3. In **Settings → Accounts**, add the account with auth **OAuth2** and paste
+   the client ID / client secret; save it.
+4. The account shows **Connect** (in the sidebar and the Accounts list) until
+   authorized — click it to grant consent. Tokens are stored in the DB and
+   refreshed automatically; the sync worker (re)starts on callback.
 
 ## Important notes
 
-- **Set `server.secret` before first run** (`openssl rand -base64 32`). It signs
-  sessions and CSRF tokens; changing it later logs everyone out.
 - **Run behind HTTPS in production.** Cookies are only marked `Secure` when
-  `server.base_url` starts with `https://` — put SM behind a reverse proxy
-  (Caddy, nginx, Traefik) and set `base_url` to the public URL. OAuth callbacks
-  also depend on `base_url` matching the redirect URI exactly.
-- **All state lives in one SQLite file** (`db.path`, `/data/sm.db` in Docker).
-  Back that file up and you've backed up everything: message cache, sessions,
-  filters, saved searches, OAuth tokens. Deleting it is safe-ish — SM re-syncs
-  from IMAP — but you lose filters, tokens, and your admin user.
-- **Accounts are configured in `config.toml` only** — there is no accounts UI.
-  Adding/changing an account requires a restart. OAuth tokens, however, are
-  stored in the DB after the one-time browser consent flow.
+  `SM_BASE_URL` starts with `https://` — put SM behind a reverse proxy
+  (Caddy, nginx, Traefik) and set `SM_BASE_URL` to the public URL. OAuth
+  callbacks also depend on it matching the redirect URI exactly.
+- **All state lives in one SQLite file** (`SM_DB`, `/data/sm.db` in Docker),
+  next to an auto-generated `secret` file. Back the directory up and you've
+  backed up everything: accounts, credentials, message cache, sessions,
+  filters, saved searches, OAuth tokens, API keys. (Prefer the in-app
+  **Backup & restore** export for a portable, human-readable copy.)
+- **Accounts are managed in the GUI** (Settings → Accounts). Add/edit/remove
+  takes effect immediately — no restart. Removing an account also deletes its
+  downloaded folders/messages from the app; re-adding an account with the same
+  name reattaches any mail still on the server on the next sync.
 - **Single-user by design.** One admin user, created by the first-run wizard.
   Don't expose it to the internet without HTTPS and a strong password.
 - **Privacy defaults:** remote images and all external resources in emails are

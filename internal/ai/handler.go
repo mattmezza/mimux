@@ -13,7 +13,7 @@ import (
 // Routes returns a mountable router exposing POST /ai/compose and
 // POST /ai/reply. CSRF is enforced by the global auth.CSRF middleware
 // already applied in server.Handler(), so no CSRF check is duplicated here.
-func Routes(client *Client) chi.Router {
+func Routes(newClient func() *Client) chi.Router {
 	tmpl := template.Must(template.ParseFS(web.FS,
 		"templates/partials/ai_compose.html",
 		"templates/partials/ai_reply.html",
@@ -21,6 +21,7 @@ func Routes(client *Client) chi.Router {
 
 	r := chi.NewRouter()
 	r.Post("/compose", func(w http.ResponseWriter, r *http.Request) {
+		client := newClient()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		topic := r.PostFormValue("topic")
 		if topic == "" {
@@ -36,6 +37,7 @@ func Routes(client *Client) chi.Router {
 		render(w, tmpl, "ai_compose_result", map[string]any{"Draft": draft})
 	})
 	r.Post("/reply", func(w http.ResponseWriter, r *http.Request) {
+		client := newClient()
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		threadContext := r.PostFormValue("context")
 		instructions := r.PostFormValue("instructions")

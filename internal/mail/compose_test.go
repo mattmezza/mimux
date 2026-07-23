@@ -256,3 +256,174 @@ func TestBuildMessageAttachments(t *testing.T) {
 		t.Errorf("data.bin = %v", got)
 	}
 }
+
+// TestRenderMarkdown checks GFM rendering, that raw HTML is escaped (not passed
+// through), and that autolinks/strikethrough work.
+func TestRenderMarkdown(t *testing.T) {
+	out := RenderMarkdown("# Hi\n\n**bold** and ~~gone~~\n\n- a\n- b\n\n<script>alert(1)</script>")
+	for _, want := range []string{"<h1", "<strong>bold</strong>", "<del>gone</del>", "<ul>", "<li>a</li>"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("RenderMarkdown missing %q in:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "<script>") {
+		t.Errorf("raw <script> passed through:\n%s", out)
+	}
+}
+
+// TestHTMLToText flattens a WYSIWYG fragment to readable plain text with block
+// breaks and no tags.
+func TestHTMLToText(t *testing.T) {
+	got := htmlToText("<p>Hello <b>there</b></p><p>Line<br>two</p>")
+	want := "Hello there\nLine\ntwo"
+	if got != want {
+		t.Errorf("htmlToText = %q, want %q", got, want)
+	}
+}
+
+// readParts walks a message returning the media types seen and the decoded text
+// of the text/plain and text/html inline parts.
+func partsOf(t *testing.T, raw []byte) (plain, htmlBody string, cts []string) {
+	t.Helper()
+	r, err := emmail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	for {
+		p, err := r.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ih, ok := p.Header.(*emmail.InlineHeader); ok {
+			ct, _, _ := ih.ContentType()
+			cts = append(cts, ct)
+			b, _ := io.ReadAll(p.Body)
+			if ct == "text/html" {
+				htmlBody = string(b)
+			} else {
+				plain = string(b)
+			}
+		}
+	}
+	return plain, htmlBody, cts
+}
+
+// TestBuildMessageMarkdown asserts a markdown compose becomes multipart/
+// alternative carrying the markdown source as text/plain and rendered HTML as
+// text/html.
+func TestBuildMessageMarkdown(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{To: []string{"a@x.com"}, Subject: "md", Mode: "markdown", Body: "**hi** there"}
+	raw, _, err := BuildMessage(cfg, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ct := ctypeOf(t, raw); !strings.HasPrefix(ct, "multipart/alternative") {
+		t.Errorf("top Content-Type = %q, want multipart/alternative", ct)
+	}
+	plain, htmlBody, cts := partsOf(t, raw)
+	if !slices.Contains(cts, "text/plain") || !slices.Contains(cts, "text/html") {
+		t.Errorf("parts = %v, want both text/plain and text/html", cts)
+	}
+	if strings.TrimSpace(plain) != "**hi** there" {
+		t.Errorf("text/plain = %q, want the markdown source", plain)
+	}
+	if !strings.Contains(htmlBody, "<strong>hi</strong>") {
+		t.Errorf("text/html missing rendered markdown:\n%s", htmlBody)
+	}
+}
+
+// TestBuildMessageHTML asserts a WYSIWYG compose becomes multipart/alternative
+// with a stripped text/plain and the wrapped, sanitized HTML.
+func TestBuildMessageHTML(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{To: []string{"a@x.com"}, Subject: "h", Mode: "html",
+		Body: `<p>Hi <b>bob</b></p><script>evil()</script>`}
+	raw, _, err := BuildMessage(cfg, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, htmlBody, cts := partsOf(t, raw)
+	if !slices.Contains(cts, "text/plain") || !slices.Contains(cts, "text/html") {
+		t.Errorf("parts = %v", cts)
+	}
+	if strings.Contains(htmlBody, "<script>") {
+		t.Errorf("script survived sanitization:\n%s", htmlBody)
+	}
+	if !strings.Contains(htmlBody, "<b>bob</b>") {
+		t.Errorf("formatting lost:\n%s", htmlBody)
+	}
+	if !strings.Contains(plain, "Hi bob") {
+		t.Errorf("text/plain = %q, want stripped text", plain)
+	}
+}
+
+// TestBuildMessagePlainUnchanged guards zero regression: an empty/"plain" mode
+// still yields a single text/plain body (no multipart).
+func TestBuildMessagePlainUnchanged(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{To: []string{"a@x.com"}, Subject: "p", Body: "just text"}
+	raw, _, err := BuildMessage(cfg, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ct := ctypeOf(t, raw); !strings.HasPrefix(ct, "text/plain") {
+		t.Errorf("Content-Type = %q, want text/plain", ct)
+	}
+}
+
+// TestBuildMessageHTMLAttachments nests the alternative inside multipart/mixed
+// alongside the attachment.
+func TestBuildMessageHTMLAttachments(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{To: []string{"a@x.com"}, Subject: "h", Mode: "markdown", Body: "**hi**",
+		Attachments: []OutAttachment{{Filename: "a.txt", Data: []byte("x")}}}
+	raw, _, err := BuildMessage(cfg, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ct := ctypeOf(t, raw); !strings.HasPrefix(ct, "multipart/mixed") {
+		t.Errorf("top Content-Type = %q, want multipart/mixed", ct)
+	}
+	// Walk the mixed container: expect a multipart/alternative and an attachment.
+	r, err := emmail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sawHTML, sawAttach bool
+	for {
+		p, err := r.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch h := p.Header.(type) {
+		case *emmail.InlineHeader:
+			if ct, _, _ := h.ContentType(); ct == "text/html" {
+				sawHTML = true
+			}
+		case *emmail.AttachmentHeader:
+			if n, _ := h.Filename(); n == "a.txt" {
+				sawAttach = true
+			}
+		}
+	}
+	if !sawHTML || !sawAttach {
+		t.Errorf("sawHTML=%v sawAttach=%v, want both", sawHTML, sawAttach)
+	}
+}
+
+func ctypeOf(t *testing.T, raw []byte) string {
+	t.Helper()
+	r, err := emmail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct, _, _ := r.Header.ContentType()
+	return ct
+}

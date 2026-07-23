@@ -224,7 +224,7 @@ func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store
 // larger than the message count, and UIDNext-N would skip older messages still
 // present (e.g. old unread inbox mail).
 func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UID {
-	limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
+	limit := uint32(a.m.st.GetPrefs().MaxPerSync) // #nosec G115 -- small positive admin-config value
 	if limit == 0 {
 		limit = 500
 	}
@@ -250,7 +250,7 @@ func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UI
 // on the server that aren't stored yet, healing gaps left by an older/narrower
 // window without a manual re-sync. Cheap once caught up (a SEARCH + empty diff).
 func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *store.Folder) (int, error) {
-	limit := uint32(a.m.cfg.Sync.MaxMessagesPerSync) // #nosec G115 -- small positive admin-config value
+	limit := uint32(a.m.st.GetPrefs().MaxPerSync) // #nosec G115 -- small positive admin-config value
 	if limit == 0 {
 		limit = 500
 	}
