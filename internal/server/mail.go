@@ -311,10 +311,13 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	}
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
 	translateOn := s.store.GetAppConfig().TranslateAPIKey != ""
+	folders, _ := s.store.ListFolders(latest.Account)
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
 		"Latest":           latest,
+		"Folders":          folders,
+		"CurrentFolder":    latest.FolderID,
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
 		"TranslateEnabled": translateOn,
@@ -351,11 +354,13 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	_, blocked, err := s.mail.Body(r.Context(), msg, allow, false)
 	unsub, _ := s.mail.UnsubscribeInfo(r.Context(), msg)
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
+	folders, _ := s.store.ListFolders(msg.Account)
 	s.renderPartial(w, "message_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Msg":              msg,
 		"Blocked":          blocked && !allow,
 		"BodyErr":          err != nil,
+		"Folders":          folders,
 		"CurrentFolder":    msg.FolderID,
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
@@ -452,6 +457,46 @@ func (s *Server) handleMove(target string) http.HandlerFunc {
 		// Empty body + outerHTML swap removes the row from the list.
 		w.WriteHeader(http.StatusOK)
 	}
+}
+
+// handleMoveToFolder moves a message to an arbitrary folder chosen by the user
+// (form value "folder" = target folder id). It generalizes handleMove's
+// optimistic-move + deferred-IMAP flow to any folder, but only within the
+// message's OWN account — a folder id from another account is rejected.
+func (s *Server) handleMoveToFolder(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	fid, err := strconv.ParseInt(r.FormValue("folder"), 10, 64)
+	if err != nil {
+		http.Error(w, "missing folder", http.StatusBadRequest)
+		return
+	}
+	tf, err := s.store.FolderByID(fid)
+	if err != nil || tf == nil {
+		http.Error(w, "no such folder", http.StatusBadRequest)
+		return
+	}
+	if tf.Account != msg.Account {
+		http.Error(w, "folder belongs to a different account", http.StatusBadRequest)
+		return
+	}
+	srcFolderID := msg.FolderID
+	if tf.ID == srcFolderID {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	_ = s.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = s.store.RecountUnread(srcFolderID)
+	_ = s.store.RecountUnread(tf.ID)
+	msgCopy := *msg
+	target := tf.Name
+	s.schedulePendingMove(msgCopy.ID, func() {
+		s.background(func(ctx context.Context) error { return s.mail.MoveToFolder(ctx, &msgCopy, target) })
+	})
+	// Empty body + client-side row removal (like archive/spam/delete).
+	w.WriteHeader(http.StatusOK)
 }
 
 // handleUndoMove reverses a still-pending move: it cancels the deferred real

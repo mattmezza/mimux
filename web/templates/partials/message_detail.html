@@ -11,13 +11,14 @@
       </button>
       <div class="flex-1"></div>
       {{range .QABar}}{{template "qa_btn" (dict "ID" . "D" $ "Menu" false)}}{{end}}
-      {{if .QAMenu}}
+      {{if or .QAMenu .Folders}}
       <details class="msg-actions-more">
         <summary class="list-none p-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer transition-colors duration-150" aria-label="More actions" title="More actions">
           <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7.5 12a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm6 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Zm6 0a1.5 1.5 0 1 1-3 0 1.5 1.5 0 0 1 3 0Z"/></svg>
         </summary>
         <div class="msg-actions-more-menu">
           {{range .QAMenu}}{{template "qa_btn" (dict "ID" . "D" $ "Menu" true)}}{{end}}
+          {{template "qa_move" (dict "M" $m "Row" $m.ID "Folders" .Folders "Cur" .CurrentFolder)}}
         </div>
       </details>
       {{end}}
@@ -43,16 +44,7 @@
       </div>
     </div>
   </div>
-  {{if .Blocked}}
-  <div id="ext-banner" class="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
-    <span>External images blocked for your privacy.</span>
-    <button class="underline hover:text-amber-200"
-      onclick="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1';this.closest('#ext-banner').remove()">Load once</button>
-    <button class="underline hover:text-amber-200"
-      hx-post="/messages/{{$m.ID}}/allow-sender" hx-swap="none"
-      hx-on::after-request="document.getElementById('body-frame').src='/messages/{{$m.ID}}/body?ext=1';document.getElementById('ext-banner')?.remove()">Always allow from this sender</button>
-  </div>
-  {{end}}
+  {{if .Blocked}}{{template "ext_banner" (dict "ID" $m.ID "Scope" "#message-detail")}}{{end}}
   {{if .TranslateEnabled}}<div id="translate-result" data-translate-result class="shrink-0 empty:hidden border-b border-zinc-800"></div>{{end}}
   {{if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
   {{/* Calendar invite card. Always lazy-loaded — whether a message carries an
@@ -89,6 +81,22 @@
     </div>
   </div>
   {{end}}
+</div>
+{{end}}
+
+{{/* ext_banner is the "external images blocked" banner, shared by the
+     single-message view and each expanded message in a thread. Context: dict
+     ID=<message id> Scope=<CSS selector for the closest ancestor that holds
+     this message's body iframe>, so "Load once" and "allow sender" can find
+     the right iframe even when several banners exist on one page (threads). */}}
+{{define "ext_banner"}}
+<div id="ext-banner-{{.ID}}" class="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
+  <span>External images blocked for your privacy.</span>
+  <button class="underline hover:text-amber-200"
+    onclick="this.closest('{{.Scope}}').querySelector('iframe').src='/messages/{{.ID}}/body?ext=1';this.closest('#ext-banner-{{.ID}}').remove()">Load once</button>
+  <button class="underline hover:text-amber-200"
+    hx-post="/messages/{{.ID}}/allow-sender" hx-swap="none"
+    hx-on::after-request="this.closest('{{.Scope}}').querySelector('iframe').src='/messages/{{.ID}}/body?ext=1';document.getElementById('ext-banner-{{.ID}}')?.remove()">Always allow from this sender</button>
 </div>
 {{end}}
 
@@ -180,4 +188,28 @@
   {{if $menu}}<span>Delete</span>{{end}}
 </button>
 {{end}}
+{{end}}
+
+{{/* qa_move renders the "Move to…" submenu section: a divider, label, and a
+     scrollable list of the account's other folders. Picking one moves the
+     message (optimistic + deferred IMAP, same undo toast as archive/delete).
+     Context: dict M=<message> Folders=<[]store.Folder> Cur=<current folder id>
+     Row=<id of the list row to remove> (thread rows key on the root id, so it
+     differs from M.ID there). */}}
+{{define "qa_move"}}
+{{- $m := .M -}}{{- $row := .Row -}}
+{{- if .Folders -}}
+<div class="my-1 border-t border-zinc-700/70"></div>
+<div class="px-2.5 py-1 text-[11px] uppercase tracking-wide text-zinc-500">Move to</div>
+<div class="max-h-56 overflow-y-auto flex flex-col">
+  {{range .Folders}}{{if ne .ID $.Cur}}
+  <button type="button" title="Move to {{folderLabel .}}"
+    hx-post="/messages/{{$m.ID}}/move" hx-vals='{"folder":"{{.ID}}"}' hx-swap="none"
+    hx-on::after-request="closeReadingPane();removeRowAnimated(document.getElementById('msg-{{$row}}'));toastUndo('Moved','{{$m.ID}}','{{$m.FolderID}}')"
+    class="qa-menu-item w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/60 transition-colors duration-150 text-left whitespace-nowrap">
+    {{template "folder_icon" .SpecialUse}}<span class="truncate">{{folderLabel .}}</span>
+  </button>
+  {{end}}{{end}}
+</div>
+{{- end -}}
 {{end}}
