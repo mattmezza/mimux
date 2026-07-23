@@ -283,6 +283,13 @@
     flex: none;
     height: 80vh;
   }
+
+  /* #9: empty-state messages (no matches, all caught up...) sit dead-centered
+     at 50% height, too low once the on-screen keyboard opens. Shrink the
+     centering box from the bottom so the perceived center moves up to ~40%. */
+  .empty-state {
+    padding-bottom: 15vh;
+  }
 }
 
 /* Pull-to-refresh indicator (mobile, see app.js): a round chip that fades and

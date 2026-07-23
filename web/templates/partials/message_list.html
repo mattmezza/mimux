@@ -10,7 +10,7 @@
     {{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker)}}{{end}}
   </ul>
   {{else}}
-  <div class="flex-1 flex flex-col items-center justify-center gap-2 text-center p-8">
+  <div class="empty-state flex-1 flex flex-col items-center justify-center gap-2 text-center p-8">
     {{if .Unified}}
     <span class="text-3xl">🌱</span>
     <p class="text-zinc-400">You're all caught up. Go touch some grass.</p>

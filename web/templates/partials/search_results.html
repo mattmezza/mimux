@@ -51,7 +51,7 @@
     {{end}}
   </ul>
   {{else}}
-  <div class="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+  <div class="empty-state flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
     <span class="text-3xl">🔍</span>
     <p class="text-zinc-400">No messages match your search.<br>Try broadening your terms or searching on server.</p>
     <button hx-post="/search/server" hx-target="#search-server" hx-swap="innerHTML"
