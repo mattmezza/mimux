@@ -115,7 +115,7 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 					set.AddNum(imap.UID(u))
 				}
 				opts := &imap.FetchOptions{
-					UID: true, Flags: true, Envelope: true, RFC822Size: true,
+					UID: true, Flags: true, Envelope: true, InternalDate: true, RFC822Size: true,
 					BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 					BodySection:   []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
 				}

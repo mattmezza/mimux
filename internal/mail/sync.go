@@ -293,6 +293,7 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		UID:           true,
 		Flags:         true,
 		Envelope:      true,
+		InternalDate:  true,
 		RFC822Size:    true,
 		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 		BodySection:   []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
@@ -425,7 +426,10 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		HasAttachment: hasAttachment(buf.BodyStructure),
 	}
 	if m.Date.IsZero() {
-		m.Date = time.Now()
+		// Missing/unparseable Date: header — fall back to the server's
+		// INTERNALDATE (when the message was received), never to now(), which
+		// would stamp our sync time and float old mail to the top of the list.
+		m.Date = buf.InternalDate
 	}
 	if len(env.From) > 0 {
 		m.FromName = env.From[0].Name
