@@ -124,6 +124,11 @@
   overflow: hidden;
   -webkit-line-clamp: 1;
   line-clamp: 1;
+  /* #10: an unbroken long word (URL, tracking id...) must not force the row
+     wider than its column, or it pushes the star button off screen. */
+  min-width: 0;
+  width: 100%;
+  overflow-wrap: anywhere;
 }
 .preview-lines-0 .msg-snippet { display: none; }
 .preview-lines-2 .msg-snippet { -webkit-line-clamp: 2; line-clamp: 2; }
