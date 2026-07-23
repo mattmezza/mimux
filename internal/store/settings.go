@@ -17,6 +17,7 @@ type Prefs struct {
 	ShowAccountBadge bool              // show account-name badge on list rows (default true)
 	ShowAttachMarker bool              // show attachment marker on list rows (default true)
 	ShowFavicon      bool              // use sender-domain favicon as avatar (default false)
+	HideAvatarMobile bool              // hide sender avatar/favicon on mobile only (default false)
 	DarkMessages     bool              // open message bodies in dark mode by default (default false)
 	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
 	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
@@ -32,6 +33,7 @@ func defaultPrefs() Prefs {
 		ShowAccountBadge: true,
 		ShowAttachMarker: true,
 		ShowFavicon:      false,
+		HideAvatarMobile: false,
 		DarkMessages:     false,
 		RememberMsgTheme: false,
 		SyncMonths:       0,
@@ -92,6 +94,9 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("show_favicon"); ok {
 		p.ShowFavicon = v == "1"
 	}
+	if v, ok := s.getSetting("hide_avatar_mobile"); ok {
+		p.HideAvatarMobile = v == "1"
+	}
 	if v, ok := s.getSetting("dark_messages"); ok {
 		p.DarkMessages = v == "1"
 	}
@@ -129,6 +134,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"show_account_badge": boolStr(p.ShowAccountBadge),
 		"show_attach_marker": boolStr(p.ShowAttachMarker),
 		"show_favicon":       boolStr(p.ShowFavicon),
+		"hide_avatar_mobile": boolStr(p.HideAvatarMobile),
 		"dark_messages":      boolStr(p.DarkMessages),
 		"remember_msg_theme": boolStr(p.RememberMsgTheme),
 		"sync_months":        strconv.Itoa(p.SyncMonths),

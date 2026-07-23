@@ -30,6 +30,7 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		ShowAccountBadge: r.PostFormValue("show_account_badge") != "",
 		ShowAttachMarker: r.PostFormValue("show_attach_marker") != "",
 		ShowFavicon:      r.PostFormValue("show_favicon") != "",
+		HideAvatarMobile: r.PostFormValue("hide_avatar_mobile") != "",
 		DarkMessages:     r.PostFormValue("dark_messages") != "",
 		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
 		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),

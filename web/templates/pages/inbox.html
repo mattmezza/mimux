@@ -1,6 +1,6 @@
 {{define "title"}}Inbox — SM{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="smUI" :data-filter="filter">
+<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="smUI" :data-filter="filter">
   {{template "topbar" .}}
   <div class="flex-1 flex min-h-0 relative">
     {{template "sidebar" .}}
@@ -9,7 +9,7 @@
       {{template "message_list" .}}
       {{else}}
       <section id="message-list" class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto">
-        <div class="h-full flex flex-col items-center justify-center gap-2 text-center p-8">
+        <div class="empty-state h-full flex flex-col items-center justify-center gap-2 text-center p-8">
           <span class="text-3xl">🌱</span>
           <p class="text-zinc-400">You're all caught up. Go touch some grass.</p>
         </div>
@@ -21,7 +21,7 @@
         {{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}
         {{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}
       </div>
-      <section id="reading-pane" class="flex-1 flex items-center justify-center text-zinc-600">
+      <section id="reading-pane" class="empty-state flex-1 flex items-center justify-center text-zinc-600">
         <p id="reading-pane-empty">Select a message to read it here.</p>
       </section>
       <div id="reading-skeleton" class="htmx-indicator absolute inset-y-0 right-0 left-0 md:left-96 lg:left-[26rem] z-20 bg-zinc-900 overflow-hidden pointer-events-none" aria-hidden="true">
