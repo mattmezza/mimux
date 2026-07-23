@@ -41,12 +41,33 @@ func SanitizeComposeHTML(fragment string) string {
 
 // emailDocTemplate wraps an HTML fragment in a minimal, boring, email-safe
 // document: a max-width container with a readable sans-serif base. Kept
-// deliberately plain for broad client compatibility.
+// deliberately plain for broad client compatibility. The container div keeps
+// its inline base styles (font/size/line-height/color) so clients that strip
+// <head><style> still get readable text; the scoped .sm-body stylesheet layers
+// on the per-element polish (headings, links, code, blockquotes, tables) for
+// the clients that keep it. Everything is scoped under .sm-body so it can't
+// bleed into quoted replies or the surrounding message.
 const emailDocHead = `<!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+.sm-body h1,.sm-body h2,.sm-body h3,.sm-body h4{line-height:1.25;margin:1.4em 0 .5em;font-weight:600}
+.sm-body h1{font-size:1.6em}.sm-body h2{font-size:1.35em}.sm-body h3{font-size:1.15em}
+.sm-body p,.sm-body ul,.sm-body ol,.sm-body blockquote,.sm-body pre,.sm-body table{margin:0 0 1em}
+.sm-body li{margin:.25em 0}
+.sm-body a{color:#2563eb;text-decoration:underline}
+.sm-body img{max-width:100%;height:auto}
+.sm-body hr{border:0;border-top:1px solid #e5e5e5;margin:1.5em 0}
+.sm-body blockquote{margin-left:0;padding:.2em 1em;border-left:3px solid #d0d0d0;color:#555}
+.sm-body code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.9em;background:#f2f2f2;padding:.15em .35em;border-radius:4px}
+.sm-body pre{background:#f6f8fa;padding:12px 14px;border-radius:6px;overflow-x:auto;line-height:1.45}
+.sm-body pre code{background:none;padding:0;font-size:.88em}
+.sm-body table{border-collapse:collapse;width:100%}
+.sm-body th,.sm-body td{border:1px solid #e0e0e0;padding:6px 10px;text-align:left}
+.sm-body th{background:#f6f8fa;font-weight:600}
+</style></head>
 <body style="margin:0;padding:0;background:#ffffff;">
-<div style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;word-wrap:break-word;">
+<div class="sm-body" style="max-width:640px;margin:0 auto;padding:16px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.5;color:#1a1a1a;word-wrap:break-word;">
 `
 const emailDocTail = `
 </div>
