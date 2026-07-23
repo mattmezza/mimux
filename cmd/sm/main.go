@@ -61,7 +61,7 @@ func main() {
 	mgr := mail.NewManager(cfg, st)
 	mgr.Start(ctx)
 
-	srv, err := server.New(cfg, st, mgr)
+	srv, err := server.New(cfg, st, mgr, version)
 	if err != nil {
 		slog.Error("startup", "err", err)
 		os.Exit(1)

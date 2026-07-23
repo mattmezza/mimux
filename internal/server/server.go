@@ -26,22 +26,24 @@ import (
 )
 
 type Server struct {
-	cfg    *config.Config
-	store  *store.Store
-	mail   *mail.Manager
-	tmpl   map[string]*template.Template
-	secure bool
+	cfg     *config.Config
+	store   *store.Store
+	mail    *mail.Manager
+	tmpl    map[string]*template.Template
+	secure  bool
+	version string
 
 	pendingMu sync.Mutex
 	pending   map[int64]*time.Timer // message id -> deferred real IMAP move, cancellable by undo
 }
 
-func New(cfg *config.Config, st *store.Store, mgr *mail.Manager) (*Server, error) {
+func New(cfg *config.Config, st *store.Store, mgr *mail.Manager, version string) (*Server, error) {
 	s := &Server{
 		cfg:     cfg,
 		store:   st,
 		mail:    mgr,
 		secure:  strings.HasPrefix(cfg.Server.BaseURL, "https://"),
+		version: version,
 		pending: map[int64]*time.Timer{},
 	}
 	setAccountAliases(cfg.Accounts)
@@ -93,6 +95,10 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 		http.Error(w, "template not found: "+page, http.StatusInternalServerError)
 		return
 	}
+	if data == nil {
+		data = make(map[string]any)
+	}
+	data["Version"] = s.version
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "base", data); err != nil {
 		slog.Error("render", "page", page, "err", err)
