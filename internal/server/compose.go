@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -85,12 +86,10 @@ type composeView struct {
 }
 
 // handleComposeNew serves GET /compose (blank) and GET
-// /compose?reply=<id>&mode=reply|all|forward (prefilled). A local draft row
-// is created immediately so every autosave from here on is an update to a
-// known id.
-// NOTE: this means an opened-then-abandoned compose leaves an empty
-// draft row behind; acceptable for a local-only, low-volume table — prune
-// empties on a timer if that ever becomes annoying.
+// /compose?reply=<id>&mode=reply|all|forward (prefilled). No draft row is
+// created here: the compose opens with DraftID 0 and the first autosave
+// (handleComposeDraftSave) creates the row on first edit, so merely opening
+// and closing compose leaves nothing behind.
 func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	view := composeView{
 		CSRF:     auth.EnsureCSRF(w, r, s.secure),
@@ -129,14 +128,6 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			s.prefillReply(&view, orig, r.URL.Query().Get("mode"))
 		}
 	}
-	d := &store.Draft{
-		Account: view.Account, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
-		Subject: view.Subject, Body: view.Body, InReplyTo: view.InReplyTo, Kind: view.Kind,
-	}
-	if err := s.store.UpsertDraft(d); err != nil {
-		slog.Error("compose: create draft", "err", err)
-	}
-	view.DraftID = d.ID
 	s.renderPartial(w, "compose", view)
 }
 
@@ -207,18 +198,16 @@ func (s *Server) accountByName(name string) (config.Account, bool) {
 }
 
 // handleComposeDraftSave is the htmx autosave endpoint: POST /compose/draft,
-// debounced client-side. It always returns 204 (see compose.html), so the
-// draft must already have an id — handleComposeNew creates one at open time.
+// debounced client-side and fired by the "Save draft" button. The draft row is
+// created lazily here on the first save (draft_id 0); the new id is handed back
+// as an out-of-band swap so subsequent saves update the same row. Returns 204
+// once the id is known (the client leaves the modal open).
 func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	id, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
-	if id == 0 {
-		w.WriteHeader(http.StatusNoContent)
-		return
-	}
 	// The From menu posts an address; store which account owns it.
 	account := r.PostFormValue("account")
 	if account == "" {
@@ -234,6 +223,13 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft autosave", "err", err)
+	}
+	if id == 0 && d.ID != 0 {
+		// First save: tell the open form its new draft id via OOB swap so later
+		// autosaves target this row instead of creating more.
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = fmt.Fprintf(w, `<input type="hidden" id="compose-draft-id" name="draft_id" value="%d" hx-swap-oob="true">`, d.ID)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
