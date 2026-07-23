@@ -11,6 +11,7 @@
       </button>
     </div>
     <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
+      enctype="multipart/form-data"
       class="flex-1 overflow-y-auto p-4 space-y-3"
       hx-on::after-request="if(event.detail.elt===this&&event.detail.xhr.status===204){closeCompose()}">
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
@@ -72,6 +73,16 @@
         hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
         class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
       <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+
+      <div class="flex items-center gap-2 flex-wrap">
+        <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm px-3 py-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+          Attach
+          <input type="file" name="attachments" multiple class="hidden"
+            onchange="document.getElementById('attach-list').textContent=[...this.files].map(f=>f.name).join(', ')">
+        </label>
+        <span id="attach-list" class="text-xs text-zinc-500 break-all"></span>
+      </div>
 
       <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
         {{if eq .Kind "new"}}{{template "ai_compose_form" .}}{{else}}{{template "ai_reply_form" .}}{{end}}

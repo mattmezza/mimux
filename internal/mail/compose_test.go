@@ -1,6 +1,8 @@
 package mail
 
 import (
+	"bytes"
+	"io"
 	"slices"
 	"strings"
 	"testing"
@@ -199,5 +201,58 @@ func TestBuildMessage(t *testing.T) {
 	}
 	if got, _ := r.Header.MessageID(); got != msgID {
 		t.Errorf("parsed Message-ID = %q, want %q", got, msgID)
+	}
+}
+
+// TestBuildMessageAttachments builds a message with two attachments and reads
+// it back, asserting the multipart/mixed structure, the text body, and each
+// attachment's filename and (base64-round-tripped) bytes.
+func TestBuildMessageAttachments(t *testing.T) {
+	cfg := config.Account{Name: "Work", Email: "me@example.com"}
+	in := ComposeInput{
+		To:      []string{"a@x.com"},
+		Subject: "with files",
+		Body:    "see attached",
+		Attachments: []OutAttachment{
+			{Filename: "hello.txt", ContentType: "text/plain", Data: []byte("hello world")},
+			{Filename: "data.bin", Data: []byte{0x00, 0x01, 0x02, 0xff}}, // no content type -> octet-stream
+		},
+	}
+	raw, _, err := BuildMessage(cfg, in, time.Date(2026, 7, 22, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := emmail.CreateReader(strings.NewReader(string(raw)))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var body string
+	files := map[string][]byte{}
+	for {
+		p, err := r.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		switch h := p.Header.(type) {
+		case *emmail.InlineHeader:
+			b, _ := io.ReadAll(p.Body)
+			body = strings.TrimSpace(string(b))
+		case *emmail.AttachmentHeader:
+			name, _ := h.Filename()
+			b, _ := io.ReadAll(p.Body)
+			files[name] = b
+		}
+	}
+	if body != "see attached" {
+		t.Errorf("body = %q", body)
+	}
+	if got := files["hello.txt"]; string(got) != "hello world" {
+		t.Errorf("hello.txt = %q", got)
+	}
+	if got := files["data.bin"]; !bytes.Equal(got, []byte{0x00, 0x01, 0x02, 0xff}) {
+		t.Errorf("data.bin = %v", got)
 	}
 }

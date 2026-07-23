@@ -22,6 +22,15 @@ type ComposeInput struct {
 	From        string // send-as address (account primary or an alias); "" = account default
 	InReplyTo   string // original Message-ID (no angle brackets), "" for a new message
 	References  string // full References header value to reuse (see ComputeReferences), "" for a new message
+	Attachments []OutAttachment
+}
+
+// OutAttachment is one file to attach to an outgoing message. Data is the raw
+// (already decoded) file bytes; the writer base64-encodes it.
+type OutAttachment struct {
+	Filename    string
+	ContentType string // "" defaults to application/octet-stream
+	Data        []byte
 }
 
 // PrefixSubject adds "Re: "/"Fwd: " for kind "reply"/"reply_all"/"forward",
@@ -204,8 +213,8 @@ func parseAddrs(raw []string) []*emmail.Address {
 
 // BuildMessage renders a ComposeInput into an RFC 5322 message for account
 // cfg, returning the raw bytes and the generated Message-ID (without angle
-// brackets). Plain text only — rich text/attachments are out of scope for
-// this phase.
+// brackets). A plain-text single part when there are no attachments, otherwise
+// a multipart/mixed with the text body plus one base64 attachment per file.
 func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byte, messageID string, err error) {
 	fromAddr := cfg.Email
 	if in.From != "" {
@@ -233,9 +242,15 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 	if in.References != "" {
 		h.Set("References", in.References)
 	}
-	h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 
 	var buf bytes.Buffer
+	if len(in.Attachments) > 0 {
+		if err := writeMultipart(&buf, h, in); err != nil {
+			return nil, "", err
+		}
+		return buf.Bytes(), messageID, nil
+	}
+	h.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
 	w, err := emmail.CreateSingleInlineWriter(&buf, h)
 	if err != nil {
 		return nil, "", err
@@ -247,4 +262,46 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 		return nil, "", err
 	}
 	return buf.Bytes(), messageID, nil
+}
+
+// writeMultipart emits a multipart/mixed message: the text body as an inline
+// part followed by one base64-encoded attachment per file. CreateWriter sets
+// the Content-Type to multipart/mixed, overriding any on h.
+func writeMultipart(buf *bytes.Buffer, h emmail.Header, in ComposeInput) error {
+	mw, err := emmail.CreateWriter(buf, h)
+	if err != nil {
+		return err
+	}
+	var th emmail.InlineHeader
+	th.SetContentType("text/plain", map[string]string{"charset": "utf-8"})
+	tw, err := mw.CreateSingleInline(th)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(tw, toCRLF(in.Body)); err != nil {
+		return err
+	}
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	for _, at := range in.Attachments {
+		ct := at.ContentType
+		if ct == "" {
+			ct = "application/octet-stream"
+		}
+		var ah emmail.AttachmentHeader
+		ah.SetContentType(ct, nil)
+		ah.SetFilename(at.Filename)
+		aw, err := mw.CreateAttachment(ah)
+		if err != nil {
+			return err
+		}
+		if _, err := aw.Write(at.Data); err != nil {
+			return err
+		}
+		if err := aw.Close(); err != nil {
+			return err
+		}
+	}
+	return mw.Close()
 }
