@@ -209,6 +209,13 @@
    placeholder), at which point it takes over full-screen and the list hides
    behind it — no JS needed to track which pane is "active". */
 @media (max-width: 767px) {
+  /* Everything in the UI is sized in rem (text, paddings, icons), so bumping
+     the root font scales the whole app up ~12% for touch. */
+  html { font-size: 18px; }
+  /* 16px+ inputs stop iOS Safari from auto-zooming on focus. */
+  input, select, textarea { font-size: 16px; }
+  /* Breathing room under the last row (the statusbar is hidden on mobile). */
+  #message-list { padding-bottom: 5rem; overscroll-behavior-y: contain; }
   #reading-pane { display: none; }
   #reading-pane:not(:has(#reading-pane-empty)) {
     display: flex;
@@ -221,6 +228,31 @@
     display: none;
   }
 }
+
+/* Pull-to-refresh indicator (mobile, see app.js): a round chip that fades and
+   slides in as the list is pulled down, turning solid when past the trigger. */
+#ptr-indicator {
+  position: fixed;
+  top: 3.5rem;
+  left: 50%;
+  z-index: 25;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-zinc-800, #27272a);
+  border: 1px solid var(--color-zinc-700, #3f3f46);
+  color: var(--color-zinc-300, #d4d4d8);
+  box-shadow: 0 4px 12px rgb(0 0 0 / .3);
+  opacity: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+#ptr-indicator.ready { color: #fff; background: var(--color-indigo-500, #6366f1); border-color: transparent; }
+#ptr-indicator.spinning svg { animation: spin 800ms linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {

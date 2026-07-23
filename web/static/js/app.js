@@ -396,6 +396,58 @@ window.toggleThreadMessage = toggleThreadMessage;
   });
 })();
 
+// --- pull-to-refresh (mobile): drag the message list down while it's already
+// scrolled to the top to trigger a full re-sync (same as the Refresh button).
+// Listeners live on document so they survive htmx list swaps.
+(function initPullToRefresh() {
+  const THRESHOLD = 70;
+  let startY = 0, pulling = false, dist = 0;
+  function indicator() {
+    let el = document.getElementById("ptr-indicator");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "ptr-indicator";
+      el.innerHTML = '<svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>';
+      document.body.appendChild(el);
+    }
+    return el;
+  }
+  document.addEventListener("touchstart", (e) => {
+    const list = e.target.closest && e.target.closest("#message-list");
+    pulling = !!list && list.scrollTop <= 0;
+    if (pulling) { startY = e.touches[0].clientY; dist = 0; }
+  }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    if (!pulling) return;
+    dist = e.touches[0].clientY - startY;
+    const el = indicator();
+    if (dist <= 0) { el.style.opacity = "0"; return; }
+    el.style.opacity = String(Math.min(1, dist / THRESHOLD));
+    el.style.transform = `translate(-50%, ${Math.round(Math.min(dist, THRESHOLD + 30) * 0.4)}px)`;
+    el.classList.toggle("ready", dist > THRESHOLD);
+  }, { passive: true });
+  document.addEventListener("touchend", () => {
+    if (!pulling) return;
+    pulling = false;
+    const el = indicator();
+    if (dist > THRESHOLD && window.htmx) {
+      el.classList.add("spinning");
+      htmx.ajax("POST", "/refresh", { swap: "none" }).then(() => {
+        document.body.dispatchEvent(new Event("sm:refresh"));
+        el.classList.remove("spinning", "ready");
+        el.style.opacity = "0";
+        el.style.transform = "";
+      });
+      toast("Syncing all accounts…");
+    } else {
+      el.classList.remove("ready");
+      el.style.opacity = "0";
+      el.style.transform = "";
+    }
+    dist = 0;
+  });
+})();
+
 // --- translate: pull the rendered text out of a message-body iframe and POST
 // it to /translate, dropping the result into resultEl. Same-origin iframe, so
 // reading its text is allowed. ---

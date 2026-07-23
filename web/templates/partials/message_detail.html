@@ -2,7 +2,7 @@
 {{$m := .Msg}}
 <div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
   <div class="shrink-0 border-b border-zinc-800 p-4">
-    <div class="flex items-start gap-3">
+    <div class="flex flex-wrap items-start gap-3">
       <button type="button" title="Back to list" aria-label="Back to list" onclick="closeReadingPane()"
         class="md:hidden shrink-0 p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
@@ -11,7 +11,7 @@
            style="background-color:{{avatarColor $m.FromAddress}}">{{avatarInitials $m.FromName $m.FromAddress}}</div>
       <div class="min-w-0 flex-1">
         <h1 class="text-zinc-100 font-semibold text-base leading-snug break-words">{{if $m.Subject}}{{$m.Subject}}{{else}}(no subject){{end}}</h1>
-        <div class="mt-1 text-xs text-zinc-400 space-y-0.5">
+        <div class="mt-1 text-xs text-zinc-400 space-y-0.5 break-words">
           <div><span class="text-zinc-500">From</span> <span class="text-zinc-300">{{if $m.FromName}}{{$m.FromName}} {{end}}&lt;{{$m.FromAddress}}&gt;</span></div>
           {{if $m.ToAddresses}}<div><span class="text-zinc-500">To</span> {{$m.ToAddresses}}</div>{{end}}
           {{if $m.CcAddresses}}<div><span class="text-zinc-500">Cc</span> {{$m.CcAddresses}}</div>{{end}}
@@ -19,7 +19,7 @@
           <div class="text-zinc-500">{{$m.Date.Format "Mon, 2 Jan 2006 15:04"}}</div>
         </div>
       </div>
-      <div class="shrink-0 flex items-center gap-1">
+      <div class="w-full md:w-auto shrink-0 flex flex-wrap items-center justify-end gap-1">
         <button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"
           onclick="toggleBodyTheme(document.getElementById('body-frame'))"
           class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 transition-colors duration-150">
