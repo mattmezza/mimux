@@ -22,6 +22,30 @@ type Prefs struct {
 	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
 	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
 	AccountColors    map[string]string // account name -> hex color, e.g. "#6366f1"
+	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
+}
+
+// AllQuickActions lists every optional action shown in the message "more" menu
+// (id, label), in their default display order. Reply/Archive are always shown
+// and not included here.
+var AllQuickActions = []struct{ ID, Label string }{
+	{"dark", "Toggle dark/light message"},
+	{"translate", "Translate"},
+	{"refetch", "Re-fetch from server"},
+	{"replyall", "Reply all"},
+	{"forward", "Forward"},
+	{"star", "Star / unstar"},
+	{"unread", "Mark unread"},
+	{"spam", "Mark as spam"},
+	{"delete", "Delete"},
+}
+
+func defaultQuickActions() string {
+	ids := make([]string, len(AllQuickActions))
+	for i, a := range AllQuickActions {
+		ids[i] = a.ID
+	}
+	return strings.Join(ids, ",")
 }
 
 func defaultPrefs() Prefs {
@@ -38,6 +62,7 @@ func defaultPrefs() Prefs {
 		RememberMsgTheme: false,
 		SyncMonths:       0,
 		AccountColors:    map[string]string{},
+		QuickActions:     defaultQuickActions(),
 	}
 }
 
@@ -108,6 +133,9 @@ func (s *Store) GetPrefs() Prefs {
 			p.SyncMonths = n
 		}
 	}
+	if v, ok := s.getSetting("quick_actions"); ok {
+		p.QuickActions = v
+	}
 	rows, err := s.DB.Query(`SELECT key, value FROM app_settings WHERE key LIKE ?`, accountColorPrefix+"%")
 	if err != nil {
 		slog.Error("GetPrefs account colors", "err", err)
@@ -138,6 +166,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"dark_messages":      boolStr(p.DarkMessages),
 		"remember_msg_theme": boolStr(p.RememberMsgTheme),
 		"sync_months":        strconv.Itoa(p.SyncMonths),
+		"quick_actions":      p.QuickActions,
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

@@ -90,6 +90,19 @@
             class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
           <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
         </label>
+
+        <div class="space-y-1">
+          <span class="block text-sm text-zinc-200">Quick actions shown in a message's "⋯" menu</span>
+          <div class="space-y-1.5">
+            {{range .AllQuickActions}}
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="quick_actions" value="{{.ID}}" {{if hasQA .ID $.Prefs.QuickActions}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">{{.Label}}</span>
+            </label>
+            {{end}}
+          </div>
+        </div>
       </section>
 
       <section class="space-y-4">
