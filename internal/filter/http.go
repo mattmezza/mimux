@@ -49,6 +49,7 @@ func Routes(rs RuleStore, secure bool, funcs template.FuncMap, sidebar func() an
 		"templates/partials/filter_row.html",
 		"templates/partials/filter_form.html",
 		"templates/partials/filter_test_form.html",
+		"templates/partials/compose_fab.html",
 		"templates/components/help-overlay.html",
 	))
 	h := &handler{rs: rs, tmpl: tmpl, secure: secure, sidebar: sidebar}
