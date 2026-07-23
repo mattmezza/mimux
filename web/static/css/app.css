@@ -143,34 +143,26 @@
 }
 #list-resizer:hover, #list-resizer.dragging { background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 40%, transparent); }
 
-/* #7: message action buttons — secondary actions collapse behind a "more"
-   (details/summary, no JS needed) toggle on mobile. Desktop keeps every
-   button inline via display:contents, unwrapping the wrapper so it looks
-   exactly like a flat button row. */
+/* #7: message action buttons — secondary actions collapse behind an explicit
+   "more" (details/summary, no JS needed) toggle at every screen size, so
+   there's always a visible button to reveal the rest of the actions. */
 .msg-actions-more > summary { list-style: none; }
 .msg-actions-more > summary::-webkit-details-marker { display: none; }
-@media (min-width: 768px) {
-  .msg-actions-more { display: contents; }
-  .msg-actions-more > summary { display: none; }
-  .msg-actions-more > .msg-actions-more-menu { display: contents; }
-}
-@media (max-width: 767px) {
-  .msg-actions-more { position: relative; }
-  .msg-actions-more:not([open]) > .msg-actions-more-menu { display: none; }
-  .msg-actions-more[open] > .msg-actions-more-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    margin-top: 0.25rem;
-    z-index: 20;
-    width: max-content;
-    max-width: 12rem;
-    background: var(--color-zinc-800, #27272a);
-    border: 1px solid var(--color-zinc-700, #3f3f46);
-    border-radius: 0.5rem;
-    padding: 0.25rem;
-    box-shadow: 0 4px 12px rgb(0 0 0 / .3);
-  }
+.msg-actions-more { position: relative; }
+.msg-actions-more:not([open]) > .msg-actions-more-menu { display: none; }
+.msg-actions-more[open] > .msg-actions-more-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.25rem;
+  z-index: 20;
+  width: max-content;
+  max-width: 12rem;
+  background: var(--color-zinc-800, #27272a);
+  border: 1px solid var(--color-zinc-700, #3f3f46);
+  border-radius: 0.5rem;
+  padding: 0.25rem;
+  box-shadow: 0 4px 12px rgb(0 0 0 / .3);
 }
 
 /* Alpine: hide elements gated by x-show before it has initialized them. */

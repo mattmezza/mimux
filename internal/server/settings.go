@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/mattmezza/sm/internal/auth"
 	"github.com/mattmezza/sm/internal/store"
@@ -14,10 +15,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		cap = 500
 	}
 	s.render(w, "settings", map[string]any{
-		"CSRF":       auth.EnsureCSRF(w, r, s.secure),
-		"Prefs":      s.store.GetPrefs(),
-		"Accounts":   s.cfg.Accounts,
-		"MaxPerSync": cap,
+		"CSRF":            auth.EnsureCSRF(w, r, s.secure),
+		"Prefs":           s.store.GetPrefs(),
+		"Accounts":        s.cfg.Accounts,
+		"MaxPerSync":      cap,
+		"AllQuickActions": store.AllQuickActions,
 	})
 }
 
@@ -35,6 +37,7 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
 		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),
 		AccountColors:    map[string]string{},
+		QuickActions:     strings.Join(r.PostForm["quick_actions"], ","),
 	}
 	if p.SyncMonths < 0 {
 		p.SyncMonths = 0

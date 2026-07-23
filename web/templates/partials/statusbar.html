@@ -1,6 +1,6 @@
 {{define "statusbar"}}
 <footer id="statusbar" hx-get="/statusbar" hx-trigger="sm:sync from:body, every 60s" hx-swap="outerHTML"
-        class="h-6 shrink-0 hidden md:flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-[11px] text-zinc-500">
+        class="h-7 shrink-0 hidden md:flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-[11px] text-zinc-500">
   <span id="sync-status" class="flex items-center gap-3">
     {{range .Statuses}}
     <span class="flex items-center gap-1.5" title="{{.Message}}">
@@ -11,10 +11,13 @@
     <span>Ready</span>
     {{end}}
   </span>
-  <div class="flex items-center gap-4">
-    <a href="https://github.com/mattmezza/sm/releases/tag/{{.Version}}" target="_blank" rel="noopener" title="Open release page" class="hover:text-zinc-300 transition-colors duration-150">{{.Version}}</a>
-    <button title="About" onclick="document.dispatchEvent(new CustomEvent('sm:about'))" class="hover:text-zinc-300 transition-colors duration-150">ℹ</button>
-    <button title="Keyboard shortcuts" onclick="document.dispatchEvent(new CustomEvent('sm:help'))" class="hover:text-zinc-300 transition-colors duration-150">Press ? for shortcuts</button>
+  <div class="flex items-center gap-1">
+    <a href="https://github.com/mattmezza/sm/releases/tag/{{.Version}}" target="_blank" rel="noopener" title="Open release page"
+       class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">{{.Version}}</a>
+    <button title="About" aria-label="About" onclick="document.dispatchEvent(new CustomEvent('sm:about'))"
+      class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">ℹ</button>
+    <button title="Keyboard shortcuts" onclick="document.dispatchEvent(new CustomEvent('sm:help'))"
+      class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">Press ? for shortcuts</button>
   </div>
 </footer>
 {{end}}

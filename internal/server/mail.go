@@ -30,6 +30,18 @@ var templateFuncs = template.FuncMap{
 	"highlight":      highlight,
 	"identities":     identities,
 	"receivedAlias":  receivedAlias,
+	"hasQA":          hasQA,
+}
+
+// hasQA reports whether action id is enabled in the comma-separated
+// QuickActions preference string.
+func hasQA(id, quickActions string) bool {
+	for _, a := range strings.Split(quickActions, ",") {
+		if a == id {
+			return true
+		}
+	}
+	return false
 }
 
 // accountAliases maps account name -> its configured alias addresses, set once
@@ -223,6 +235,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"TranslateEnabled": s.cfg.Translate.APIKey != "",
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
+		"QuickActions":     prefs.QuickActions,
 	})
 }
 
@@ -259,6 +272,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"TranslateEnabled": s.cfg.Translate.APIKey != "",
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
+		"QuickActions":     prefs.QuickActions,
 		"Unsub":            unsub,
 	})
 }
