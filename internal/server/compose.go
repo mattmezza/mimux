@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -234,12 +235,61 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// maxAttachTotal caps the combined size of all attachments on one message.
+const maxAttachTotal = 25 << 20 // 25MB
+
+// readAttachments pulls the uploaded "attachments" files off a parsed multipart
+// form, enforcing the total size cap. The second return is a user-facing error
+// message ("" on success). Returns nil for a non-multipart request (no files).
+// Draft-attachment persistence is intentionally not implemented — attachments
+// only ride along with the outgoing send.
+func readAttachments(r *http.Request) ([]mail.OutAttachment, string) {
+	if r.MultipartForm == nil {
+		return nil, ""
+	}
+	var out []mail.OutAttachment
+	var total int64
+	for _, fh := range r.MultipartForm.File["attachments"] {
+		if fh.Size == 0 {
+			continue // empty file input slot
+		}
+		total += fh.Size
+		if total > maxAttachTotal {
+			return nil, fmt.Sprintf("Attachments exceed the %dMB limit.", maxAttachTotal>>20)
+		}
+		f, err := fh.Open()
+		if err != nil {
+			return nil, fmt.Sprintf("Could not read attachment %q.", fh.Filename)
+		}
+		data, err := io.ReadAll(f)
+		_ = f.Close()
+		if err != nil {
+			return nil, fmt.Sprintf("Could not read attachment %q.", fh.Filename)
+		}
+		out = append(out, mail.OutAttachment{
+			Filename:    fh.Filename,
+			ContentType: fh.Header.Get("Content-Type"),
+			Data:        data,
+		})
+	}
+	return out, ""
+}
+
 // handleComposeSend is POST /compose. On success it deletes the draft and
 // returns 204 (the client closes the modal + shows a toast); on failure it
 // re-renders the compose partial with an error banner, modal stays open,
 // draft stays saved.
 func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	multipart := strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data")
+	if multipart {
+		// Hard cap the whole request so a giant upload can't exhaust disk;
+		// the per-file sum below gives the clean 25MB error before this trips.
+		r.Body = http.MaxBytesReader(w, r.Body, maxAttachTotal+(1<<20))
+		if err := r.ParseMultipartForm(maxAttachTotal + (1 << 20)); err != nil {
+			http.Error(w, "bad form", http.StatusBadRequest)
+			return
+		}
+	} else if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
@@ -271,10 +321,16 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "compose", view)
 		return
 	}
+	atts, attErr := readAttachments(r)
+	if attErr != "" {
+		view.Error = attErr
+		s.renderPartial(w, "compose", view)
+		return
+	}
 	in := mail.ComposeInput{
 		To: to, Cc: mail.SplitAddrList(view.Cc), Bcc: mail.SplitAddrList(view.Bcc),
 		Subject: view.Subject, Body: view.Body, From: view.From,
-		InReplyTo: view.InReplyTo, References: view.References,
+		InReplyTo: view.InReplyTo, References: view.References, Attachments: atts,
 	}
 	if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
 		slog.Error("compose: send", "account", view.Account, "err", err)
