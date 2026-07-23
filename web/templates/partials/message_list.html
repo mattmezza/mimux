@@ -1,6 +1,6 @@
 {{define "message_list"}}
 <section id="message-list" data-folder="{{if .CurrentFolder}}{{.CurrentFolder}}{{else}}0{{end}}"
-  hx-get="{{.ListURL}}" hx-trigger="sm:refresh from:body" hx-swap="outerHTML transition:true"
+  hx-get="{{.ListURL}}" hx-trigger="sm:refresh from:body" hx-swap="outerHTML"
   class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto flex flex-col">
   <div class="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur px-3 py-2 border-b border-zinc-800 text-zinc-100 font-medium shrink-0">
     {{if .Unified}}All inboxes{{else}}{{folderLabel .Folder}}{{end}}
