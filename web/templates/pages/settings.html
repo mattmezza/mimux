@@ -1,6 +1,6 @@
 {{define "title"}}Settings — SM{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col">
+<div class="h-full flex flex-col min-h-0">
   <header class="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-zinc-800 bg-zinc-900">
     <a href="/" class="p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" title="Back to inbox" aria-label="Back to inbox">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
@@ -59,6 +59,12 @@
             class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
           <span class="text-sm text-zinc-200">Use sender's website icon as avatar</span>
           <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
+        </label>
+
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="hide_avatar_mobile" value="1" {{if .Prefs.HideAvatarMobile}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">Hide avatars on mobile</span>
         </label>
 
         <label class="flex items-center gap-2">
