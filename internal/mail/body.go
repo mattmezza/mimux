@@ -18,6 +18,10 @@ type messageBody struct {
 	htmlContent string
 	textContent string
 	inline      map[string]inlinePart // keyed by lowercased Content-ID
+	// listUnsubscribe/listUnsubscribePost carry the raw RFC 2369 / RFC 8058
+	// headers (unparsed) so ParseListUnsubscribe can run at render time.
+	listUnsubscribe     string
+	listUnsubscribePost string
 }
 
 // bodyDTO is the exported, gob-encodable form of messageBody used to persist a
@@ -25,9 +29,11 @@ type messageBody struct {
 // attachment parts are already discarded by parseBody — so caching this never
 // stores attachment bytes.
 type bodyDTO struct {
-	HTML   string
-	Text   string
-	Inline map[string]inlineDTO
+	HTML                string
+	Text                string
+	Inline              map[string]inlineDTO
+	ListUnsubscribe     string
+	ListUnsubscribePost string
 }
 
 type inlineDTO struct {
@@ -37,7 +43,10 @@ type inlineDTO struct {
 
 // encodeBody gob-encodes a parsed body for storage.
 func encodeBody(b *messageBody) ([]byte, error) {
-	dto := bodyDTO{HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{}}
+	dto := bodyDTO{
+		HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{},
+		ListUnsubscribe: b.listUnsubscribe, ListUnsubscribePost: b.listUnsubscribePost,
+	}
 	for k, v := range b.inline {
 		dto.Inline[k] = inlineDTO{Mime: v.mime, Data: v.data}
 	}
@@ -54,7 +63,10 @@ func decodeBody(blob []byte) (*messageBody, error) {
 	if err := gob.NewDecoder(bytes.NewReader(blob)).Decode(&dto); err != nil {
 		return nil, err
 	}
-	b := &messageBody{htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{}}
+	b := &messageBody{
+		htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{},
+		listUnsubscribe: dto.ListUnsubscribe, listUnsubscribePost: dto.ListUnsubscribePost,
+	}
 	for k, v := range dto.Inline {
 		b.inline[k] = inlinePart{mime: v.Mime, data: v.Data}
 	}
@@ -89,6 +101,8 @@ func parseBody(raw []byte) *messageBody {
 		}
 		return b
 	}
+	b.listUnsubscribe = ent.Header.Get("List-Unsubscribe")
+	b.listUnsubscribePost = ent.Header.Get("List-Unsubscribe-Post")
 	_ = ent.Walk(func(_ []int, part *message.Entity, perr error) error {
 		if perr != nil && !message.IsUnknownCharset(perr) && !message.IsUnknownEncoding(perr) {
 			return nil // skip unreadable part, keep walking siblings
