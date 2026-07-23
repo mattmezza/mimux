@@ -27,7 +27,7 @@
         <label class="w-12 shrink-0 text-xs text-zinc-500">From</label>
         <select name="from"
           hx-post="/compose/draft" hx-trigger="change" hx-include="closest form" hx-swap="none"
-          class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
+          class="flex-1 min-w-0 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
           {{$from := .From}}
           {{range $ids}}<option value="{{.Address}}" {{if eq .Address $from}}selected{{end}}>{{.Name}} &lt;{{.Address}}&gt;{{if .IsAlias}} · alias{{end}}</option>{{end}}
         </select>
