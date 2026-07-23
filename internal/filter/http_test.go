@@ -29,7 +29,7 @@ func TestListRendersFullPage(t *testing.T) {
 	funcs := template.FuncMap{
 		"folderLabel": func(f any) string { return "" },
 		"relTime":     func(t time.Time) string { return "" },
-		"highlight":   func(s string, terms []string) template.HTML { return template.HTML(s) },
+		"highlight":   func(s string, terms []string) template.HTML { return template.HTML(s) }, // #nosec G203 -- test stub mirroring prod funcmap
 	}
 	r := Routes(stubRuleStore{}, false, funcs, func() any { return []any{} })
 

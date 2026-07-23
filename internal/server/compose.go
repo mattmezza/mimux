@@ -285,6 +285,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		// Hard cap the whole request so a giant upload can't exhaust disk;
 		// the per-file sum below gives the clean 25MB error before this trips.
 		r.Body = http.MaxBytesReader(w, r.Body, maxAttachTotal+(1<<20))
+		// #nosec G120 -- body is capped by MaxBytesReader above
 		if err := r.ParseMultipartForm(maxAttachTotal + (1 << 20)); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return
