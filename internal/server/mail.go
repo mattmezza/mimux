@@ -4,6 +4,7 @@ import (
 	"context"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -31,6 +32,23 @@ var templateFuncs = template.FuncMap{
 	"identities":     identities,
 	"receivedAlias":  receivedAlias,
 	"hasQA":          hasQA,
+	"shortURL":       shortURL,
+}
+
+// shortURL renders scheme+host + a truncated tail of the path/query for
+// display, so long tokenized unsubscribe links don't blow up a modal's width.
+func shortURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	prefix := u.Scheme + "://" + u.Host
+	rest := strings.TrimPrefix(raw, prefix)
+	const tailLen = 8
+	if len(rest) > tailLen+2 {
+		rest = "/…" + rest[len(rest)-tailLen:]
+	}
+	return prefix + rest
 }
 
 // hasQA reports whether action id is enabled in the comma-separated
