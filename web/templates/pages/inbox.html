@@ -21,7 +21,9 @@
         {{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}
         {{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}{{template "skeleton_row" .}}
       </div>
-      <section id="reading-pane" class="empty-state flex-1 flex items-center justify-center text-zinc-600">
+      {{/* min-w-0: without it this flex item sizes to its content's intrinsic
+           width (long unbroken lines in a message) and overflows the page. */}}
+      <section id="reading-pane" class="empty-state flex-1 min-w-0 flex items-center justify-center text-zinc-600">
         <p id="reading-pane-empty">Select a message to read it here.</p>
       </section>
       <div id="reading-skeleton" class="htmx-indicator absolute inset-y-0 right-0 left-0 md:left-96 lg:left-[26rem] z-20 bg-zinc-900 overflow-hidden pointer-events-none" aria-hidden="true">

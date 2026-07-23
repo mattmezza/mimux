@@ -17,6 +17,7 @@
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
+      <input type="hidden" name="mode" value="{{.Mode}}">
       <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
       <input type="hidden" name="references" value="{{.References}}">
 
@@ -67,12 +68,74 @@
         hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
         class="w-full rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
 
+      {{if eq .Mode "html"}}
+      {{/* WYSIWYG: contenteditable (light surface — honest preview of the sent mail)
+           with a compact toolbar. app.js syncs the editor into the hidden
+           textarea before every autosave/submit; execCommand does the formatting. */}}
+      <div class="compose-toolbar flex items-center gap-0.5 overflow-x-auto rounded-t-md bg-zinc-800 border border-zinc-700 px-1.5 py-1" data-compose-toolbar>
+        <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" class="ct-btn font-bold">B</button>
+        <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" class="ct-btn italic">I</button>
+        <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" class="ct-btn underline">U</button>
+        <button type="button" data-cmd="strikeThrough" title="Strikethrough" class="ct-btn line-through">S</button>
+        <span class="ct-sep"></span>
+        <select data-cmd-font title="Font" class="ct-select">
+          <option value="">Font</option>
+          <option value="sans-serif">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="monospace">Mono</option>
+        </select>
+        <select data-cmd-size title="Size" class="ct-select">
+          <option value="">Size</option>
+          <option value="2">Small</option>
+          <option value="3">Normal</option>
+          <option value="5">Large</option>
+        </select>
+        <label class="ct-btn relative cursor-pointer" title="Text color">
+          A<span class="absolute inset-x-1 bottom-0.5 h-0.5" style="background:currentColor"></span>
+          <input type="color" data-cmd-color class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+        </label>
+        <span class="ct-sep"></span>
+        <button type="button" data-cmd="insertUnorderedList" title="Bulleted list" class="ct-btn">•—</button>
+        <button type="button" data-cmd="insertOrderedList" title="Numbered list" class="ct-btn">1.</button>
+        <button type="button" data-cmd-block="blockquote" title="Quote" class="ct-btn">&rdquo;</button>
+        <button type="button" data-cmd-link title="Insert link" class="ct-btn">🔗</button>
+        <button type="button" data-cmd-unlink title="Remove link" class="ct-btn relative">🔗<span class="absolute inset-0 flex items-center justify-center text-red-500 font-bold pointer-events-none">/</span></button>
+        <span class="ct-sep"></span>
+        <button type="button" data-cmd="removeFormat" title="Clear formatting" class="ct-btn">⌫</button>
+      </div>
+      <div id="compose-wysiwyg" contenteditable="true" data-compose-editor
+        class="compose-wysiwyg min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
+      <textarea name="body" class="hidden"
+        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'">{{.Body}}</textarea>
+      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+
+      {{else if eq .Mode "markdown"}}
+      {{/* Markdown: Write/Preview tabs. Preview renders via /compose/preview
+           (same goldmark renderer used at send). */}}
+      <div class="flex items-center gap-1 text-xs" data-md-tabs>
+        <button type="button" data-md-tab="write" class="md-tab md-tab-active rounded-t-md px-3 py-1.5">Write</button>
+        <button type="button" data-md-tab="preview"
+          hx-post="/compose/preview" hx-include="closest form" hx-target="#md-preview" hx-swap="innerHTML"
+          class="md-tab rounded-t-md px-3 py-1.5">Preview</button>
+        <span class="text-zinc-600 ml-auto pr-1">Markdown</span>
+      </div>
+      <textarea name="body" placeholder="Write your message… (Markdown supported)" rows="12" data-md-write
+        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
+        class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+      <div id="md-preview" data-md-preview class="hidden compose-wysiwyg min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
+      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+
+      {{else}}
       <textarea name="body" placeholder="Write your message…" rows="12"
         hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
         hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
         hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
         class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
       <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+      {{end}}
 
       <div class="flex items-center gap-2 flex-wrap">
         <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm px-3 py-1.5">

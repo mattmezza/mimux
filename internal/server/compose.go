@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -41,6 +42,8 @@ func identities(accounts []config.Account) []Identity {
 	return out
 }
 
+func htmlEsc(s string) string { return html.EscapeString(s) }
+
 // bareEmail strips a "Name <addr>" wrapper down to the address.
 func bareEmail(a string) string {
 	if i := strings.LastIndex(a, "<"); i >= 0 {
@@ -79,6 +82,7 @@ type composeView struct {
 	To, Cc, Bcc   string
 	Subject       string
 	Body          string
+	Mode          string // plain|html|markdown compose editor
 	Kind          string // new|reply|reply_all|forward
 	InReplyTo     string // original Message-ID, for the In-Reply-To header
 	References    string // full References header value to reuse
@@ -96,6 +100,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 		CSRF:     auth.EnsureCSRF(w, r, s.secure),
 		Accounts: s.cfg.Accounts,
 		Kind:     "new",
+		Mode:     s.store.GetPrefs().ComposeMode,
 	}
 	if len(s.cfg.Accounts) > 0 {
 		view.Account = s.cfg.Accounts[0].Name
@@ -116,9 +121,13 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			if ac, ok := s.accountByName(d.Account); ok {
 				from = ac.Email
 			}
+			mode := d.Mode
+			if mode == "" {
+				mode = view.Mode
+			}
 			s.renderPartial(w, "compose", composeView{
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
-				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body,
+				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs,
 			})
 			return
@@ -167,11 +176,21 @@ func (s *Server) prefillReply(view *composeView, orig *store.Message, mode strin
 	// phase doesn't have. Good enough for a reply quote; revisit if users
 	// complain about truncation.
 	if view.Kind == "forward" {
-		view.Body = "\n\n---------- Forwarded message ----------\nFrom: " + from +
-			"\nDate: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
-			"\nSubject: " + orig.Subject + "\n\n" + orig.Snippet
+		if view.Mode == "html" {
+			view.Body = "<p><br></p><blockquote>---------- Forwarded message ----------<br>From: " +
+				htmlEsc(from) + "<br>Date: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
+				"<br>Subject: " + htmlEsc(orig.Subject) + "<br><br>" + htmlEsc(orig.Snippet) + "</blockquote>"
+		} else {
+			view.Body = "\n\n---------- Forwarded message ----------\nFrom: " + from +
+				"\nDate: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
+				"\nSubject: " + orig.Subject + "\n\n" + orig.Snippet
+		}
 	} else {
-		view.Body = "\n\n" + mail.QuoteBody(orig.Date, from, orig.Snippet)
+		if view.Mode == "html" {
+			view.Body = mail.QuoteBodyHTML(orig.Date, from, orig.Snippet)
+		} else {
+			view.Body = "\n\n" + mail.QuoteBody(orig.Date, from, orig.Snippet)
+		}
 		view.InReplyTo = orig.MessageID
 		view.References = mail.ComputeReferences(orig.Refs, orig.MessageID)
 	}
@@ -221,6 +240,7 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"),
 		InReplyTo: r.PostFormValue("in_reply_to"), Kind: r.PostFormValue("kind"),
+		Mode: r.PostFormValue("mode"),
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft autosave", "err", err)
@@ -233,6 +253,19 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleComposePreview renders markdown source (POST body field) to the same
+// sanitized HTML used at send time, for the markdown editor's Preview tab.
+func (s *Server) handleComposePreview(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	// mail.RenderMarkdown already runs bluemonday, so this fragment is safe to
+	// emit into the preview pane as-is.
+	_, _ = io.WriteString(w, mail.RenderMarkdown(r.PostFormValue("body")))
 }
 
 // maxAttachTotal caps the combined size of all attachments on one message.
@@ -299,10 +332,11 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		CSRF: auth.EnsureCSRF(w, r, s.secure), DraftID: draftID, Accounts: s.cfg.Accounts,
 		From: r.PostFormValue("from"), To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"), Kind: r.PostFormValue("kind"),
+		Mode:      r.PostFormValue("mode"),
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
 	}
 	if len(s.cfg.Accounts) == 0 {
-		view.Error = "No accounts configured. Add one to config.toml."
+		view.Error = "No accounts configured. Add one in Settings → Accounts."
 		s.renderPartial(w, "compose", view)
 		return
 	}
@@ -330,7 +364,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	}
 	in := mail.ComposeInput{
 		To: to, Cc: mail.SplitAddrList(view.Cc), Bcc: mail.SplitAddrList(view.Bcc),
-		Subject: view.Subject, Body: view.Body, From: view.From,
+		Subject: view.Subject, Body: view.Body, Mode: view.Mode, From: view.From,
 		InReplyTo: view.InReplyTo, References: view.References, Attachments: atts,
 	}
 	if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {

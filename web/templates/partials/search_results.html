@@ -2,9 +2,15 @@
 <section id="message-list" class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto flex flex-col">
   <div class="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur px-3 py-2 border-b border-zinc-800 shrink-0 space-y-2">
     <div class="flex items-center gap-2">
+      <a href="/" hx-get="/u" hx-target="#message-list" hx-swap="outerHTML" hx-push-url="/"
+         onclick="var s=document.getElementById('search');if(s)s.value=''"
+         class="shrink-0 -ml-1 inline-flex items-center gap-1 pl-1 pr-2 py-1 rounded-md text-[11px] font-medium text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150"
+         title="Back to inbox" aria-label="Back to inbox">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
+        Inbox
+      </a>
       <span class="text-zinc-100 font-medium">Search</span>
       <span class="text-[11px] text-zinc-500">{{.Count}} local {{if eq .Count 1}}result{{else}}results{{end}} · {{.Scope}}</span>
-      <a href="/" hx-get="/" hx-target="body" hx-push-url="true" class="ml-auto text-[11px] text-zinc-500 hover:text-zinc-200" title="Close search (Esc)">✕ close</a>
     </div>
     {{if .Pills}}
     <div class="flex flex-wrap gap-1">

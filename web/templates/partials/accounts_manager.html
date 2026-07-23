@@ -1,0 +1,164 @@
+{{define "accounts_manager"}}
+<div id="accounts-manager" x-data="acctMgr()" class="space-y-4">
+
+  {{/* --- account list --- */}}
+  <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+    {{range .Accounts}}
+    <li class="flex items-center gap-3 px-3 py-2.5">
+      {{if eq .State "ok"}}<span class="w-2 h-2 rounded-full bg-green-500 shrink-0" title="Synced"></span>
+      {{else if eq .State "syncing"}}<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" title="Syncing"></span>
+      {{else if .State}}<span class="w-2 h-2 rounded-full bg-red-500 shrink-0" title="{{.Message}}"></span>
+      {{else}}<span class="w-2 h-2 rounded-full bg-zinc-600 shrink-0" title="Idle"></span>{{end}}
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm text-zinc-100 truncate">{{.Name}}</span>
+        <span class="block text-xs text-zinc-500 truncate">{{.Email}} · {{if .Provider}}{{.Provider}}{{else}}custom{{end}} · {{.Auth}}{{if .Aliases}} · {{len .Aliases}} alias{{if gt (len .Aliases) 1}}es{{end}}{{end}}</span>
+      </span>
+      {{if .NeedsAuth}}
+      <a href="/oauth/{{.Name}}/start"
+         class="shrink-0 text-xs px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors duration-150">Connect</a>
+      {{end}}
+      <button type="button" data-acct='{{toJSON .Editable}}' @click="edit($event.currentTarget.dataset.acct)"
+        class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors duration-150">Edit</button>
+      <button type="button"
+        hx-post="/settings/accounts/{{.Name}}/delete" hx-target="#accounts-manager" hx-swap="outerHTML"
+        hx-confirm="Remove {{.Name}}? This deletes its downloaded folders and messages from this app (the mail stays on the server). You can re-add it later."
+        class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Remove</button>
+    </li>
+    {{else}}
+    <li class="px-3 py-4 text-sm text-zinc-500">No accounts yet. Add your first one below to start syncing mail.</li>
+    {{end}}
+  </ul>
+
+  <div x-show="!showForm">
+    <button type="button" @click="startAdd()"
+      class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+      Add account
+    </button>
+  </div>
+
+  {{/* --- add / edit form (not a <form>: the whole settings page is one form) --- */}}
+  <div x-show="showForm" x-cloak id="acct-fields" class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
+    <h3 class="text-sm font-semibold text-zinc-100" x-text="editing ? 'Edit account' : 'Add account'"></h3>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Account name <span class="text-zinc-600">(identity — keeps its synced mail; can't be changed on edit)</span></span>
+      <input type="text" name="name" x-model="f.name" :readonly="editing" placeholder="e.g. Work"
+        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 read-only:opacity-60">
+    </label>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Email address</span>
+        <input type="email" name="email" x-model="f.email" placeholder="you@example.com"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Sender name <span class="text-zinc-600">(on outgoing mail)</span></span>
+        <input type="text" name="sender_name" x-model="f.sender_name" placeholder="Your Name"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+    </div>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Provider</span>
+      <select name="provider" x-model="f.provider" @change="onProvider()"
+        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+        <option value="">Custom (set servers manually)</option>
+        {{range .Presets}}<option value="{{.Name}}">{{.Name}}</option>{{end}}
+      </select>
+    </label>
+
+    <fieldset class="space-y-1">
+      <span class="text-xs text-zinc-400">Authentication</span>
+      <div class="flex gap-2">
+        <label class="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 cursor-pointer text-sm text-zinc-200" :class="f.auth==='password' && 'bg-indigo-500/10 border-indigo-500/40'">
+          <input type="radio" name="auth" value="password" x-model="f.auth" class="text-indigo-500 focus:ring-indigo-500"> Password
+        </label>
+        <label class="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 text-sm" :class="canOAuth ? 'cursor-pointer text-zinc-200' : 'opacity-40 cursor-not-allowed', f.auth==='oauth2' && 'bg-indigo-500/10 border-indigo-500/40'">
+          <input type="radio" name="auth" value="oauth2" x-model="f.auth" :disabled="!canOAuth" class="text-indigo-500 focus:ring-indigo-500"> OAuth2
+        </label>
+      </div>
+    </fieldset>
+
+    {{/* password auth */}}
+    <label class="block space-y-1" x-show="f.auth==='password'">
+      <span class="text-xs text-zinc-400">Password <span class="text-zinc-600" x-show="editing && hasPassword">(leave blank to keep current)</span></span>
+      <span class="flex gap-2">
+        <input :type="showSecret ? 'text' : 'password'" name="password" x-model="f.password" autocomplete="off" placeholder="App password"
+          class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+        <button type="button" @click="showSecret=!showSecret" class="shrink-0 px-2 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100" x-text="showSecret ? 'Hide' : 'Show'"></button>
+      </span>
+    </label>
+
+    {{/* oauth2 auth */}}
+    <div x-show="f.auth==='oauth2'" class="space-y-3">
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">OAuth2 client ID</span>
+        <input type="text" name="oauth2_client_id" x-model="f.oauth2_client_id" autocomplete="off"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">OAuth2 client secret <span class="text-zinc-600" x-show="editing && hasSecret">(leave blank to keep current)</span></span>
+        <span class="flex gap-2">
+          <input :type="showSecret ? 'text' : 'password'" name="oauth2_client_secret" x-model="f.oauth2_client_secret" autocomplete="off"
+            class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+          <button type="button" @click="showSecret=!showSecret" class="shrink-0 px-2 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100" x-text="showSecret ? 'Hide' : 'Show'"></button>
+        </span>
+      </label>
+      <p class="text-xs text-zinc-500">Save the account, then use its <span class="text-amber-300">Connect</span> button to authorize.</p>
+    </div>
+
+    {{/* custom servers (no preset) */}}
+    <div x-show="!f.provider" class="grid grid-cols-2 gap-3">
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">IMAP host</span>
+        <input type="text" name="imap_host" x-model="f.imap_host" placeholder="imap.example.com"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">IMAP port</span>
+        <input type="number" name="imap_port" x-model="f.imap_port" placeholder="993"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">SMTP host</span>
+        <input type="text" name="smtp_host" x-model="f.smtp_host" placeholder="smtp.example.com"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">SMTP port</span>
+        <input type="number" name="smtp_port" x-model="f.smtp_port" placeholder="465"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+    </div>
+
+    {{/* aliases */}}
+    <div class="space-y-2">
+      <span class="text-xs text-zinc-400">Aliases <span class="text-zinc-600">(extra send/receive identities)</span></span>
+      <template x-for="(al, i) in f.aliases" :key="i">
+        <div class="flex gap-2">
+          <input type="text" name="alias_name" x-model="al.name" placeholder="Display name"
+            class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+          <input type="email" name="alias_email" x-model="al.email" placeholder="alias@example.com"
+            class="flex-1 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+          <button type="button" @click="f.aliases.splice(i,1)" aria-label="Remove alias"
+            class="shrink-0 px-2 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10">&times;</button>
+        </div>
+      </template>
+      <button type="button" @click="f.aliases.push({name:'',email:''})"
+        class="text-xs text-indigo-400 hover:text-indigo-300">+ Add alias</button>
+    </div>
+
+    <div class="flex items-center gap-2 pt-1">
+      <button type="button"
+        hx-post="/settings/accounts" hx-include="#acct-fields" hx-target="#accounts-manager" hx-swap="outerHTML"
+        hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not save account')"
+        class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150"
+        x-text="editing ? 'Save account' : 'Add account'"></button>
+      <button type="button" @click="cancel()"
+        class="px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors duration-150">Cancel</button>
+    </div>
+  </div>
+</div>
+{{end}}

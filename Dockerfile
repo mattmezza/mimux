@@ -29,5 +29,5 @@ FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=go /build/sm /usr/local/bin/sm
 VOLUME /data
-EXPOSE 8080
+EXPOSE 8083
 ENTRYPOINT ["sm"]

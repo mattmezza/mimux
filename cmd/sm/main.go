@@ -22,22 +22,14 @@ import (
 var version = "dev"
 
 func main() {
-	cfgPath := flag.String("config", "", "path to config.toml (default $SM_CONFIG or ./config.toml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println("sm", version)
 		return
 	}
-	path := *cfgPath
-	if path == "" {
-		path = os.Getenv("SM_CONFIG")
-	}
-	if path == "" {
-		path = "config.toml"
-	}
 
-	cfg, err := config.Load(path)
+	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("startup", "err", err)
 		os.Exit(1)

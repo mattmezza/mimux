@@ -3,7 +3,6 @@ module github.com/mattmezza/sm
 go 1.25.0
 
 require (
-	github.com/BurntSushi/toml v1.6.0
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-message v0.18.2
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
@@ -14,6 +13,8 @@ require (
 	golang.org/x/net v0.56.0
 	modernc.org/sqlite v1.54.0
 )
+
+require github.com/yuin/goldmark v1.8.4
 
 require (
 	github.com/aymerick/douceur v0.2.0 // indirect

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -31,8 +32,26 @@ var templateFuncs = template.FuncMap{
 	"highlight":      highlight,
 	"identities":     identities,
 	"receivedAlias":  receivedAlias,
-	"hasQA":          hasQA,
 	"shortURL":       shortURL,
+	"composeHTML":    composeHTML,
+	"toJSON":         toJSON,
+}
+
+// toJSON marshals a value to a compact JSON string for embedding in a data-*
+// attribute (html/template escapes the result for the attribute context).
+func toJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return "null"
+	}
+	return string(b)
+}
+
+// composeHTML sanitizes stored/prefilled WYSIWYG body HTML and marks it safe to
+// drop into the contenteditable editor unescaped. Sanitizing on the way out
+// keeps a hand-edited draft row from injecting script into the compose page.
+func composeHTML(s string) template.HTML {
+	return template.HTML(mail.SanitizeComposeHTML(s)) //nolint:gosec // sanitized above
 }
 
 // shortURL renders scheme+host + a truncated tail of the path/query for
@@ -51,16 +70,29 @@ func shortURL(raw string) string {
 	return prefix + rest
 }
 
-// hasQA reports whether action id is enabled in the comma-separated
-// QuickActions preference string.
-func hasQA(id, quickActions string) bool {
-	for _, a := range strings.Split(quickActions, ",") {
-		if a == id {
-			return true
+// quickActionLists resolves the QuickActions preference into the ordered
+// bar/menu id lists for the templates, dropping ids not in `supported` (nil =
+// all) and the translate action when no translate API key is configured.
+func (s *Server) quickActionLists(pref string, supported map[string]bool) (bar, menu []string) {
+	keep := func(ids []string) []string {
+		out := ids[:0]
+		for _, id := range ids {
+			if id == "translate" && s.store.GetAppConfig().TranslateAPIKey == "" {
+				continue
+			}
+			if supported != nil && !supported[id] {
+				continue
+			}
+			out = append(out, id)
 		}
+		return out
 	}
-	return false
+	bar, menu = store.SplitQuickActions(pref)
+	return keep(bar), keep(menu)
 }
+
+// threadQuickActions are the ids that make sense on a whole-thread header.
+var threadQuickActions = map[string]bool{"reply": true, "replyall": true, "forward": true, "archive": true}
 
 // accountAliases maps account name -> its configured alias addresses, set once
 // at server construction (setAccountAliases). Lets the pure receivedAlias
@@ -244,16 +276,18 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		msgCopy := latest
 		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, &msgCopy, true) })
 	}
+	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, threadQuickActions)
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
 		"Latest":           latest,
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
-		"TranslateEnabled": s.cfg.Translate.APIKey != "",
+		"TranslateEnabled": s.store.GetAppConfig().TranslateAPIKey != "",
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
-		"QuickActions":     prefs.QuickActions,
+		"QABar":            qaBar,
+		"QAMenu":           qaMenu,
 	})
 }
 
@@ -279,6 +313,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	_, blocked, err := s.mail.Body(r.Context(), msg, allow, false)
 	unsub, _ := s.mail.UnsubscribeInfo(r.Context(), msg)
+	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
 	s.renderPartial(w, "message_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Msg":              msg,
@@ -287,10 +322,11 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"CurrentFolder":    msg.FolderID,
 		"MarkReadDelay":    prefs.MarkReadDelay,
 		"MarkReadPending":  wasUnread && prefs.MarkReadDelay > 0,
-		"TranslateEnabled": s.cfg.Translate.APIKey != "",
+		"TranslateEnabled": s.store.GetAppConfig().TranslateAPIKey != "",
 		"DarkDefault":      prefs.DarkMessages,
 		"RememberTheme":    prefs.RememberMsgTheme,
-		"QuickActions":     prefs.QuickActions,
+		"QABar":            qaBar,
+		"QAMenu":           qaMenu,
 		"Unsub":            unsub,
 	})
 }

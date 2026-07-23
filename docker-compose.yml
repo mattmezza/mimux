@@ -3,11 +3,14 @@ services:
     image: ghcr.io/mattmezza/sm:latest
     build: .
     ports:
-      - "8080:8080"
+      - "8083:8083"
     volumes:
       - ./data:/data
-      - ./config.toml:/etc/sm/config.toml:ro
     environment:
-      - SM_CONFIG=/etc/sm/config.toml
+      # SM boots with zero config; accounts and API keys are added from the
+      # Settings GUI and stored in the DB. See README for the full env-var list.
+      - SM_DB=/data/sm.db
+      - SM_BASE_URL=http://localhost:8083
+      # - SM_SECRET=... # optional; auto-generated and persisted to /data/secret
       - TZ=Europe/Zurich
     restart: unless-stopped

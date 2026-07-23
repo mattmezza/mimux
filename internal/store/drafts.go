@@ -17,6 +17,7 @@ type Draft struct {
 	Body      string
 	InReplyTo string
 	Kind      string // new|reply|reply_all|forward
+	Mode      string // plain|html|markdown — which editor authored Body
 	UpdatedAt time.Time
 }
 
@@ -26,9 +27,9 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	if d.ID == 0 {
 		res, err := s.DB.Exec(`
-			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, now)
+			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, now)
 		if err != nil {
 			return err
 		}
@@ -41,17 +42,17 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	}
 	_, err := s.DB.Exec(`
 		UPDATE drafts SET account = ?, to_addresses = ?, cc_addresses = ?, bcc_addresses = ?,
-			subject = ?, body = ?, in_reply_to = ?, kind = ?, updated_at = ? WHERE id = ?`,
-		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, now, d.ID)
+			subject = ?, body = ?, in_reply_to = ?, kind = ?, mode = ?, updated_at = ? WHERE id = ?`,
+		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, now, d.ID)
 	return err
 }
 
-const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, updated_at`
+const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, updated_at`
 
 func scanDraft(sc interface{ Scan(...any) error }) (*Draft, error) {
 	d := &Draft{}
 	var updated string
-	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &updated); err != nil {
+	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &d.Mode, &updated); err != nil {
 		return nil, err
 	}
 	d.UpdatedAt, _ = time.Parse(time.RFC3339, updated)

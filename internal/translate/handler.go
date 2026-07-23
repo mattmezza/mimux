@@ -14,13 +14,14 @@ import (
 // Routes returns a mountable router exposing POST /translate. CSRF is
 // enforced by the global auth.CSRF middleware already applied in
 // server.Handler(), so no CSRF check is duplicated here.
-func Routes(st *store.Store, client *Client) chi.Router {
+func Routes(st *store.Store, newClient func() *Client) chi.Router {
 	tmpl := template.Must(template.ParseFS(web.FS,
 		"templates/partials/translate_result.html",
 	))
 
 	r := chi.NewRouter()
 	r.Post("/", func(w http.ResponseWriter, r *http.Request) {
+		client := newClient()
 		text := r.PostFormValue("text")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if text == "" {
