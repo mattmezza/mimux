@@ -266,6 +266,23 @@
   #message-list:has(~ #reading-pane:not(:has(#reading-pane-empty))) {
     display: none;
   }
+
+  /* #6: the reading pane's header stays pinned outside the scroll area (only
+     the message body scrolls internally), leaving little room for the
+     message. Let the whole pane scroll as one flow instead, so the header
+     scrolls away with the rest of the content. */
+  #message-detail {
+    display: block;
+    overflow-y: auto;
+  }
+  #message-detail > .flex-1 {
+    flex: none;
+    overflow-y: visible;
+  }
+  #message-detail > iframe {
+    flex: none;
+    height: 80vh;
+  }
 }
 
 /* Pull-to-refresh indicator (mobile, see app.js): a round chip that fades and
