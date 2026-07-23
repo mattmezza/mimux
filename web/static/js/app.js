@@ -523,7 +523,19 @@ window.applyBodyTheme = function (frame) {
     if (saved) wantDark = saved === "dark";
   }
   doc.documentElement.classList.toggle("sm-dark", wantDark);
+  fitBodyWidth(frame, doc);
 };
+// Non-responsive HTML emails often have a fixed width wider than the reading
+// pane. Shrink the whole document with CSS zoom so it's fully visible with no
+// horizontal panning by default; pinch-to-zoom still works from there since
+// it operates on the visual viewport, not this iframe's own layout.
+function fitBodyWidth(frame, doc) {
+  const html = doc.documentElement;
+  if (!frame.clientWidth) return;
+  html.style.zoom = "1";
+  const scale = frame.clientWidth / html.scrollWidth;
+  if (scale > 0 && scale < 1) html.style.zoom = String(scale);
+}
 window.toggleBodyTheme = function (frame) {
   const doc = frame && frame.contentDocument;
   if (!doc) return;
