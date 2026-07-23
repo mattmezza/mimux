@@ -523,30 +523,22 @@ window.applyBodyTheme = function (frame) {
     if (saved) wantDark = saved === "dark";
   }
   doc.documentElement.classList.toggle("sm-dark", wantDark);
-  fitBodyWidth(frame, doc);
 };
-// Non-responsive HTML emails often have a fixed width wider than the reading
-// pane. Shrink the whole document with CSS zoom so it's fully visible with no
-// horizontal panning by default; pinch-to-zoom still works from there since
-// it operates on the visual viewport, not this iframe's own layout.
-function fitBodyWidth(frame, doc) {
-  const html = doc.documentElement;
-  if (!frame.clientWidth) return;
-  html.style.zoom = "1";
-  const scale = frame.clientWidth / html.scrollWidth;
-  if (scale > 0 && scale < 1) html.style.zoom = String(scale);
-}
-// Re-fit on rotation/resize (e.g. phone flipped landscape), debounced since
-// resize fires continuously while dragging a desktop window.
-let fitResizeTimer = null;
-window.addEventListener("resize", () => {
-  clearTimeout(fitResizeTimer);
-  fitResizeTimer = setTimeout(() => {
-    document.querySelectorAll('iframe[src*="/body"]').forEach((frame) => {
-      if (frame.contentDocument) fitBodyWidth(frame, frame.contentDocument);
-    });
-  }, 150);
-});
+// The detail-pane star button posts to /star or /unstar and syncs the
+// matching list row (hx-target/hx-swap above), but the button itself isn't
+// part of that swapped fragment — flip its own state here so the next click
+// posts the opposite action instead of repeating the same one forever.
+window.toggleStarBtn = function (btn) {
+  const nowStarred = btn.getAttribute("hx-post").endsWith("/star");
+  btn.setAttribute("hx-post", btn.getAttribute("hx-post").replace(/\/(star|unstar)$/, nowStarred ? "/unstar" : "/star"));
+  if (window.htmx) htmx.process(btn);
+  btn.classList.toggle("text-amber-400", nowStarred);
+  btn.classList.toggle("text-zinc-400", !nowStarred);
+  const svg = btn.querySelector("svg");
+  if (svg) svg.setAttribute("fill", nowStarred ? "currentColor" : "none");
+  btn.title = (nowStarred ? "Unstar" : "Star") + " (s)";
+  btn.setAttribute("aria-label", nowStarred ? "Unstar" : "Star");
+};
 window.toggleBodyTheme = function (frame) {
   const doc = frame && frame.contentDocument;
   if (!doc) return;
