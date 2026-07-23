@@ -799,6 +799,13 @@ function toggleHelp() {
 }
 document.addEventListener("sm:help", toggleHelp);
 
+function toggleAbout() {
+  const el = document.getElementById("about-overlay");
+  if (el) el.hidden = !el.hidden;
+  return true;
+}
+document.addEventListener("sm:about", toggleAbout);
+
 document.addEventListener("keydown", (e) => {
   // Ctrl+Enter sends from the compose body field (draft is already autosaved).
   if (e.ctrlKey && e.key === "Enter" && e.target?.matches?.('#compose-form textarea[name="body"]')) {
@@ -830,6 +837,8 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
+    const about = document.getElementById("about-overlay");
+    if (about && !about.hidden) { about.hidden = true; return; }
     const help = document.getElementById("help-overlay");
     if (help && !help.hidden) { help.hidden = true; return; }
     if (window.matchMedia("(max-width: 767px)").matches) closeReadingPane();
