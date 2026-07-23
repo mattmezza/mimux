@@ -536,6 +536,17 @@ function fitBodyWidth(frame, doc) {
   const scale = frame.clientWidth / html.scrollWidth;
   if (scale > 0 && scale < 1) html.style.zoom = String(scale);
 }
+// Re-fit on rotation/resize (e.g. phone flipped landscape), debounced since
+// resize fires continuously while dragging a desktop window.
+let fitResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(fitResizeTimer);
+  fitResizeTimer = setTimeout(() => {
+    document.querySelectorAll('iframe[src*="/body"]').forEach((frame) => {
+      if (frame.contentDocument) fitBodyWidth(frame, frame.contentDocument);
+    });
+  }, 150);
+});
 window.toggleBodyTheme = function (frame) {
   const doc = frame && frame.contentDocument;
   if (!doc) return;
