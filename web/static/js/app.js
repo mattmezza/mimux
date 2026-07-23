@@ -618,12 +618,9 @@ function markRowUnread(id) {
   if (subject) { subject.classList.add("text-zinc-100", "font-medium"); subject.classList.remove("text-zinc-400"); }
 }
 
-// Double-click a list row to toggle its read/unread state. The single click
-// that precedes it still opens the message; we cancel any pending auto-mark-read
-// so a toggle-to-unread sticks. The row is updated in place (the POST response
-// is ignored — swapping the single-message fragment would corrupt thread rows).
-document.addEventListener("dblclick", (e) => {
-  const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+// Toggle a row's read/unread state in place (the POST response is ignored —
+// swapping the single-message fragment would corrupt thread rows).
+function toggleRowRead(row) {
   if (!row || !window.htmx) return;
   const id = row.id.replace(/^msg-/, "");
   if (!id) return;
@@ -631,7 +628,42 @@ document.addEventListener("dblclick", (e) => {
   if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
   htmx.ajax("POST", `/messages/${id}/${makeRead ? "read" : "unread"}`, { swap: "none" })
     .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
+}
+
+// Double-click (desktop) a list row to toggle its read/unread state. The
+// single click that precedes it still opens the message.
+document.addEventListener("dblclick", (e) => {
+  const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+  if (row) toggleRowRead(row);
 });
+
+// #8: double-tap (mobile) toggles read/unread WITHOUT opening the message.
+// Touch devices don't get a real dblclick before the row's own hx-get="click"
+// navigates away on the first tap, so we hold the first tap's click for the
+// double-tap window: a second tap within it cancels the open and toggles
+// read/unread instead; otherwise the held tap opens the message as normal.
+// Desktop mouse clicks never fire touchend, so this doesn't touch that path.
+(function () {
+  const DOUBLE_TAP_MS = 300;
+  let pendingRow = null, pendingTimer = null;
+  document.addEventListener("touchend", (e) => {
+    const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+    if (!row || (e.target.closest && e.target.closest(".star-btn"))) return;
+    e.preventDefault(); // suppress the synthesized click; we drive it ourselves
+    if (pendingRow === row) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+      pendingRow = null;
+      toggleRowRead(row);
+      return;
+    }
+    pendingRow = row;
+    pendingTimer = setTimeout(() => {
+      pendingRow = null;
+      row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    }, DOUBLE_TAP_MS);
+  });
+})();
 
 // Restore a bookmarked open thread (?t=<id>&src=<src>) into the reading pane on
 // full page load. The list itself is rendered server-side (handleInbox reads
