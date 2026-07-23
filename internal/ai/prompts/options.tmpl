@@ -1,0 +1,12 @@
+Here is the email I need to reply to:
+
+{{.ThreadContext}}
+
+Suggest exactly {{.N}} distinct, useful directions I could take my reply (for
+example: accept, decline, ask for details, propose an alternative). For each,
+give a short imperative label of 2-5 words and a one-line gist of what that
+reply would say. Write the labels and gists in the same language as the email
+above.
+
+Respond with ONLY a JSON array of exactly {{.N}} objects, each with the keys
+"label" and "gist". No prose, no code fences.

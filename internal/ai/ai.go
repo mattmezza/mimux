@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -18,10 +19,48 @@ var ErrDisabled = errors.New("ai: disabled (no openrouter api key configured)")
 
 const apiURL = "https://openrouter.ai/api/v1/chat/completions"
 
+// Prefs are the user-tunable knobs (Settings → AI) folded into every prompt.
+type Prefs struct {
+	Tone         string // professional|neutral|friendly|casual
+	Brevity      string // concise|normal|detailed
+	ReplyOptions int    // number of reply directions to generate (2-5)
+	Language     string // "auto" (match the message) or a fixed language name
+}
+
+func (p Prefs) withDefaults() Prefs {
+	if p.Tone == "" {
+		p.Tone = "neutral"
+	}
+	if p.Brevity == "" {
+		p.Brevity = "normal"
+	}
+	if p.ReplyOptions < 2 || p.ReplyOptions > 5 {
+		p.ReplyOptions = 3
+	}
+	if p.Language == "" {
+		p.Language = "auto"
+	}
+	return p
+}
+
+// Option is one suggested reply direction shown as a chip.
+type Option struct {
+	Label string `json:"label"`
+	Gist  string `json:"gist"`
+}
+
+// DraftResult is a generated draft plus an optional suggested subject (only
+// filled when a subject was requested).
+type DraftResult struct {
+	Draft   string
+	Subject string
+}
+
 // Client talks to the OpenRouter chat completions API.
 type Client struct {
 	APIKey     string
 	Model      string
+	Prefs      Prefs
 	HTTPClient *http.Client
 }
 
@@ -53,32 +92,97 @@ type chatResponse struct {
 	} `json:"error"`
 }
 
-// Compose drafts a new email about topic.
-func (c *Client) Compose(ctx context.Context, topic string) (string, error) {
-	prompt, err := composePrompt(topic)
+// Options asks the model for N candidate reply directions given the original
+// message. N comes from Prefs (2-5).
+func (c *Client) Options(ctx context.Context, threadContext string) ([]Option, error) {
+	p := c.Prefs.withDefaults()
+	prompt, err := optionsPrompt(threadContext, p.ReplyOptions)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := c.chat(ctx, "You suggest email reply directions. Respond with JSON only.", prompt)
+	if err != nil {
+		return nil, err
+	}
+	return parseOptions(raw)
+}
+
+// Draft generates a full draft. An empty threadContext means a fresh compose,
+// in which case direction is the topic; otherwise direction is the chosen reply
+// direction/gist. format is the compose mode (plain|html|markdown). When
+// wantSubject is set the model is asked to prepend a "Subject:" line, which is
+// parsed out into DraftResult.Subject.
+func (c *Client) Draft(ctx context.Context, format, threadContext, direction string, wantSubject bool) (DraftResult, error) {
+	prompt, err := draftPrompt(threadContext, direction, wantSubject)
+	if err != nil {
+		return DraftResult{}, err
+	}
+	raw, err := c.chat(ctx, systemPrompt(c.Prefs.withDefaults(), format), prompt)
+	if err != nil {
+		return DraftResult{}, err
+	}
+	subject, body := splitSubject(raw)
+	return DraftResult{Draft: body, Subject: subject}, nil
+}
+
+var refineActions = map[string]string{
+	"shorter":    "shorter and more to the point",
+	"formal":     "more formal and professional",
+	"friendlier": "warmer and friendlier",
+}
+
+// Refine rewrites text per action (shorter|formal|friendlier), keeping the
+// output in the given format.
+func (c *Client) Refine(ctx context.Context, format, text, action string) (string, error) {
+	instr, ok := refineActions[action]
+	if !ok {
+		return "", fmt.Errorf("ai: unknown refine action %q", action)
+	}
+	prompt, err := refinePrompt(text, instr)
 	if err != nil {
 		return "", err
 	}
-	return c.chat(ctx, prompt)
+	return c.chat(ctx, systemPrompt(c.Prefs.withDefaults(), format), prompt)
 }
 
-// Reply drafts a reply given the thread context and optional instructions.
-func (c *Client) Reply(ctx context.Context, threadContext, instructions string) (string, error) {
-	prompt, err := replyPrompt(threadContext, instructions)
-	if err != nil {
-		return "", err
+// parseOptions extracts a JSON array of options from a model reply, tolerating
+// code fences or stray prose around it.
+func parseOptions(s string) ([]Option, error) {
+	i, j := strings.Index(s, "["), strings.LastIndex(s, "]")
+	if i < 0 || j <= i {
+		return nil, fmt.Errorf("ai: options response is not a JSON array: %q", s)
 	}
-	return c.chat(ctx, prompt)
+	var opts []Option
+	if err := json.Unmarshal([]byte(s[i:j+1]), &opts); err != nil {
+		return nil, fmt.Errorf("ai: parse options: %w", err)
+	}
+	if len(opts) == 0 {
+		return nil, errors.New("ai: no reply options returned")
+	}
+	return opts, nil
 }
 
-func (c *Client) chat(ctx context.Context, userPrompt string) (string, error) {
+// splitSubject peels a leading "Subject: ..." line off a draft, if present.
+func splitSubject(s string) (subject, body string) {
+	s = strings.TrimSpace(s)
+	rest, ok := strings.CutPrefix(s, "Subject:")
+	if !ok {
+		return "", s
+	}
+	if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+		return strings.TrimSpace(rest[:nl]), strings.TrimSpace(rest[nl+1:])
+	}
+	return strings.TrimSpace(rest), ""
+}
+
+func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string, error) {
 	if c == nil || c.APIKey == "" {
 		return "", ErrDisabled
 	}
 	body, err := json.Marshal(chatRequest{
 		Model: c.Model,
 		Messages: []message{
-			{Role: "system", Content: systemPrompt()},
+			{Role: "system", Content: sysPrompt},
 			{Role: "user", Content: userPrompt},
 		},
 	})
@@ -119,5 +223,5 @@ func (c *Client) chat(ctx context.Context, userPrompt string) (string, error) {
 	if len(out.Choices) == 0 {
 		return "", errors.New("ai: no completion returned")
 	}
-	return out.Choices[0].Message.Content, nil
+	return strings.TrimSpace(out.Choices[0].Message.Content), nil
 }

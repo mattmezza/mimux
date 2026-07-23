@@ -11,15 +11,17 @@
       </button>
     </div>
     <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
-      enctype="multipart/form-data"
+      enctype="multipart/form-data" data-undo-delay="{{.UndoSendDelay}}"
       class="flex-1 overflow-y-auto p-4 space-y-3"
-      hx-on::after-request="if(event.detail.elt===this&&event.detail.xhr.status===204){closeCompose()}">
+      hx-on::after-request="if(event.detail.elt===this){onComposeResponse(event)}">
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
       <input type="hidden" name="mode" value="{{.Mode}}">
       <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
       <input type="hidden" name="references" value="{{.References}}">
+      <input type="hidden" name="send_mode" id="compose-send-mode" value="later">
+      <input type="hidden" name="send_at" id="compose-send-at" value="">
 
       {{with .Error}}<div class="rounded-md border border-red-900/50 bg-red-950/30 p-3 text-red-300 text-xs">{{.}}</div>{{end}}
 
@@ -28,7 +30,6 @@
       <div class="flex items-center gap-2">
         <label class="w-12 shrink-0 text-xs text-zinc-500">From</label>
         <select name="from"
-          hx-post="/compose/draft" hx-trigger="change" hx-include="closest form" hx-swap="none"
           class="flex-1 min-w-0 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
           {{$from := .From}}
           {{range $ids}}<option value="{{.Address}}" {{if eq .Address $from}}selected{{end}}>{{.Name}} &lt;{{.Address}}&gt;{{if .IsAlias}} · alias{{end}}</option>{{end}}
@@ -43,19 +44,18 @@
       <div class="flex items-center gap-2">
         <label class="w-12 shrink-0 text-xs text-zinc-500">To</label>
         <input name="to" value="{{.To}}" placeholder="name@example.com, ..."
-          hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
           class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
       </div>
 
       <div id="cc-bcc-fields" class="space-y-2 {{if and (not .Cc) (not .Bcc)}}hidden{{end}}">
         <div class="flex items-center gap-2">
           <label class="w-12 shrink-0 text-xs text-zinc-500">Cc</label>
-          <input name="cc" value="{{.Cc}}" hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+          <input name="cc" value="{{.Cc}}"
             class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
         </div>
         <div class="flex items-center gap-2">
           <label class="w-12 shrink-0 text-xs text-zinc-500">Bcc</label>
-          <input name="bcc" value="{{.Bcc}}" hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
+          <input name="bcc" value="{{.Bcc}}"
             class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
         </div>
       </div>
@@ -65,13 +65,12 @@
       {{end}}
 
       <input name="subject" value="{{.Subject}}" placeholder="Subject"
-        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
         class="w-full rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
 
       {{if eq .Mode "html"}}
       {{/* WYSIWYG: contenteditable (light surface — honest preview of the sent mail)
            with a compact toolbar. app.js syncs the editor into the hidden
-           textarea before every autosave/submit; execCommand does the formatting. */}}
+           textarea before every save/submit; execCommand does the formatting. */}}
       <div class="compose-toolbar flex items-center gap-0.5 overflow-x-auto rounded-t-md bg-zinc-800 border border-zinc-700 px-1.5 py-1" data-compose-toolbar>
         <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" class="ct-btn font-bold">B</button>
         <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" class="ct-btn italic">I</button>
@@ -105,10 +104,7 @@
       </div>
       <div id="compose-wysiwyg" contenteditable="true" data-compose-editor
         class="compose-wysiwyg min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
-      <textarea name="body" class="hidden"
-        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
-        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'">{{.Body}}</textarea>
-      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
+      <textarea name="body" class="hidden">{{.Body}}</textarea>
 
       {{else if eq .Mode "markdown"}}
       {{/* Markdown: Write/Preview tabs. Preview renders via /compose/preview
@@ -121,20 +117,14 @@
         <span class="text-zinc-600 ml-auto pr-1">Markdown</span>
       </div>
       <textarea name="body" placeholder="Write your message… (Markdown supported)" rows="12" data-md-write
-        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
-        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
-        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
         class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
       <div id="md-preview" data-md-preview class="hidden compose-wysiwyg min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
-      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
 
       {{else}}
       <textarea name="body" placeholder="Write your message…" rows="12"
-        hx-post="/compose/draft" hx-trigger="input changed delay:2s" hx-include="closest form" hx-swap="none"
-        hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
-        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();this.closest('form').requestSubmit()}"
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
         class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
-      <div id="autosave-indicator" class="text-[11px] text-zinc-600 h-4"></div>
       {{end}}
 
       <div class="flex items-center gap-2 flex-wrap">
@@ -147,23 +137,175 @@
         <span id="attach-list" class="text-xs text-zinc-500 break-all"></span>
       </div>
 
-      <div class="rounded-md border border-zinc-800 bg-zinc-900/50 p-3">
-        {{if eq .Kind "new"}}{{template "ai_compose_form" .}}{{else}}{{template "ai_reply_form" .}}{{end}}
+      {{/* AI assist: one sparkle button opens an inline panel. Replies fetch
+           candidate directions; fresh compose asks what to write. All state and
+           the fetch/insert logic live in the aiAssist Alpine component (app.js).
+           ThreadContext is stashed in a hidden node so quotes/newlines survive
+           without escaping into an attribute string. */}}
+      <div x-data="aiAssist({kind:'{{.Kind}}', mode:'{{.Mode}}'})" class="relative">
+        <div x-ref="ctx" hidden>{{.ThreadContext}}</div>
+        <button type="button" @click="toggle()" :aria-expanded="open" title="Draft with AI"
+          class="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm px-3 py-1.5"
+          :class="open && 'ring-1 ring-indigo-500/50'">
+          <svg class="w-4 h-4 text-indigo-400" fill="currentColor" viewBox="0 0 24 24"><path d="M9 4 7.6 8.1 3.5 9.5l4.1 1.4L9 15l1.4-4.1L14.5 9.5 10.4 8.1 9 4Zm8 6-.9 2.6-2.6.9 2.6.9.9 2.6.9-2.6 2.6-.9-2.6-.9L17 10Z"/></svg>
+          <span>Draft with AI</span>
+        </button>
+
+        <div x-show="open" x-cloak x-transition.origin.top
+          class="mt-2 rounded-md border border-zinc-700 bg-zinc-800 shadow-lg p-3 space-y-3">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-zinc-300" x-text="stage==='draft' ? 'Draft preview' : (isReply ? 'Reply directions' : 'New email')"></span>
+            <button type="button" @click="open=false" aria-label="Close" class="p-1 -m-1 rounded text-zinc-500 hover:text-zinc-200">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+
+          {{/* loading */}}
+          <div x-show="loading" class="flex items-center gap-2 text-xs text-zinc-400 py-2">
+            <svg class="w-4 h-4 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8v4a4 4 0 0 0-4 4H4Z"/></svg>
+            <span x-text="loadingMsg"></span>
+          </div>
+
+          {{/* menu stage */}}
+          <div x-show="stage==='menu' && !loading" class="space-y-2">
+            <template x-if="isReply">
+              <div class="space-y-1.5">
+                <template x-for="o in options" :key="o.label">
+                  <button type="button" @click="generate(o.gist)"
+                    class="w-full text-left rounded-md border border-zinc-700 hover:border-indigo-500 hover:bg-zinc-700/50 transition-colors duration-150 px-3 py-2">
+                    <div class="text-sm text-zinc-100 font-medium" x-text="o.label"></div>
+                    <div class="text-xs text-zinc-400" x-text="o.gist"></div>
+                  </button>
+                </template>
+              </div>
+            </template>
+            <template x-if="!isReply">
+              <div class="flex flex-wrap gap-1.5">
+                <template x-for="s in starters" :key="s">
+                  <button type="button" @click="generate(s)"
+                    class="rounded-full border border-zinc-700 hover:border-indigo-500 hover:bg-zinc-700/50 transition-colors duration-150 text-xs text-zinc-200 px-3 py-1" x-text="s"></button>
+                </template>
+              </div>
+            </template>
+
+            {{/* free-text: revealed on demand for replies, always shown for fresh compose */}}
+            <button type="button" x-show="isReply && !showFree" @click="showFree=true; $nextTick(()=>$refs.free.focus())"
+              class="text-xs text-indigo-400 hover:text-indigo-300">Something else…</button>
+            <div x-show="!isReply || showFree" class="flex gap-2">
+              <input type="text" x-ref="free" x-model="freeInput" @keydown.enter.prevent="freeInput.trim() && generate(freeInput.trim())"
+                :placeholder="isReply ? 'Describe your reply…' : 'What should this email say?'"
+                class="flex-1 min-w-0 rounded-md bg-zinc-900 border border-zinc-700 focus:border-indigo-500 px-3 py-1.5 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none">
+              <button type="button" @click="freeInput.trim() && generate(freeInput.trim())" :disabled="!freeInput.trim()"
+                class="shrink-0 rounded-md bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 transition-colors duration-150 text-white text-xs font-medium px-3 py-1.5">Draft</button>
+            </div>
+          </div>
+
+          {{/* draft stage: preview + refine + insert */}}
+          <div x-show="stage==='draft' && !loading" class="space-y-2">
+            <div x-show="draftIsHTML" x-html="draft" class="compose-wysiwyg max-h-60 overflow-y-auto rounded-md border border-zinc-700 px-3 py-2"></div>
+            <textarea x-show="!draftIsHTML" x-model="draft" rows="8"
+              class="w-full rounded-md bg-zinc-900 border border-zinc-700 focus:border-indigo-500 px-3 py-2 text-sm text-zinc-100 focus:outline-none"></textarea>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-xs text-zinc-500 mr-1">Refine:</span>
+              <button type="button" @click="refine('shorter')" class="rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors text-xs text-zinc-200 px-2.5 py-1">Shorter</button>
+              <button type="button" @click="refine('formal')" class="rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors text-xs text-zinc-200 px-2.5 py-1">More formal</button>
+              <button type="button" @click="refine('friendlier')" class="rounded-full border border-zinc-700 hover:border-indigo-500 transition-colors text-xs text-zinc-200 px-2.5 py-1">Friendlier</button>
+            </div>
+            <div class="flex justify-between pt-1">
+              <button type="button" @click="stage='menu'" class="text-xs text-zinc-400 hover:text-zinc-200">← Back</button>
+              <button type="button" @click="insert()"
+                class="rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white text-xs font-medium px-4 py-1.5">Insert draft</button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="flex justify-end gap-2 pt-2">
-        <button type="button" title="Save draft"
+        <button type="button" id="compose-save-draft" title="Save draft"
+          onclick="syncComposeEditor()"
           hx-post="/compose/draft" hx-include="closest form" hx-swap="none"
-          hx-on::after-request="document.getElementById('autosave-indicator').textContent='Saved'"
+          hx-on::after-request="onDraftSaved(event)"
           class="rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm font-medium px-4 py-1.5">
           Save draft
         </button>
-        <button type="submit" title="Send (Ctrl+Enter)"
-          class="rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white text-sm font-medium px-4 py-1.5">
-          Send
-        </button>
+        {{/* Split Send button: primary = delayed send (undo window per pref);
+             dropdown = Send now / Schedule send. onclick sets send_mode then
+             submitCompose() runs the attachment-reminder gate before posting. */}}
+        <div class="flex items-stretch">
+          <button type="button" title="Send in {{.UndoSendDelay}}s (Ctrl+Enter) — you can undo"
+            onclick="setSendMode('later');submitCompose()"
+            class="rounded-l-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white text-sm font-medium pl-4 pr-3 py-1.5">
+            Send
+          </button>
+          <details class="send-more relative">
+            <summary title="More send options"
+              class="list-none cursor-pointer select-none h-full flex items-center rounded-r-md border-l border-indigo-400/40 bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white px-2 py-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
+            </summary>
+            <div class="send-more-menu absolute right-0 bottom-full mb-1 w-48 rounded-md border border-zinc-700 bg-zinc-800 shadow-lg py-1 z-10">
+              <button type="button" onclick="setSendMode('now');submitCompose()"
+                class="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors duration-150">Send now</button>
+              <button type="button" onclick="openSchedulePicker()"
+                class="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors duration-150">Schedule send…</button>
+            </div>
+          </details>
+        </div>
       </div>
     </form>
+
+    {{/* Schedule picker: native datetime-local + IANA timezone select (filled
+         by app.js from Intl). Confirm computes a UTC instant and submits. */}}
+    <div id="schedule-modal" hidden class="fixed inset-0 z-[60] bg-zinc-950/70 flex items-center justify-center p-4"
+      onclick="if(event.target===this)this.hidden=true">
+      <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm">
+        <h2 class="text-zinc-100 font-semibold mb-3">Schedule send</h2>
+        <label class="block text-xs text-zinc-400 mb-1">Date &amp; time</label>
+        <input type="datetime-local" id="schedule-when"
+          class="w-full mb-3 rounded-md bg-zinc-900 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none">
+        <label class="block text-xs text-zinc-400 mb-1">Time zone</label>
+        <select id="schedule-tz"
+          class="w-full mb-4 rounded-md bg-zinc-900 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none"></select>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+            onclick="document.getElementById('schedule-modal').hidden=true">Cancel</button>
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-indigo-500 hover:bg-indigo-400 text-white"
+            onclick="confirmSchedule()">Schedule</button>
+        </div>
+      </div>
+    </div>
+
+    {{/* Close guard: shown by closeCompose() when the compose has unsaved edits.
+         z-[70] keeps it above the schedule/attachment modals (z-[60]). */}}
+    <div id="compose-close-guard" hidden class="fixed inset-0 z-[70] bg-zinc-950/70 flex items-center justify-center p-4">
+      <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm">
+        <h2 class="text-zinc-100 font-semibold mb-2">Save this draft?</h2>
+        <p class="text-zinc-400 text-xs mb-4">You have unsaved changes.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+            onclick="composeGuardKeep()">Keep writing</button>
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+            onclick="composeGuardDiscard()">Discard</button>
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-indigo-500 hover:bg-indigo-400 text-white"
+            onclick="composeGuardSave()">Save draft</button>
+        </div>
+      </div>
+    </div>
+
+    {{/* Attachment reminder: shown by submitCompose() when the body/subject
+         mentions an attachment but no file is attached. */}}
+    <div id="attach-reminder-modal" hidden class="fixed inset-0 z-[60] bg-zinc-950/70 flex items-center justify-center p-4"
+      onclick="if(event.target===this)this.hidden=true">
+      <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm">
+        <h2 class="text-zinc-100 font-semibold mb-2">Did you forget an attachment?</h2>
+        <p class="text-zinc-400 text-xs mb-4">Your message mentions an attachment, but nothing is attached.</p>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+            onclick="document.getElementById('attach-reminder-modal').hidden=true">Go back</button>
+          <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-indigo-500 hover:bg-indigo-400 text-white"
+            onclick="document.getElementById('attach-reminder-modal').hidden=true;submitCompose(true)">Send anyway</button>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 {{end}}

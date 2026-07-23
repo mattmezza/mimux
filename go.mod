@@ -14,7 +14,12 @@ require (
 	modernc.org/sqlite v1.54.0
 )
 
-require github.com/yuin/goldmark v1.8.4
+require (
+	github.com/emersion/go-ical v0.0.0-20250609112844-439c63cef608
+	github.com/yuin/goldmark v1.8.4
+)
+
+require github.com/teambition/rrule-go v1.8.2 // indirect
 
 require (
 	github.com/aymerick/douceur v0.2.0 // indirect

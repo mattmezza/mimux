@@ -1,0 +1,124 @@
+{{define "outgoing_list"}}
+{{if or .Soon .Scheduled .Failed .Sent}}
+<div class="space-y-6">
+
+  {{if .Soon}}
+  <section class="space-y-2">
+    <h2 class="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-indigo-300">
+      <span class="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-pulse"></span>Sending soon
+    </h2>
+    {{range .Soon}}{{template "outgoing_row" (dict "O" . "CSRF" $.CSRF "Colors" $.Colors "Kind" "soon")}}{{end}}
+  </section>
+  {{end}}
+
+  {{if .Scheduled}}
+  <section class="space-y-2">
+    <h2 class="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-amber-300">
+      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>Scheduled
+    </h2>
+    {{range .Scheduled}}{{template "outgoing_row" (dict "O" . "CSRF" $.CSRF "Colors" $.Colors "Kind" "scheduled")}}{{end}}
+  </section>
+  {{end}}
+
+  {{if .Failed}}
+  <section class="space-y-2">
+    <h2 class="flex items-center gap-2 px-1 text-[11px] font-semibold uppercase tracking-wider text-red-400">
+      <span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>Failed
+    </h2>
+    {{range .Failed}}{{template "outgoing_row" (dict "O" . "CSRF" $.CSRF "Colors" $.Colors "Kind" "failed")}}{{end}}
+  </section>
+  {{end}}
+
+  {{if .Sent}}
+  <details class="group">
+    <summary class="flex items-center gap-2 px-1 py-1 cursor-pointer list-none text-[11px] font-semibold uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors duration-150">
+      <svg class="w-3 h-3 shrink-0 transition-transform duration-150 group-open:rotate-90" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5"/></svg>
+      Recently sent
+      <span class="text-zinc-600 normal-case tracking-normal font-normal">· last 24h</span>
+    </summary>
+    <div class="mt-2 space-y-2">
+      {{range .Sent}}{{template "outgoing_row" (dict "O" . "CSRF" $.CSRF "Colors" $.Colors "Kind" "sent")}}{{end}}
+    </div>
+  </details>
+  {{end}}
+
+</div>
+{{else}}
+<div class="flex flex-col items-center justify-center gap-2 text-center py-20 text-zinc-500">
+  <span class="text-3xl">📭</span>
+  <p class="font-medium text-zinc-400">Nothing waiting to go out.</p>
+  <p class="text-xs">Scheduled and delayed messages show up here until they're delivered.</p>
+</div>
+{{end}}
+{{end}}
+
+
+{{define "outgoing_row"}}
+{{$o := .O}}{{$kind := .Kind}}{{$c := index .Colors $o.Account}}
+<div data-out-row class="flex items-start gap-3 rounded-xl border px-3.5 py-3 transition-colors duration-150
+  {{if eq $kind "failed"}}border-red-900/40 bg-red-950/20
+  {{else if eq $kind "sent"}}border-zinc-800 bg-zinc-900/40 opacity-80
+  {{else}}border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800/50{{end}}">
+
+  <span class="mt-1.5 w-2 h-2 rounded-full shrink-0" title="{{$o.Account}}"
+        style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}"></span>
+
+  <div class="min-w-0 flex-1">
+    <div class="truncate font-medium text-zinc-100">{{if $o.Subject}}{{$o.Subject}}{{else}}(no subject){{end}}</div>
+    <div class="truncate text-xs text-zinc-500 mt-0.5">{{if $o.To}}To {{$o.To}}{{else}}No recipients{{end}}</div>
+    {{with outSnippet $o.Body}}<div class="truncate text-xs text-zinc-600 mt-0.5">{{.}}</div>{{end}}
+
+    <div class="mt-1.5 text-xs">
+      {{if eq $kind "soon"}}
+        <span class="out-countdown tabular-nums font-medium text-indigo-300" data-send-at="{{$o.SendAt.Format "2006-01-02T15:04:05Z07:00"}}">Sending soon…</span>
+      {{else if eq $kind "scheduled"}}
+        <span class="text-amber-300 font-medium">{{untilTime $o.SendAt}}</span>
+        <span class="text-zinc-500"> · <span class="local-time" data-utc="{{$o.SendAt.Format "2006-01-02T15:04:05Z07:00"}}">{{$o.SendAt.Format "Jan 2, 15:04 MST"}}</span></span>
+      {{else if eq $kind "failed"}}
+        <span class="text-red-400 font-medium">Failed</span>
+        {{with $o.Error}}<span class="text-zinc-500"> · {{.}}</span>{{end}}
+      {{else if eq $kind "sent"}}
+        <span class="text-emerald-500/90">Sent {{relTime $o.SendAt}}</span>
+      {{end}}
+    </div>
+  </div>
+
+  {{if ne $kind "sent"}}
+  <div class="shrink-0 flex items-center gap-1">
+    {{if eq $kind "failed"}}
+    <button type="button" title="Retry now" aria-label="Retry now"
+      hx-post="/outbox/{{$o.ID}}/retry" hx-target="#outgoing-list" hx-swap="innerHTML transition:true"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-emerald-300 border border-zinc-700 hover:bg-emerald-500/10 hover:border-emerald-700/50 transition-colors duration-150">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
+      <span class="hidden sm:inline">Retry</span>
+    </button>
+    {{end}}
+
+    {{/* Edit reuses the undo-send flow: cancels the row, restores a draft, and
+         reopens compose into #compose-root; then refreshes this list. */}}
+    <button type="button" title="Edit message" aria-label="Edit message"
+      hx-post="/outbox/{{$o.ID}}/undo" hx-target="#compose-root" hx-swap="innerHTML"
+      hx-on::after-request="htmx.trigger('#outgoing-list','refresh')"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-zinc-300 border border-zinc-700 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Z"/></svg>
+      <span class="hidden sm:inline">Edit</span>
+    </button>
+
+    {{if eq $kind "failed"}}
+    <button type="button" title="Delete" aria-label="Delete"
+      hx-post="/outbox/{{$o.ID}}/delete" hx-target="#outgoing-list" hx-swap="innerHTML transition:true"
+      class="p-2 rounded-md text-zinc-400 border border-zinc-700 hover:bg-red-500/10 hover:text-red-400 transition-colors duration-150">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
+    </button>
+    {{else}}
+    <button type="button" title="Cancel send" aria-label="Cancel send"
+      hx-post="/outbox/{{$o.ID}}/cancel" hx-target="#outgoing-list" hx-swap="innerHTML transition:true"
+      class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-zinc-300 border border-zinc-700 hover:bg-red-500/10 hover:text-red-400 hover:border-red-700/50 transition-colors duration-150">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9.75 9.75 4.5 4.5m0-4.5-4.5 4.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/></svg>
+      <span class="hidden sm:inline">Cancel</span>
+    </button>
+    {{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}

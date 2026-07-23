@@ -26,6 +26,7 @@ type Prefs struct {
 	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
 	SearchScope      string            // topbar search default scope: "all", "account", or "folder" (default "all")
 	ComposeMode      string            // compose editor mode: "plain", "html", or "markdown" (default "html")
+	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 }
 
 // AllQuickActions lists every message action the user can place in the action
@@ -119,6 +120,7 @@ func defaultPrefs() Prefs {
 		QuickActions:     defaultQuickActions(),
 		SearchScope:      "all",
 		ComposeMode:      "html",
+		UndoSendDelay:    5,
 	}
 }
 
@@ -203,6 +205,11 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("compose_mode"); ok && (v == "plain" || v == "html" || v == "markdown") {
 		p.ComposeMode = v
 	}
+	if v, ok := s.getSetting("undo_send_delay"); ok {
+		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
+			p.UndoSendDelay = n
+		}
+	}
 	rows, err := s.DB.Query(`SELECT key, value FROM app_settings WHERE key LIKE ?`, accountColorPrefix+"%")
 	if err != nil {
 		slog.Error("GetPrefs account colors", "err", err)
@@ -237,6 +244,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"quick_actions":      p.QuickActions,
 		"search_scope":       p.SearchScope,
 		"compose_mode":       p.ComposeMode,
+		"undo_send_delay":    strconv.Itoa(p.UndoSendDelay),
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color
@@ -264,10 +272,15 @@ type AppConfig struct {
 	TranslateTarget string // ISO code, default "en"
 	AIKey           string // OpenRouter API key
 	AIModel         string // default "anthropic/claude-sonnet-4-6"
+	AITone          string // professional|neutral|friendly|casual, default neutral
+	AIBrevity       string // concise|normal|detailed, default normal
+	AIReplyOptions  int    // reply directions to generate (2-5), default 3
+	AILanguage      string // "auto" or a fixed language name, default auto
 }
 
 func (s *Store) GetAppConfig() AppConfig {
-	c := AppConfig{TranslateTarget: "en", AIModel: "anthropic/claude-sonnet-4-6"}
+	c := AppConfig{TranslateTarget: "en", AIModel: "anthropic/claude-sonnet-4-6",
+		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto"}
 	if v, ok := s.getSetting("translate_api_key"); ok {
 		c.TranslateAPIKey = v
 	}
@@ -280,6 +293,20 @@ func (s *Store) GetAppConfig() AppConfig {
 	if v, ok := s.getSetting("ai_model"); ok && v != "" {
 		c.AIModel = v
 	}
+	if v, ok := s.getSetting("ai_tone"); ok && v != "" {
+		c.AITone = v
+	}
+	if v, ok := s.getSetting("ai_brevity"); ok && v != "" {
+		c.AIBrevity = v
+	}
+	if v, ok := s.getSetting("ai_reply_options"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 2 && n <= 5 {
+			c.AIReplyOptions = n
+		}
+	}
+	if v, ok := s.getSetting("ai_language"); ok && v != "" {
+		c.AILanguage = v
+	}
 	return c
 }
 
@@ -290,11 +317,27 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 	if c.AIModel == "" {
 		c.AIModel = "anthropic/claude-sonnet-4-6"
 	}
+	if c.AITone == "" {
+		c.AITone = "neutral"
+	}
+	if c.AIBrevity == "" {
+		c.AIBrevity = "normal"
+	}
+	if c.AIReplyOptions < 2 || c.AIReplyOptions > 5 {
+		c.AIReplyOptions = 3
+	}
+	if c.AILanguage == "" {
+		c.AILanguage = "auto"
+	}
 	kv := map[string]string{
 		"translate_api_key": c.TranslateAPIKey,
 		"translate_target":  c.TranslateTarget,
 		"ai_openrouter_key": c.AIKey,
 		"ai_model":          c.AIModel,
+		"ai_tone":           c.AITone,
+		"ai_brevity":        c.AIBrevity,
+		"ai_reply_options":  strconv.Itoa(c.AIReplyOptions),
+		"ai_language":       c.AILanguage,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

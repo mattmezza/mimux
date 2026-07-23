@@ -469,3 +469,7 @@
   background: var(--color-zinc-800, #27272a);
   border-color: var(--color-zinc-700, #3f3f46);
 }
+
+/* --- send-later split button dropdown (opus: send-later feature) --- */
+.send-more > summary { list-style: none; }
+.send-more > summary::-webkit-details-marker { display: none; }

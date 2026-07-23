@@ -40,6 +40,12 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		QuickActions:     store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions"))),
 		SearchScope:      r.PostFormValue("search_scope"),
 		ComposeMode:      r.PostFormValue("compose_mode"),
+		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
+	}
+	switch p.UndoSendDelay {
+	case 3, 5, 10:
+	default:
+		p.UndoSendDelay = 5
 	}
 	switch p.SearchScope {
 	case "all", "account", "folder":
@@ -82,6 +88,10 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		TranslateTarget: r.PostFormValue("translate_target"),
 		AIKey:           r.PostFormValue("ai_openrouter_key"),
 		AIModel:         r.PostFormValue("ai_model"),
+		AITone:          r.PostFormValue("ai_tone"),
+		AIBrevity:       r.PostFormValue("ai_brevity"),
+		AIReplyOptions:  atoiDefault(r.PostFormValue("ai_reply_options"), 3),
+		AILanguage:      r.PostFormValue("ai_language"),
 	}); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return

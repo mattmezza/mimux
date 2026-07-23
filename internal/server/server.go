@@ -169,6 +169,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/messages/{id}/body", s.handleMessageBody)
 		r.Get("/messages/{id}/attachments", s.handleAttachments)
 		r.Get("/messages/{id}/attachment/{part}", s.handleAttachment)
+		r.Get("/messages/{id}/invite", s.handleInvite)
+		r.Post("/messages/{id}/rsvp", s.handleRSVP)
 		r.Post("/messages/{id}/read", s.handleMarkRead(true))
 		r.Post("/messages/{id}/unread", s.handleMarkRead(false))
 		r.Post("/messages/{id}/star", s.handleStar(true))
@@ -185,6 +187,12 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/compose/preview", s.handleComposePreview)
 		r.Get("/drafts", s.handleDraftsPage)
 		r.Post("/drafts/{id}/delete", s.handleDraftDelete)
+		r.Get("/outgoing", s.handleOutgoingPage)
+		r.Get("/outgoing/list", s.handleOutgoingList)
+		r.Post("/outbox/{id}/undo", s.handleOutboxUndo)
+		r.Post("/outbox/{id}/cancel", s.handleOutboxCancel)
+		r.Post("/outbox/{id}/retry", s.handleOutboxRetry)
+		r.Post("/outbox/{id}/delete", s.handleOutboxDelete)
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsSave)
 		r.Get("/settings/accounts", s.handleAccountsManager)
@@ -201,7 +209,14 @@ func (s *Server) Handler() http.Handler {
 		}))
 		r.Mount("/ai", ai.Routes(func() *ai.Client {
 			c := s.store.GetAppConfig()
-			return ai.NewClient(c.AIKey, c.AIModel)
+			cl := ai.NewClient(c.AIKey, c.AIModel)
+			cl.Prefs = ai.Prefs{
+				Tone:         c.AITone,
+				Brevity:      c.AIBrevity,
+				ReplyOptions: c.AIReplyOptions,
+				Language:     c.AILanguage,
+			}
+			return cl
 		}))
 	})
 	return r

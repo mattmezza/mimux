@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -87,20 +88,23 @@ type composeView struct {
 	InReplyTo     string // original Message-ID, for the In-Reply-To header
 	References    string // full References header value to reuse
 	ThreadContext string // for the embedded ai_reply partial
+	UndoSendDelay int    // seconds the split-button "Send" waits (undo window)
 	Error         string
 }
 
 // handleComposeNew serves GET /compose (blank) and GET
 // /compose?reply=<id>&mode=reply|all|forward (prefilled). No draft row is
-// created here: the compose opens with DraftID 0 and the first autosave
-// (handleComposeDraftSave) creates the row on first edit, so merely opening
-// and closing compose leaves nothing behind.
+// created here: the compose opens with DraftID 0 and the row is created lazily
+// by the first explicit "Save draft" (handleComposeDraftSave), so merely
+// opening and closing compose leaves nothing behind.
 func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
+	prefs := s.store.GetPrefs()
 	view := composeView{
-		CSRF:     auth.EnsureCSRF(w, r, s.secure),
-		Accounts: s.cfg.Accounts,
-		Kind:     "new",
-		Mode:     s.store.GetPrefs().ComposeMode,
+		CSRF:          auth.EnsureCSRF(w, r, s.secure),
+		Accounts:      s.cfg.Accounts,
+		Kind:          "new",
+		Mode:          prefs.ComposeMode,
+		UndoSendDelay: prefs.UndoSendDelay,
 	}
 	if len(s.cfg.Accounts) > 0 {
 		view.Account = s.cfg.Accounts[0].Name
@@ -128,7 +132,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			s.renderPartial(w, "compose", composeView{
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
-				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs,
+				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
 			})
 			return
 		}
@@ -217,11 +221,11 @@ func (s *Server) accountByName(name string) (config.Account, bool) {
 	return config.Account{}, false
 }
 
-// handleComposeDraftSave is the htmx autosave endpoint: POST /compose/draft,
-// debounced client-side and fired by the "Save draft" button. The draft row is
-// created lazily here on the first save (draft_id 0); the new id is handed back
-// as an out-of-band swap so subsequent saves update the same row. Returns 204
-// once the id is known (the client leaves the modal open).
+// handleComposeDraftSave is the explicit draft-save endpoint: POST
+// /compose/draft, fired only by the "Save draft" button (there is no autosave).
+// The draft row is created lazily here on the first save (draft_id 0); the new
+// id is handed back as an out-of-band swap so subsequent saves update the same
+// row. Returns 204 once the id is known (the client leaves the modal open).
 func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -243,11 +247,11 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		Mode: r.PostFormValue("mode"),
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
-		slog.Error("compose: draft autosave", "err", err)
+		slog.Error("compose: draft save", "err", err)
 	}
 	if id == 0 && d.ID != 0 {
 		// First save: tell the open form its new draft id via OOB swap so later
-		// autosaves target this row instead of creating more.
+		// saves target this row instead of creating more.
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprintf(w, `<input type="hidden" id="compose-draft-id" name="draft_id" value="%d" hx-swap-oob="true">`, d.ID)
 		return
@@ -367,17 +371,117 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		Subject: view.Subject, Body: view.Body, Mode: view.Mode, From: view.From,
 		InReplyTo: view.InReplyTo, References: view.References, Attachments: atts,
 	}
-	if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
-		slog.Error("compose: send", "account", view.Account, "err", err)
-		view.Error = "Could not send: " + err.Error()
+
+	// "now" sends immediately (no undo window); "later" and "schedule" enqueue
+	// on the outbox for the scheduler to deliver.
+	if r.PostFormValue("send_mode") == "now" {
+		if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
+			slog.Error("compose: send", "account", view.Account, "err", err)
+			view.Error = "Could not send: " + err.Error()
+			s.renderPartial(w, "compose", view)
+			return
+		}
+		if draftID > 0 {
+			_ = s.store.DeleteDraft(draftID)
+		}
+		s.mail.Toast("Sent.")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	sendAt := time.Now().Add(time.Duration(s.store.GetPrefs().UndoSendDelay) * time.Second)
+	scheduled := false
+	if r.PostFormValue("send_mode") == "schedule" {
+		t, err := time.Parse(time.RFC3339, r.PostFormValue("send_at"))
+		if err != nil {
+			view.Error = "Pick a valid date and time to schedule."
+			s.renderPartial(w, "compose", view)
+			return
+		}
+		sendAt = t
+		scheduled = true
+	}
+	o := &store.Outbox{
+		Account: view.Account, From: view.From, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
+		Subject: view.Subject, Body: view.Body, Mode: view.Mode,
+		InReplyTo: view.InReplyTo, References: view.References,
+		Attachments: outAttachments(atts), SendAt: sendAt.UTC(),
+	}
+	if err := s.store.EnqueueOutbox(o); err != nil {
+		slog.Error("compose: enqueue", "err", err)
+		view.Error = "Could not queue the message: " + err.Error()
 		s.renderPartial(w, "compose", view)
 		return
 	}
 	if draftID > 0 {
 		_ = s.store.DeleteDraft(draftID)
 	}
-	s.mail.Toast("Sent.")
+	if scheduled {
+		w.Header().Set("SM-Scheduled", sendAt.UTC().Format(time.RFC3339))
+	} else {
+		w.Header().Set("SM-Outbox-Id", strconv.FormatInt(o.ID, 10))
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// outAttachments converts freshly-uploaded attachments to the store's persisted
+// form (so a queued message survives a restart).
+func outAttachments(atts []mail.OutAttachment) []store.OutAttachment {
+	out := make([]store.OutAttachment, len(atts))
+	for i, a := range atts {
+		out[i] = store.OutAttachment{Filename: a.Filename, ContentType: a.ContentType, Data: a.Data}
+	}
+	return out
+}
+
+// handleOutboxUndo cancels a just-queued delayed send and reopens the compose
+// window with the draft restored (attachments excepted — they can't be put back
+// into a file input). Wired to the toast "Undo" action.
+func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	o, err := s.store.OutboxByID(id)
+	if err != nil || o == nil {
+		http.NotFound(w, r)
+		return
+	}
+	ok, err := s.store.CancelOutbox(id)
+	if err != nil {
+		http.Error(w, "undo failed", http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		// Already sent/sending: the undo window closed.
+		s.mail.Toast("Too late to undo — the message was already sent.")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	// Restore as a local draft so it can be reopened/saved, then reopen compose.
+	d := &store.Draft{
+		Account: o.Account, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
+		Body: o.Body, InReplyTo: o.InReplyTo, Kind: "new", Mode: o.Mode,
+	}
+	_ = s.store.UpsertDraft(d)
+	prefs := s.store.GetPrefs()
+	from := o.From
+	if from == "" {
+		if ac, ok := s.accountByName(o.Account); ok {
+			from = ac.Email
+		}
+	}
+	refs := o.References
+	if refs == "" && o.InReplyTo != "" {
+		refs = "<" + o.InReplyTo + ">"
+	}
+	s.renderPartial(w, "compose", composeView{
+		CSRF: auth.EnsureCSRF(w, r, s.secure), Accounts: s.cfg.Accounts, DraftID: d.ID,
+		Account: o.Account, From: from, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
+		Body: o.Body, Mode: o.Mode, Kind: "new", InReplyTo: o.InReplyTo, References: refs,
+		UndoSendDelay: prefs.UndoSendDelay,
+	})
 }
 
 // --- local drafts page (the simpler alternative to folding drafts into the
@@ -390,10 +494,15 @@ func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to load drafts", http.StatusInternalServerError)
 		return
 	}
+	scheduled, err := s.store.ListScheduled()
+	if err != nil {
+		slog.Error("drafts: scheduled", "err", err)
+	}
 	s.render(w, "drafts", map[string]any{
-		"CSRF":    auth.EnsureCSRF(w, r, s.secure),
-		"Sidebar": s.sidebarData(),
-		"Drafts":  drafts,
+		"CSRF":      auth.EnsureCSRF(w, r, s.secure),
+		"Sidebar":   s.sidebarData(),
+		"Drafts":    drafts,
+		"Scheduled": scheduled,
 	})
 }
 

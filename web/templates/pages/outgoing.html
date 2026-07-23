@@ -1,0 +1,30 @@
+{{define "title"}}Outgoing — SM{{end}}
+{{define "content"}}
+<div class="h-full flex flex-col" x-data="smUI" :data-filter="filter">
+  {{template "topbar" .}}
+  <div class="flex-1 flex min-h-0">
+    {{template "sidebar" .}}
+    <main class="flex-1 overflow-y-auto">
+      <div class="max-w-3xl mx-auto w-full p-6 space-y-6">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <h1 class="text-lg font-semibold text-zinc-100">Outgoing</h1>
+            <p class="text-xs text-zinc-500 mt-0.5">Messages on their way out — scheduled, sending, or held back.</p>
+          </div>
+          <a href="/" class="shrink-0 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18"/></svg>
+            Inbox
+          </a>
+        </div>
+        {{/* Polled every 10s so the list stays truthful as sends fire and rows
+             move between groups; "refresh" is triggered by the Edit action. */}}
+        <div id="outgoing-list" hx-get="/outgoing/list" hx-trigger="every 10s, refresh" hx-swap="innerHTML transition:true">
+          {{template "outgoing_list" .Outgoing}}
+        </div>
+      </div>
+    </main>
+  </div>
+  {{template "statusbar" .}}
+  {{template "compose_fab" .}}
+</div>
+{{end}}

@@ -1,67 +1,110 @@
 package ai
 
 import (
-	"html/template"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/web"
+	"github.com/mattmezza/sm/internal/mail"
 )
 
-// Routes returns a mountable router exposing POST /ai/compose and
-// POST /ai/reply. CSRF is enforced by the global auth.CSRF middleware
-// already applied in server.Handler(), so no CSRF check is duplicated here.
+// Routes returns a mountable router exposing the AI-assist JSON endpoints. CSRF
+// is enforced by the global auth.CSRF middleware already applied in
+// server.Handler(), so no CSRF check is duplicated here. Clients are built per
+// request (newClient) so key/model/prefs edited in Settings take effect
+// without a restart.
 func Routes(newClient func() *Client) chi.Router {
-	tmpl := template.Must(template.ParseFS(web.FS,
-		"templates/partials/ai_compose.html",
-		"templates/partials/ai_reply.html",
-	))
-
 	r := chi.NewRouter()
-	r.Post("/compose", func(w http.ResponseWriter, r *http.Request) {
-		client := newClient()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		topic := r.PostFormValue("topic")
-		if topic == "" {
-			renderErr(w, tmpl, "ai_compose_error", "Give the AI a topic to write about.")
+
+	// POST /ai/options — reply directions for the message being replied to.
+	r.Post("/options", func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.PostFormValue("context")
+		if ctx == "" {
+			httpErr(w, http.StatusBadRequest, "No message to reply to.")
 			return
 		}
-		draft, err := client.Compose(r.Context(), topic)
+		opts, err := newClient().Options(r.Context(), ctx)
 		if err != nil {
-			slog.Error("ai compose", "err", err)
-			renderErr(w, tmpl, "ai_compose_error", "AI is unavailable. Check your OpenRouter key or try again.")
+			slog.Error("ai options", "err", err)
+			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
 			return
 		}
-		render(w, tmpl, "ai_compose_result", map[string]any{"Draft": draft})
+		writeJSON(w, map[string]any{"options": opts})
 	})
-	r.Post("/reply", func(w http.ResponseWriter, r *http.Request) {
-		client := newClient()
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		threadContext := r.PostFormValue("context")
-		instructions := r.PostFormValue("instructions")
-		if threadContext == "" {
-			renderErr(w, tmpl, "ai_reply_error", "No thread context to reply to.")
+
+	// POST /ai/draft — generate a full draft (fresh compose or a chosen reply
+	// direction), formatted for the compose mode.
+	r.Post("/draft", func(w http.ResponseWriter, r *http.Request) {
+		mode := normalizeMode(r.PostFormValue("mode"))
+		direction := r.PostFormValue("direction")
+		if direction == "" {
+			httpErr(w, http.StatusBadRequest, "Tell the AI what to write.")
 			return
 		}
-		draft, err := client.Reply(r.Context(), threadContext, instructions)
+		wantSubject := r.PostFormValue("want_subject") == "1"
+		res, err := newClient().Draft(r.Context(), mode, r.PostFormValue("context"), direction, wantSubject)
 		if err != nil {
-			slog.Error("ai reply", "err", err)
-			renderErr(w, tmpl, "ai_reply_error", "AI is unavailable. Check your OpenRouter key or try again.")
+			slog.Error("ai draft", "err", err)
+			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
 			return
 		}
-		render(w, tmpl, "ai_reply_result", map[string]any{"Draft": draft})
+		draft := res.Draft
+		if mode == "html" {
+			draft = mail.SanitizeComposeHTML(draft)
+		}
+		writeJSON(w, map[string]any{"draft": draft, "subject": res.Subject})
 	})
+
+	// POST /ai/refine — rewrite the current draft (shorter|formal|friendlier).
+	r.Post("/refine", func(w http.ResponseWriter, r *http.Request) {
+		mode := normalizeMode(r.PostFormValue("mode"))
+		text := r.PostFormValue("text")
+		if text == "" {
+			httpErr(w, http.StatusBadRequest, "Nothing to refine yet.")
+			return
+		}
+		draft, err := newClient().Refine(r.Context(), mode, text, r.PostFormValue("action"))
+		if err != nil {
+			slog.Error("ai refine", "err", err)
+			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
+			return
+		}
+		if mode == "html" {
+			draft = mail.SanitizeComposeHTML(draft)
+		}
+		writeJSON(w, map[string]any{"draft": draft})
+	})
+
 	return r
 }
 
-func render(w http.ResponseWriter, tmpl *template.Template, name string, data any) {
-	if err := tmpl.ExecuteTemplate(w, name, data); err != nil {
-		slog.Error("ai: render", "template", name, "err", err)
+func normalizeMode(m string) string {
+	switch m {
+	case "html", "markdown", "plain":
+		return m
+	default:
+		return "plain"
 	}
 }
 
-func renderErr(w http.ResponseWriter, tmpl *template.Template, name, msg string) {
-	render(w, tmpl, name, map[string]any{"Error": msg})
+func aiErrMsg(err error) string {
+	if err == ErrDisabled {
+		return "AI is off — add an OpenRouter key in Settings → AI."
+	}
+	return "AI is unavailable. Check your OpenRouter key or try again."
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		slog.Error("ai: encode json", "err", err)
+	}
+}
+
+func httpErr(w http.ResponseWriter, code int, msg string) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
