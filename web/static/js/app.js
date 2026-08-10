@@ -1127,11 +1127,12 @@ function scheduleMarkRead(detail) {
   }, delay * 1000);
 }
 
-// Insert an AI draft above the (possibly quoted) compose body, mode-aware.
-// In WYSIWYG mode `content` is a sanitized HTML fragment (isHTML=true) and goes
-// straight into the contenteditable; plain/markdown modes get raw text prepended
-// to the body textarea. The server already formats output per compose mode.
-function insertAIDraft(content, isHTML) {
+// Insert text above the (possibly quoted) compose body, mode-aware. Used by the
+// AI draft panel and the template picker. In WYSIWYG mode `content` is a
+// sanitized HTML fragment (isHTML=true) and goes straight into the
+// contenteditable; plain text is paragraph-ized for it, or prepended raw to the
+// body textarea in plain/markdown modes.
+function insertComposeText(content, isHTML) {
   const editor = document.getElementById("compose-wysiwyg");
   if (editor && isHTML) {
     editor.innerHTML = content + editor.innerHTML;
@@ -1235,7 +1236,7 @@ document.addEventListener("alpine:init", () => {
 
     insert() {
       if (!this.draft.trim()) return;
-      insertAIDraft(this.draft, this.draftIsHTML);
+      insertComposeText(this.draft, this.draftIsHTML);
       this.open = false; this.stage = "menu"; this.freeInput = ""; this.showFree = false;
     },
   }));

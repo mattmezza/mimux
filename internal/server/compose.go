@@ -97,6 +97,9 @@ type composeView struct {
 	// client should auto-insert the linked signature. False for reopened drafts,
 	// undo-send restores and send-error re-renders (body already carries it).
 	AutoSignature bool
+	// Templates are the saved message templates, alphabetical, offered in the
+	// compose picker. Filled in by renderCompose.
+	Templates []store.Template
 }
 
 // handleComposeNew serves GET /compose (blank) and GET
