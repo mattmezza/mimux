@@ -437,25 +437,34 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 	}
 	// Snippet from the first body part.
 	if snip := buf.FindBodySection(snippetSection); snip != nil {
-		enc, mt := part1Info(buf.BodyStructure)
-		m.Snippet = snippetText(snip, enc, mt)
+		m.Snippet = partSnippet(snip, buf.BodyStructure)
 	}
 	return m
 }
 
-func part1Info(bs imap.BodyStructure) (encoding, mediaType string) {
+// part1 returns the top-level body-structure node for IMAP part number 1
+// (the part BODY[1] / snippetSection fetches).
+func part1(bs imap.BodyStructure) imap.BodyStructure {
 	switch b := bs.(type) {
 	case *imap.BodyStructureSinglePart:
-		return b.Encoding, b.MediaType()
+		return b
 	case *imap.BodyStructureMultiPart:
 		if len(b.Children) > 0 {
-			if sp, ok := b.Children[0].(*imap.BodyStructureSinglePart); ok {
-				return sp.Encoding, sp.MediaType()
-			}
-			return "", b.Children[0].MediaType()
+			return b.Children[0]
 		}
 	}
-	return "", ""
+	return nil
+}
+
+// partSnippet renders the list preview for the fetched BODY[1] section. When
+// part 1 is a leaf it is the raw body text; when part 1 is itself a multipart,
+// BODY[1] returned the whole nested MIME entity (its headers and boundary
+// markers), so we parse it to reach the real text instead of leaking MIME junk.
+func partSnippet(raw []byte, bs imap.BodyStructure) string {
+	if sp, ok := part1(bs).(*imap.BodyStructureSinglePart); ok {
+		return snippetText(raw, sp.Encoding, sp.MediaType())
+	}
+	return nestedSnippet(raw)
 }
 
 // hasAttachment reports whether any part is an attachment or a named non-text file.

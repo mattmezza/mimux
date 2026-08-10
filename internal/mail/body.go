@@ -170,6 +170,49 @@ func snippetText(rawPart []byte, encoding, mediaType string) string {
 	return truncate(collapseWS(text), 500)
 }
 
+// nestedSnippet extracts a preview from a nested multipart entity returned by
+// BODY[1]. When part 1 is itself a multipart, IMAP returns the whole nested
+// MIME entity (its own headers and boundary markers), not just the text. Parse
+// it and pull the first text/plain (or HTML) leaf, which is what the list
+// preview should actually show.
+func nestedSnippet(raw []byte) string {
+	ent, err := message.Read(bytes.NewReader(raw))
+	if ent == nil {
+		return ""
+	}
+	_ = err
+	var text, html string
+	_ = ent.Walk(func(_ []int, part *message.Entity, perr error) error {
+		if perr != nil && !message.IsUnknownCharset(perr) && !message.IsUnknownEncoding(perr) {
+			return nil // skip unreadable part, keep walking siblings
+		}
+		mt, _, _ := part.Header.ContentType()
+		mt = strings.ToLower(mt)
+		if strings.HasPrefix(mt, "multipart/") {
+			return nil
+		}
+		disp, _, _ := part.Header.ContentDisposition()
+		if strings.EqualFold(disp, "attachment") {
+			return nil
+		}
+		data, _ := io.ReadAll(io.LimitReader(part.Body, 25<<20))
+		switch {
+		case text == "" && (mt == "text/plain" || mt == ""):
+			text = string(data)
+		case html == "" && mt == "text/html":
+			html = string(data)
+		}
+		return nil
+	})
+	if strings.TrimSpace(text) != "" {
+		return truncate(collapseWS(text), 500)
+	}
+	if strings.TrimSpace(html) != "" {
+		return truncate(collapseWS(stripHTML(html)), 500)
+	}
+	return ""
+}
+
 func decodeTransfer(b []byte, encoding string) []byte {
 	switch strings.ToLower(strings.TrimSpace(encoding)) {
 	case "base64":
