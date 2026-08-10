@@ -31,6 +31,7 @@ var templateFuncs = template.FuncMap{
 	"untilTime":      untilTime,
 	"outSnippet":     outSnippet,
 	"folderLabel":    folderLabel,
+	"folderTree":     folderTree,
 	"messageLabels":  mail.MessageLabels,
 	"dict":           dict,
 	"highlight":      highlight,
@@ -625,6 +626,55 @@ func (s *Server) background(fn func(context.Context) error) {
 
 func sseData(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
+}
+
+// folderNode is one node in the "Move to…" picker tree: a folder-name path
+// segment that may itself be a real, selectable folder (Folder != nil) and/or
+// the parent of deeper folders (Children).
+type folderNode struct {
+	Label    string
+	Folder   *store.Folder
+	Children []*folderNode
+}
+
+// folderTree turns a flat, single-account folder list into a nested tree by
+// splitting each name on the IMAP hierarchy delimiter ('/' or '.', matching
+// folderLabel). Special-use folders (Inbox, Sent, …) stay as flat top-level
+// leaves. Intermediate segments with no folder of their own become
+// non-selectable branches. Input order is preserved (folders arrive sorted).
+func folderTree(folders []store.Folder) []*folderNode {
+	var roots []*folderNode
+	find := func(nodes *[]*folderNode, label string) *folderNode {
+		for _, n := range *nodes {
+			if n.Label == label {
+				return n
+			}
+		}
+		n := &folderNode{Label: label}
+		*nodes = append(*nodes, n)
+		return n
+	}
+	for i := range folders {
+		f := folders[i]
+		var segs []string
+		if f.SpecialUse != "" {
+			segs = []string{folderLabel(f)}
+		} else {
+			segs = strings.FieldsFunc(f.Name, func(r rune) bool { return r == '/' || r == '.' })
+		}
+		if len(segs) == 0 {
+			segs = []string{f.Name}
+		}
+		cur := &roots
+		var node *folderNode
+		for _, s := range segs {
+			node = find(cur, s)
+			cur = &node.Children
+		}
+		fc := f
+		node.Folder = &fc
+	}
+	return roots
 }
 
 func folderLabel(f store.Folder) string {

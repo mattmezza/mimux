@@ -39,7 +39,7 @@
   <ul class="space-y-0.5">
     {{range .Saved}}
     <li class="group flex items-center gap-1 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
-      <button hx-get="/search?q={{.Query}}&scope=all" hx-target="#message-list" hx-swap="outerHTML" @click="sidebarOpen = false"
+      <button hx-get="/search?q={{.Query}}&scope=all" hx-target="#message-list" hx-swap="outerHTML" hx-push-url="true" @click="sidebarOpen = false"
               class="flex items-center gap-2 flex-1 min-w-0 text-left">
         <svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z"/></svg>
         <span class="truncate flex-1" title="{{.Query}}">{{.Name}}</span>

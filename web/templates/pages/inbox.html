@@ -5,7 +5,9 @@
   <div class="flex-1 flex min-h-0 relative">
     {{template "sidebar" .}}
     <main id="main-content" class="flex-1 flex min-w-0 relative">
-      {{if or .Unified .Folder}}
+      {{if .SearchView}}
+      {{template "search_results" .SearchView}}
+      {{else if or .Unified .Folder}}
       {{template "message_list" .}}
       {{else}}
       <section id="message-list" class="w-full md:w-96 lg:w-[26rem] shrink-0 border-r border-zinc-800 overflow-y-auto">

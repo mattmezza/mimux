@@ -1,0 +1,123 @@
+{{define "signatures_manager"}}
+<div id="signatures-manager" x-data="sigMgr()" class="space-y-6">
+
+  {{/* --- signature list + CRUD --- */}}
+  <div class="space-y-4">
+    <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+      {{range .Signatures}}
+      <li class="flex items-center gap-3 px-3 py-2.5">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm text-zinc-100 truncate">{{.Name}}</span>
+          <span class="block text-xs text-zinc-500 truncate">
+            {{if .Account}}{{.Account}} · {{end}}{{if eq .ApplyMode "first"}}first message only{{else}}every message{{end}}</span>
+        </span>
+        <button type="button" data-sig='{{toJSON .}}' @click="edit($event.currentTarget.dataset.sig)"
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors duration-150">Edit</button>
+        <button type="button"
+          hx-post="/settings/signatures/{{.ID}}/delete" hx-target="#signatures-manager" hx-swap="outerHTML"
+          hx-confirm="Delete the signature “{{.Name}}”? Any identity using it will fall back to no signature."
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Delete</button>
+      </li>
+      {{else}}
+      <li class="px-3 py-4 text-sm text-zinc-500">No signatures yet. Add one below, then link it to a sender identity.</li>
+      {{end}}
+    </ul>
+
+    <div x-show="!showForm">
+      <button type="button" @click="startAdd()"
+        class="inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15"/></svg>
+        Add signature
+      </button>
+    </div>
+
+    {{/* add/edit form — not a <form> (settings page is one big form): posts via htmx */}}
+    <div x-show="showForm" x-cloak id="sig-fields" class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
+      <h3 class="text-sm font-semibold text-zinc-100" x-text="editing ? 'Edit signature' : 'Add signature'"></h3>
+      <input type="hidden" name="id" :value="f.id">
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-400">Name</span>
+          <input type="text" name="name" x-model="f.name" placeholder="e.g. Work"
+            class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+        </label>
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-400">Account <span class="text-zinc-600">(grouping)</span></span>
+          <select name="account" x-model="f.account"
+            class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+            <option value="">Any</option>
+            {{range .Accounts}}<option value="{{.Name}}">{{.Name}}</option>{{end}}
+          </select>
+        </label>
+      </div>
+
+      <fieldset class="space-y-1">
+        <span class="text-xs text-zinc-400">Apply</span>
+        <div class="flex gap-2">
+          <label class="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 cursor-pointer text-sm text-zinc-200" :class="f.apply_mode==='always' && 'bg-indigo-500/10 border-indigo-500/40'">
+            <input type="radio" name="apply_mode" value="always" x-model="f.apply_mode" class="text-indigo-500 focus:ring-indigo-500"> Every message
+          </label>
+          <label class="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-700 cursor-pointer text-sm text-zinc-200" :class="f.apply_mode==='first' && 'bg-indigo-500/10 border-indigo-500/40'">
+            <input type="radio" name="apply_mode" value="first" x-model="f.apply_mode" class="text-indigo-500 focus:ring-indigo-500"> First message only
+          </label>
+        </div>
+        <p class="text-xs text-zinc-500">"First message only" adds it to new messages and forwards, but never to replies.</p>
+      </fieldset>
+
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Plain text <span class="text-zinc-600">(used in plain-text compose)</span></span>
+        <textarea name="text_plain" x-model="f.text_plain" rows="3"
+          class="w-full font-mono text-[13px] rounded-md bg-zinc-950 border border-zinc-800 px-3 py-2 text-zinc-100 focus:outline-none focus:border-indigo-500"></textarea>
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">HTML <span class="text-zinc-600">(used in rich-text compose)</span></span>
+        <textarea name="html" x-model="f.html" rows="3" placeholder="&lt;p&gt;…&lt;/p&gt;"
+          class="w-full font-mono text-[13px] rounded-md bg-zinc-950 border border-zinc-800 px-3 py-2 text-zinc-100 focus:outline-none focus:border-indigo-500"></textarea>
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Markdown <span class="text-zinc-600">(used in markdown compose)</span></span>
+        <textarea name="markdown" x-model="f.markdown" rows="3"
+          class="w-full font-mono text-[13px] rounded-md bg-zinc-950 border border-zinc-800 px-3 py-2 text-zinc-100 focus:outline-none focus:border-indigo-500"></textarea>
+      </label>
+
+      <div class="flex items-center gap-2 pt-1">
+        <button type="button"
+          hx-post="/settings/signatures" hx-include="#sig-fields" hx-target="#signatures-manager" hx-swap="outerHTML"
+          hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not save signature')"
+          class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150"
+          x-text="editing ? 'Save signature' : 'Add signature'"></button>
+        <button type="button" @click="cancel()"
+          class="px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 text-sm hover:bg-zinc-700 transition-colors duration-150">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  {{/* --- per-identity signature link --- */}}
+  <div class="space-y-3 pt-2 border-t border-zinc-800">
+    <h3 class="text-sm font-semibold text-zinc-100">Signature per sender identity</h3>
+    <p class="text-xs text-zinc-500">Pick which signature is auto-inserted when composing as each address. Default is none. Changes save instantly.</p>
+    <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+      {{range .Identities}}
+      <li class="flex items-center gap-3 px-3 py-2.5">
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm text-zinc-100 truncate">{{.Name}}{{if .IsAlias}} <span class="text-zinc-500">· alias</span>{{end}}</span>
+          <span class="block text-xs text-zinc-500 truncate">{{.Address}}</span>
+        </span>
+        <select name="signature_id"
+          hx-post="/settings/signatures/link" hx-trigger="change" hx-swap="none"
+          hx-vals='{"address": "{{.Address}}"}'
+          hx-on::after-request="if(event.detail.successful) toast('Signature updated')"
+          class="shrink-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500">
+          <option value="0">No signature</option>
+          {{$sel := .SignatureID}}
+          {{range $.Signatures}}<option value="{{.ID}}" {{if eq .ID $sel}}selected{{end}}>{{.Name}}</option>{{end}}
+        </select>
+      </li>
+      {{else}}
+      <li class="px-3 py-4 text-sm text-zinc-500">Add an account first — its identities will appear here.</li>
+      {{end}}
+    </ul>
+  </div>
+</div>
+{{end}}

@@ -206,6 +206,14 @@
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
 }
 
+/* "Move to…" folder tree: native <details> disclosure, no JS. Hide the marker,
+   rotate the chevron when open, and indent each nested level. */
+.qa-move-summary { list-style: none; cursor: pointer; }
+.qa-move-summary::-webkit-details-marker { display: none; }
+.qa-move-chev { transition: transform 150ms ease; }
+details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
+.qa-move-children { padding-left: 0.75rem; }
+
 /* The pane wrapper receives programmatic focus after a swap (for keyboard
    users); a giant outline around the whole pane is noise, the inner controls
    keep their own focus rings. */
