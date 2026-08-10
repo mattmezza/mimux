@@ -149,6 +149,17 @@
             class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
           Signature
         </label>
+        {{/* Template picker: each option carries its body, and picking one drops
+             it above whatever's already written (same insertion path as an AI
+             draft), then resets to the placeholder. Hidden when none exist. */}}
+        {{if .Templates}}
+        <select id="compose-template-picker" aria-label="Insert template" title="Insert a saved template"
+          onchange="if (this.selectedIndex > 0) { insertComposeText(this.value, false); this.selectedIndex = 0; }"
+          class="ml-1 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500">
+          <option value="">Template…</option>
+          {{range .Templates}}<option value="{{.Body}}">{{.Name}}</option>{{end}}
+        </select>
+        {{end}}
       </div>
 
       {{/* AI assist: one sparkle button opens an inline panel. Replies fetch

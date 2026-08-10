@@ -56,6 +56,9 @@ func (s *Server) renderCompose(w http.ResponseWriter, view composeView) {
 	if view.Signatures == nil {
 		view.Signatures = s.composeSignatures()
 	}
+	if view.Templates == nil {
+		view.Templates, _ = s.store.ListTemplates()
+	}
 	s.renderPartial(w, "compose", view)
 }
 
@@ -147,8 +150,10 @@ func (s *Server) handleSignatureLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	// The picker is named per identity ("signature_id:<address>") so the rows
+	// can't shadow each other; the row that fired says which one it is.
 	addr := r.PostFormValue("address")
-	sigID, _ := strconv.ParseInt(r.PostFormValue("signature_id"), 10, 64)
+	sigID, _ := strconv.ParseInt(r.PostFormValue("signature_id:"+addr), 10, 64)
 	if err := s.store.SetIdentitySignature(addr, sigID); err != nil {
 		slog.Error("signature link", "err", err)
 		http.Error(w, "Couldn't link the signature.", http.StatusInternalServerError)
