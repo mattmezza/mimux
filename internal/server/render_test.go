@@ -109,3 +109,26 @@ func TestRenderUnifiedEmpty(t *testing.T) {
 		t.Errorf("empty unified list did not render the caught-up state")
 	}
 }
+
+// TestRenderHealthRows checks the drawer/sidebar health rows show a relative
+// last-sync time per account, falling back to "OK" before the first sync.
+func TestRenderHealthRows(t *testing.T) {
+	s := serverWith(t, []config.Account{{Name: "A"}}, nil)
+	statuses := []mail.AccountStatus{
+		{Account: "synced", State: "ok", LastSync: time.Now().Add(-5 * time.Minute)},
+		{Account: "fresh", State: "ok", LastSync: time.Now()},
+		{Account: "never", State: "ok"},
+		{Account: "broken", State: "error", Message: "boom"},
+	}
+	rec := httptest.NewRecorder()
+	s.renderPartial(rec, "health_rows", statuses)
+	body := rec.Body.String()
+	for _, want := range []string{"5m ago", ">now<", ">OK<", ">error<"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("health rows missing %q; body:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "now ago") {
+		t.Errorf("a just-synced account must not read \"now ago\"; body:\n%s", body)
+	}
+}
