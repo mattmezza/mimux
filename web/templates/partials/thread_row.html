@@ -1,7 +1,7 @@
 {{define "thread_row"}}
 {{$t := .T}}{{$m := $t.LatestMessage}}
 <li id="msg-{{$t.RootID}}"
-    hx-get="/t/{{$t.RootID}}?src={{.Src}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-push-url="/?t={{$t.RootID}}&src={{.Src}}" hx-indicator="#reading-skeleton"
+    hx-get="/t/{{$t.RootID}}?src={{.Src}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-push-url="/?t={{$t.RootID}}&src={{.Src}}"
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
     {{/* prefetch the latest message: that is the one thread_detail expands. */}}
     data-message-row data-prefetch="/messages/{{$m.ID}}/body" data-folder="{{$m.FolderID}}" {{if $t.Unread}}data-unread{{end}}{{if $t.Starred}} data-starred{{end}} tabindex="-1"

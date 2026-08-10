@@ -174,7 +174,6 @@
    app.js persists it. --- */
 @media (min-width: 768px) {
   #message-list, #list-skeleton { width: var(--list-w, 26rem); }
-  #reading-skeleton { left: var(--list-w, 26rem); }
 }
 #list-resizer:hover, #list-resizer.dragging { background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 40%, transparent); }
 
@@ -259,11 +258,11 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
   animation-timing-function: ease;
 }
 
-/* Reading pane: no crossfade on message switch. The detail shell returns in
-   ~60ms warm, so fading out and back in cost more time than the request did —
-   every switch blanked the pane for the settle window before showing content
-   that was already available. Nothing animates opacity here now; the hx-swap
-   settle timing is left in place but has no visual effect. */
+/* Reading pane: nothing animates on message switch. The crossfade went first;
+   the loading skeleton that replaced it went too, because it fades a full-pane
+   overlay in and back out over every selection — the same blank-then-reappear
+   the crossfade caused, just with a delay in front of it. Selecting a message
+   now leaves the previous one on screen until the new one swaps in. */
 
 /* Generic htmx loading indicator (skeletons, spinners): hidden until the
    request that names it via hx-indicator is in flight. The show is delayed so
