@@ -93,14 +93,21 @@
 
 /* --- quick filters: hide list rows that don't match the active filter. The
    filter is a data-filter attr set (by Alpine) on an ancestor of #message-list,
-   so it keeps working across htmx list swaps with no re-binding. --- */
-[data-filter="unread"] #message-list li[data-message-row]:not([data-unread]),
-[data-filter="starred"] #message-list li[data-message-row]:not([data-starred]) {
+   so it keeps working across htmx list swaps with no re-binding.
+   Scoped to #message-list-items — the inbox/folder list — and NOT to the whole
+   #message-list section: search results live in #search-local-items and their
+   rows carry no data-unread/data-starred, so a filter left on in the sidebar
+   (it persists in localStorage, per device, and is out of sight on mobile
+   where it lives in the closed drawer) hid every single result while the
+   header still claimed "N local results". Search states unread/starred with
+   its own is: operators. --- */
+[data-filter="unread"] #message-list-items li[data-message-row]:not([data-unread]),
+[data-filter="starred"] #message-list-items li[data-message-row]:not([data-starred]) {
   display: none;
 }
 /* A message just marked read (while open) stays visible under the Unread filter
    instead of vanishing mid-read; the next list refresh re-filters it out. */
-[data-filter="unread"] #message-list li[data-message-row].just-read {
+[data-filter="unread"] #message-list-items li[data-message-row].just-read {
   display: flex !important;
 }
 
