@@ -17,6 +17,12 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18181b">
+  <!-- htmx snapshots each page into localStorage for Back navigation. At the
+       default depth of 10 a large inbox blows the ~5MB quota, and every save
+       then throws htmx:historyCacheError — which also kills the #message-list
+       scroll restore in app.js, since that hangs off htmx:beforeHistorySave.
+       Three is plenty for list -> message -> back. -->
+  <meta name="htmx-config" content='{"historyCacheSize":3}'>
   <title>{{block "title" .}}SM — Simple Mail{{end}}</title>
   <link rel="stylesheet" href="/static/css/dist.css">
   <link rel="manifest" href="/manifest.json">

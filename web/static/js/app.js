@@ -165,6 +165,16 @@ document.addEventListener("click", (e) => {
 (function () {
   if (!window.EventSource) return;
   const es = new EventSource("/events");
+  // The stream drops on any network change (wifi/VPN switch, laptop sleep).
+  // EventSource reconnects on its own, but events sent while it was down are
+  // gone — nothing replays them — so the list would sit stale until the next
+  // poll. Refresh once on every reconnect. Skipped on the first open, where
+  // the page has just loaded its own fresh data.
+  let opened = false;
+  es.addEventListener("open", () => {
+    if (opened) { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); }
+    opened = true;
+  });
   es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
   es.addEventListener("sync-status", () => { document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
   es.addEventListener("toast", (e) => toast(e.data));
