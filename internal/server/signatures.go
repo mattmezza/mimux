@@ -56,6 +56,9 @@ func (s *Server) renderCompose(w http.ResponseWriter, view composeView) {
 	if view.Signatures == nil {
 		view.Signatures = s.composeSignatures()
 	}
+	if view.Templates == nil {
+		view.Templates, _ = s.store.ListTemplates()
+	}
 	s.renderPartial(w, "compose", view)
 }
 
