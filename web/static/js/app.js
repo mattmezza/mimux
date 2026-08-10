@@ -1587,3 +1587,44 @@ document.addEventListener("keydown", (e) => {
     requestAnimationFrame(() => { const l = list(); if (l) l.scrollTop = y; });
   });
 })();
+
+// --- Hover-prefetch message bodies. Opening a message is two requests: the
+// detail shell (fast — sqlite) and the body iframe, which on a message whose
+// body isn't cached yet goes out over IMAP and can take seconds. The body URL
+// has no side effects (mark-as-read lives on /messages/{id}, not on
+// /messages/{id}/body), so warming it on hover is safe. Fetching it fills the
+// server's body cache and, via the service worker, the browser's — so the
+// click that follows is a local read.
+//
+// The debounce is the point: firing per row would queue an IMAP fetch for
+// every row the cursor sweeps over, onto the single serialized per-account
+// command channel that is already what makes a cold body slow. 150ms is under
+// the time it takes to move-and-click, so a deliberate hover still wins.
+//
+// ponytail: mouse only. Add a focus trigger if j/k list nav feels slow.
+(function () {
+  const WARM_AFTER_MS = 150;
+  const warmed = new Set();
+  let timer;
+
+  function warm(url) {
+    if (warmed.has(url)) return;
+    warmed.add(url);
+    // Read the response to completion: that's what lets the service worker
+    // finish caching its copy, and it's a few kB.
+    fetch(url, { credentials: "same-origin" })
+      .then((r) => {
+        if (!r.ok) throw new Error(r.status);
+        return r.text();
+      })
+      .catch(() => warmed.delete(url)); // let a real click retry it
+  }
+
+  document.addEventListener("mouseover", (e) => {
+    clearTimeout(timer);
+    const row = e.target.closest && e.target.closest("[data-prefetch]");
+    if (!row) return;
+    const url = row.dataset.prefetch;
+    timer = setTimeout(() => warm(url), WARM_AFTER_MS);
+  });
+})();

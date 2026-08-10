@@ -252,16 +252,24 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
   animation-timing-function: ease;
 }
 
-/* Reading pane: crossfade in on message switch via htmx's settle lifecycle. */
+/* Reading pane: no crossfade on message switch. The detail shell returns in
+   ~60ms warm, so fading out and back in cost more time than the request did —
+   every switch blanked the pane for the settle window before showing content
+   that was already available. The hx-swap settle timing is left in place; it
+   just has no visual effect now. */
 #reading-pane { transition: opacity 150ms ease; }
-#reading-pane.htmx-settling { opacity: 0; }
 
 /* Generic htmx loading indicator (skeletons, spinners): hidden until the
-   request that names it via hx-indicator is in flight. */
+   request that names it via hx-indicator is in flight. The show is delayed so
+   fast requests never flash a skeleton — a cached message opens in well under
+   the delay and swaps straight to content, while a genuinely slow cold fetch
+   still gets one. Hiding stays immediate (the delay is only on the rule that
+   matches during a request). */
 .htmx-indicator { opacity: 0; transition: opacity 150ms ease; }
 .htmx-request.htmx-indicator,
 .htmx-request .htmx-indicator {
   opacity: 1;
+  transition-delay: 250ms;
 }
 
 /* Settings Save button: dim + swap label to "Saving…" while the htmx POST is in

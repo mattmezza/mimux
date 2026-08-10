@@ -3,7 +3,8 @@
 <li id="msg-{{$t.RootID}}"
     hx-get="/t/{{$t.RootID}}?src={{.Src}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-push-url="/?t={{$t.RootID}}&src={{.Src}}" hx-indicator="#reading-skeleton"
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
-    data-message-row data-folder="{{$m.FolderID}}" {{if $t.Unread}}data-unread{{end}}{{if $t.Starred}} data-starred{{end}} tabindex="-1"
+    {{/* prefetch the latest message: that is the one thread_detail expands. */}}
+    data-message-row data-prefetch="/messages/{{$m.ID}}/body" data-folder="{{$m.FolderID}}" {{if $t.Unread}}data-unread{{end}}{{if $t.Starred}} data-starred{{end}} tabindex="-1"
     style="view-transition-name:row-{{$t.RootID}}"
     class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150 outline-none focus:bg-zinc-800">
   <div class="sender-avatar relative shrink-0 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-xs font-semibold text-white select-none"
