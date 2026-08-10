@@ -26,6 +26,8 @@ type Prefs struct {
 	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
 	SearchScope      string            // topbar search default scope: "all", "account", or "folder" (default "all")
 	ComposeMode      string            // compose editor mode: "plain", "html", or "markdown" (default "html")
+	ComposeLayout    string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
+	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 }
 
@@ -120,6 +122,8 @@ func defaultPrefs() Prefs {
 		QuickActions:     defaultQuickActions(),
 		SearchScope:      "all",
 		ComposeMode:      "html",
+		ComposeLayout:    "fullscreen",
+		ReplyLayout:      "popup",
 		UndoSendDelay:    5,
 	}
 }
@@ -205,6 +209,12 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("compose_mode"); ok && (v == "plain" || v == "html" || v == "markdown") {
 		p.ComposeMode = v
 	}
+	if v, ok := s.getSetting("compose_layout"); ok && (v == "fullscreen" || v == "popup" || v == "modal") {
+		p.ComposeLayout = v
+	}
+	if v, ok := s.getSetting("reply_layout"); ok && (v == "fullscreen" || v == "popup" || v == "modal") {
+		p.ReplyLayout = v
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -244,6 +254,8 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"quick_actions":      p.QuickActions,
 		"search_scope":       p.SearchScope,
 		"compose_mode":       p.ComposeMode,
+		"compose_layout":     p.ComposeLayout,
+		"reply_layout":       p.ReplyLayout,
 		"undo_send_delay":    strconv.Itoa(p.UndoSendDelay),
 	}
 	for name, color := range p.AccountColors {

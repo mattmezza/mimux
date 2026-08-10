@@ -738,6 +738,40 @@ function closeCompose() {
 }
 window.closeCompose = closeCompose;
 
+// expandCompose promotes the bottom-right popup to the full-screen layout. The
+// target class strings are rendered into data-fs-* by the compose partial, so
+// the layouts stay defined in one place (the template).
+function expandCompose() {
+  const outer = document.getElementById("compose-window");
+  const panel = document.getElementById("compose-panel");
+  if (!outer || !panel) return;
+  outer.className = outer.dataset.fsOuter;
+  panel.className = panel.dataset.fsPanel;
+  outer.dataset.layout = "fullscreen";
+  panel.setAttribute("aria-modal", "true");
+  document.getElementById("compose-expand")?.remove();
+  const f = document.querySelector('#compose-form [name="layout"]');
+  if (f) f.value = "fullscreen";
+}
+window.expandCompose = expandCompose;
+
+// One compose window at a time. The popup layout leaves the app clickable
+// behind it, so hitting "c" or another message's Reply while writing is easy —
+// and would silently replace the unsaved compose. Block it at the one place
+// every open path routes through (all of them target #compose-root), except
+// requests fired from inside compose itself (send, save draft).
+document.addEventListener("htmx:beforeRequest", (e) => {
+  const root = document.getElementById("compose-root");
+  if (!root || !root.firstElementChild) return;
+  if (e.detail.target?.id !== "compose-root") return;
+  if (e.detail.elt && root.contains(e.detail.elt)) return;
+  if (!isComposeDirty()) return; // untouched: replacing it loses nothing
+  e.preventDefault();
+  window.toast?.("Finish or close the message you're writing first.");
+  root.querySelector("#compose-panel")?.scrollIntoView({ block: "nearest" });
+  root.querySelector('[name="to"]')?.focus();
+});
+
 function composeGuardKeep() {
   const m = document.getElementById("compose-close-guard");
   if (m) m.hidden = true;
@@ -1546,7 +1580,13 @@ document.addEventListener("keydown", (e) => {
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const composeRoot = document.getElementById("compose-root");
-  if (e.key === "Escape" && composeRoot && composeRoot.firstElementChild) {
+  const composeWin = composeRoot && composeRoot.firstElementChild;
+  // The popup layout leaves the rest of the app visible and interactive, so it
+  // only claims Escape while focus is actually inside it; fullscreen/modal
+  // cover the app and claim it whatever has focus (as compose always did).
+  const composeOwnsEsc = composeWin &&
+    (composeWin.dataset.layout !== "popup" || composeRoot.contains(document.activeElement));
+  if (e.key === "Escape" && composeOwnsEsc) {
     // Dismiss a stacked modal first (guard > schedule/attachment), else the
     // guard routes the close. Only one modal is ever open at a time.
     for (const id of ["compose-close-guard", "schedule-modal", "attach-reminder-modal"]) {
@@ -1558,6 +1598,10 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const t = e.target;
+  // No list shortcuts while focus sits anywhere in the compose window — a
+  // button or the panel itself is not an input, and in the popup layout the
+  // list is right there behind it waiting to eat c/r/j.
+  if (composeRoot && t instanceof Node && composeRoot.contains(t)) return;
   if (t instanceof HTMLElement && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName))) {
     // Search box: Tab cycles scope, Escape clears and returns to the inbox.
     if (t.id === "search") {
