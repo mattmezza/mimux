@@ -277,9 +277,12 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	}
 	var msgs []store.Message
 	src := r.URL.Query().Get("src")
-	if src == "u" {
+	unified := src == "u"
+	var scopeFolder int64
+	if unified {
 		msgs, _ = s.store.ListUnifiedInbox(listLimit)
 	} else if fid, err := strconv.ParseInt(src, 10, 64); err == nil {
+		scopeFolder = fid
 		msgs, _ = s.store.ListMessages(fid, listLimit)
 	}
 	var thread *mail.Thread
@@ -293,6 +296,20 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	// Single-message threads (or a stale/lost thread) render exactly like a
 	// plain message; {id} already names that message.
 	if thread == nil || thread.Count == 1 {
+		// A nil thread means {id} is not the latest message of any thread in the
+		// requested scope — either an older member of a multi-message thread
+		// (its row is still valid and renders fine as a plain message) or a
+		// thread whose root was moved/deleted out of this scope (a stale list
+		// row). The latter's row survives in the store — the optimistic move
+		// relocates it to the trash folder — but its folder/UID no longer
+		// resolve, so falling through would render a message whose body fetch
+		// fails with "Could not load this message. The account may be offline."
+		// Drop it to the empty reading pane instead; the list refresh on the
+		// next sync re-roots or removes the stale thread row.
+		if thread == nil && !s.messageInScope(id, unified, scopeFolder) {
+			_, _ = w.Write([]byte(readingPaneEmpty))
+			return
+		}
 		s.handleMessage(w, r)
 		return
 	}
@@ -595,6 +612,33 @@ func (s *Server) handleUnsubscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // --- helpers ---
+
+// readingPaneEmpty is the placeholder htmx swaps into #reading-pane when there
+// is nothing to read — the same markup the client's closeReadingPane() writes,
+// and the #reading-pane-empty marker the mobile layout keys off to show the
+// list behind a closed pane.
+const readingPaneEmpty = `<p id="reading-pane-empty">Select a message to read it here.</p>`
+
+// messageInScope reports whether the message with id still belongs to the list
+// scope a thread row was opened from: the unified inbox, or one named folder.
+// A message moved/deleted out of that scope (e.g. deleted to trash) fails it,
+// so a stale thread row never renders a message whose body can no longer be
+// fetched. An unknown scope (absent/legacy src) reports true, preserving the
+// legacy plain-message fallback for direct hits.
+func (s *Server) messageInScope(id int64, unified bool, scopeFolder int64) bool {
+	m, err := s.store.MessageByID(id)
+	if err != nil || m == nil {
+		return true // message gone entirely: let handleMessage 404 it
+	}
+	if unified {
+		f, err := s.store.FolderByID(m.FolderID)
+		return err == nil && f != nil && f.SpecialUse == "inbox"
+	}
+	if scopeFolder != 0 {
+		return m.FolderID == scopeFolder
+	}
+	return true
+}
 
 // messageFromReq loads the message named by the {id} path param, writing a 404
 // when absent.
