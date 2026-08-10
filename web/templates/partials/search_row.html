@@ -1,6 +1,6 @@
 {{define "search_row"}}
 {{$m := .Msg}}
-<li id="msg-{{$m.ID}}" data-message-row data-msgid="{{$m.MessageID}}" data-folder="{{$m.FolderID}}" tabindex="-1"
+<li id="msg-{{$m.ID}}" data-message-row data-prefetch="/messages/{{$m.ID}}/body" data-msgid="{{$m.MessageID}}" data-folder="{{$m.FolderID}}" tabindex="-1"
     hx-get="/messages/{{$m.ID}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms" hx-indicator="#reading-skeleton"
     {{if .Push}}hx-push-url="{{.Push}}&m={{$m.ID}}"{{end}}
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
