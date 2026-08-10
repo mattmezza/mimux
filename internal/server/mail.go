@@ -425,12 +425,64 @@ func (s *Server) handleMarkRead(read bool) http.HandlerFunc {
 		if msg == nil {
 			return
 		}
-		_ = s.store.SetRead(msg.ID, read)
-		_ = s.store.RecountUnread(msg.FolderID)
-		msg.IsRead = read
-		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, msg, read) })
+		// Thread-level ops (double-click on a thread row, the r/u keys, "mark
+		// thread read/unread") signal X-SM-Thread and must persist to EVERY
+		// message in the thread, not just the row's latest — otherwise a refresh
+		// shows the thread partially unread. The per-message toggle inside a
+		// thread omits the header and marks only that one message.
+		if r.Header.Get("X-SM-Thread") == "1" {
+			s.markThreadRead(msg, read)
+		} else {
+			_ = s.store.SetRead(msg.ID, read)
+			_ = s.store.RecountUnread(msg.FolderID)
+			msg.IsRead = read
+			s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, msg, read) })
+		}
 		s.renderPartial(w, "message_row", msg)
 	}
+}
+
+// markThreadRead persists a read/unread state to every message in msg's thread
+// (the same grouping the list renders), firing a background IMAP mark for each
+// and recounting every affected folder's unread total. Threads are rebuilt from
+// the store at request time — threading is derived from headers, not stored —
+// so this stays in sync with whatever the list actually shows.
+func (s *Server) markThreadRead(msg *store.Message, read bool) {
+	thread := s.threadFor(msg)
+	if len(thread) == 0 {
+		thread = []store.Message{*msg}
+	}
+	folders := map[int64]bool{}
+	for _, m := range thread {
+		_ = s.store.SetRead(m.ID, read)
+		folders[m.FolderID] = true
+		mc := m
+		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, &mc, read) })
+	}
+	for fid := range folders {
+		_ = s.store.RecountUnread(fid)
+	}
+}
+
+// threadFor returns every message grouped with msg by the list's threading
+// (mail.BuildThreads), or nil when msg is a single-message thread. Scope mirrors
+// the list the row came from: the unified inbox when msg sits in an inbox folder
+// (unified threads can span accounts), otherwise msg's own folder.
+func (s *Server) threadFor(msg *store.Message) []store.Message {
+	var msgs []store.Message
+	if f, _ := s.store.FolderByID(msg.FolderID); f != nil && f.SpecialUse == "inbox" {
+		msgs, _ = s.store.ListUnifiedInbox(listLimit)
+	} else {
+		msgs, _ = s.store.ListMessages(msg.FolderID, listLimit)
+	}
+	for _, t := range mail.BuildThreads(msgs) {
+		for _, m := range t.Messages {
+			if m.ID == msg.ID {
+				return t.Messages
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleStar(star bool) http.HandlerFunc {
