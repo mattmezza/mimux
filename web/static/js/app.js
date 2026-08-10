@@ -221,7 +221,15 @@ function syncSearchFolder() {
   if (list && f && list.dataset.folder != null) f.value = list.dataset.folder;
 }
 document.addEventListener("htmx:afterSwap", (e) => {
-  if (e.target && e.target.id === "message-list") syncSearchFolder();
+  if (!e.target || e.target.id !== "message-list") return;
+  syncSearchFolder();
+  // Navigating the list (folder switch, search, g i / 0 / 1-9) with a message
+  // open on mobile would leave the fullscreen reading pane sitting on top of
+  // the new list. Background refreshes (sm:refresh from new-mail, undo,
+  // pull-to-refresh) request from the list element itself — those must keep
+  // the open message. On desktop the pane is a normal column, nothing to do.
+  if (e.detail?.requestConfig?.elt?.id !== "message-list" &&
+      window.matchMedia("(max-width: 767px)").matches) closeReadingPane();
 });
 document.addEventListener("DOMContentLoaded", syncSearchFolder);
 

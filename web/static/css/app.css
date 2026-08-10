@@ -337,9 +337,10 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
        a dead dark strip at the bottom. */
     padding: 0;
   }
-  #message-list:has(~ #reading-pane:not(:has(#reading-pane-empty))) {
-    display: none;
-  }
+  /* No rule hides #message-list here on purpose: the fixed, opaque, z-30
+     reading pane above already covers it. (A sibling `:has()` selector for it
+     would need `:has()` nested in `:has()`, which the spec forbids — the
+     browser drops the whole rule.) */
 
   /* #6: the reading pane's header stays pinned outside the scroll area (only
      the message body scrolls internally), leaving little room for the
