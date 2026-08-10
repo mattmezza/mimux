@@ -2,7 +2,7 @@
 {{define "content"}}
 <div class="h-dvh flex flex-col min-h-0"
      x-data="{
-       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','signatures','integrations','backup'],
+       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','signatures','templates','integrations','backup'],
        tab: 'appearance',
        init() {
          const h = (location.hash.slice(1) || localStorage.getItem('sm.settingsTab') || '').trim();
@@ -38,6 +38,7 @@
             {id:'search', label:'Search'},
             {id:'accounts', label:'Accounts'},
             {id:'signatures', label:'Signatures'},
+            {id:'templates', label:'Templates'},
             {id:'integrations', label:'Integrations'},
             {id:'backup', label:'Backup & restore'}
           ]" :key="t.id">
@@ -356,6 +357,27 @@
                     const s = typeof json === "string" ? JSON.parse(json) : json;
                     this.f = { id:s.ID||0, account:s.Account||"", name:s.Name||"", text_plain:s.TextPlain||"",
                       html:s.HTML||"", markdown:s.Markdown||"", apply_mode:s.ApplyMode||"always" };
+                    this.editing=true; this.showForm=true;
+                  },
+                  cancel() { this.showForm=false; },
+                }));
+              });
+            </script>
+          </section>
+
+          <section x-show="tab === 'templates'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Templates</h2>
+            <p class="text-xs text-zinc-500">Reusable message bodies, listed alphabetically. Pick one from the Template menu in the compose panel to drop it above whatever you've already written.</p>
+            {{template "templates_manager" (dict "CSRF" .CSRF "Templates" .Templates)}}
+            <script>
+              document.addEventListener("alpine:init", () => {
+                const blankTpl = () => ({ id:0, name:"", body:"" });
+                Alpine.data("tmplMgr", () => ({
+                  showForm: false, editing: false, f: blankTpl(),
+                  startAdd() { this.f = blankTpl(); this.editing=false; this.showForm=true; },
+                  edit(json) {
+                    const t = typeof json === "string" ? JSON.parse(json) : json;
+                    this.f = { id:t.ID||0, name:t.Name||"", body:t.Body||"" };
                     this.editing=true; this.showForm=true;
                   },
                   cancel() { this.showForm=false; },
