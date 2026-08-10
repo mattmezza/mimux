@@ -769,7 +769,7 @@ document.addEventListener("htmx:beforeRequest", (e) => {
   e.preventDefault();
   window.toast?.("Finish or close the message you're writing first.");
   root.querySelector("#compose-panel")?.scrollIntoView({ block: "nearest" });
-  root.querySelector('[name="to"]')?.focus();
+  focusComposeBody(root);
 });
 
 function composeGuardKeep() {
@@ -933,7 +933,30 @@ function localizeTimes() {
 }
 document.addEventListener("DOMContentLoaded", localizeTimes);
 
-// Focus management: compose opens onto the "To" field; a message opening
+// focusComposeBody puts the caret at the top of the message body — above the
+// quoted reply, so you can just start typing. Preferred over the "To" field:
+// on a reply it's already filled, and on a new message you usually know what
+// you want to say before who gets it.
+function focusComposeBody(root) {
+  const editor = root.querySelector("#compose-wysiwyg");
+  if (editor) {
+    editor.focus();
+    const r = document.createRange();
+    r.setStart(editor, 0);
+    r.collapse(true);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    return;
+  }
+  const ta = root.querySelector('textarea[name="body"]');
+  if (!ta) return;
+  ta.focus();
+  ta.setSelectionRange(0, 0);
+  ta.scrollTop = 0;
+}
+
+// Focus management: compose opens onto the message body; a message opening
 // moves focus into the reading pane so keyboard/AT users land somewhere sane.
 document.addEventListener("htmx:afterSwap", (e) => {
   if (e.target && e.target.id === "compose-root" && e.target.firstElementChild) {
@@ -943,7 +966,7 @@ document.addEventListener("htmx:afterSwap", (e) => {
     // new, reply prefill, reopened draft, undo-send — swaps here, so each gets
     // its own clean baseline.
     snapshotComposeBaseline();
-    e.target.querySelector('[name="to"]')?.focus();
+    focusComposeBody(e.target);
   }
   if (e.target && e.target.id === "reading-pane") {
     const detail = e.target.querySelector("#message-detail");
