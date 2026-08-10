@@ -20,6 +20,18 @@
     <h1 class="text-base font-semibold text-zinc-100">Settings</h1>
   </header>
 
+  {{/* Empty stand-in form for the sub-manager CRUD controls (accounts,
+       signatures, templates). They live inside the big settings form below, so
+       htmx would otherwise serialize the *whole* page into every sub-request:
+       field names collide across managers (three inputs named "name", two named
+       "id", one "signature_id" per identity row) and the first one wins,
+       and API keys and account passwords ride along on every save. Pointing
+       those controls here with form="settings-subform" — the native HTML
+       form-association attribute, which htmx honours via elt.form — limits each
+       request to its own hx-include. Must sit outside the settings form: nested
+       forms are illegal and the parser drops them. */}}
+  <form id="settings-subform" hidden></form>
+
   <form method="post" action="/settings" hx-post="/settings" hx-swap="none"
         hx-on::after-request="if (event.detail.successful) { toast('Settings saved'); } else { toast(&quot;Couldn't save settings — please try again.&quot;); }"
         class="flex-1 min-h-0 flex flex-col">
