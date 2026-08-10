@@ -255,9 +255,8 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
 /* Reading pane: no crossfade on message switch. The detail shell returns in
    ~60ms warm, so fading out and back in cost more time than the request did —
    every switch blanked the pane for the settle window before showing content
-   that was already available. The hx-swap settle timing is left in place; it
-   just has no visual effect now. */
-#reading-pane { transition: opacity 150ms ease; }
+   that was already available. Nothing animates opacity here now; the hx-swap
+   settle timing is left in place but has no visual effect. */
 
 /* Generic htmx loading indicator (skeletons, spinners): hidden until the
    request that names it via hx-indicator is in flight. The show is delayed so
