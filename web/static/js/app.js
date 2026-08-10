@@ -333,6 +333,16 @@ function openSelected() {
 function flagSelected(path) {
   const id = currentId();
   if (!id || !window.htmx) return true;
+  if (path === "read" || path === "unread") {
+    // Thread-level: the row id is the thread root, so tell the server to mark
+    // EVERY message in the thread. Swap nothing and flip the row in place —
+    // swapping the single-message fragment in would clobber a multi-message
+    // thread row.
+    const makeRead = path === "read";
+    htmx.ajax("POST", `/messages/${id}/${path}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
+      .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
+    return true;
+  }
   htmx.ajax("POST", `/messages/${id}/${path}`, { target: `#msg-${id}`, swap: "outerHTML" });
   return true;
 }
@@ -1027,7 +1037,10 @@ function toggleRowRead(row) {
   if (!id) return;
   const makeRead = row.hasAttribute("data-unread"); // unread -> read, else -> unread
   if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
-  htmx.ajax("POST", `/messages/${id}/${makeRead ? "read" : "unread"}`, { swap: "none" })
+  // X-SM-Thread tells the server this is a thread-level toggle: EVERY message in
+  // the thread gets marked, not just the row's latest (the row id is the thread
+  // root). Otherwise a refresh leaves the thread partially unread.
+  htmx.ajax("POST", `/messages/${id}/${makeRead ? "read" : "unread"}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
     .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
 }
 
