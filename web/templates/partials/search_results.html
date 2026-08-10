@@ -18,7 +18,7 @@
       <span class="inline-flex items-center gap-1 text-[11px] rounded-full bg-zinc-800 border border-zinc-700 pl-2 pr-1 py-0.5 text-zinc-200">
         {{.Label}}
         <button hx-get="/search?scope={{$.Scope}}&account={{$.Account}}&folder={{$.Folder}}&q={{.Query}}"
-                hx-target="#message-list" hx-swap="outerHTML" title="Remove filter" aria-label="Remove filter {{.Label}}"
+                hx-target="#message-list" hx-swap="outerHTML" hx-push-url="true" title="Remove filter" aria-label="Remove filter {{.Label}}"
                 class="w-4 h-4 rounded-full hover:bg-zinc-700 text-zinc-400 hover:text-zinc-100 leading-none">✕</button>
       </span>
       {{end}}
@@ -53,7 +53,7 @@
         <span class="ml-auto text-zinc-500">{{len .Msgs}}</span>
       </li>
       {{end}}
-      {{range .Msgs}}{{template "search_row" (dict "Msg" . "Terms" $.Terms "Grouped" $.Grouped)}}{{end}}
+      {{range .Msgs}}{{template "search_row" (dict "Msg" . "Terms" $.Terms "Grouped" $.Grouped "Push" $.PushBase)}}{{end}}
     {{end}}
   </ul>
   {{else}}

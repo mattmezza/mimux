@@ -1308,6 +1308,97 @@ function initComposeEditor() {
       tabs.querySelectorAll("[data-md-tab]").forEach((b) => b.classList.toggle("md-tab-active", b === t));
     });
   }
+  initComposeSignature();
+}
+
+// --- signatures: auto-insert the identity's linked signature, swap on From
+// change, and let the user skip it. All state is per-open (module vars reset in
+// initComposeSignature); insertion is marked with a [data-signature] wrapper
+// (WYSIWYG) or tracked verbatim (textarea) so it can be cleanly replaced. ---
+let composeSigText = "";      // exact block inserted into a textarea body
+let composeSigSkipped = false; // user unticked the Signature toggle
+
+function composeSigData() {
+  const el = document.getElementById("compose-sig-data");
+  if (!el) return null;
+  let sigs = {};
+  try { sigs = JSON.parse(el.dataset.sigs || "{}") || {}; } catch (e) { sigs = {}; }
+  return { el, sigs, kind: el.dataset.kind || "new", mode: el.dataset.mode || "plain" };
+}
+
+function sigVariantText(s, mode) {
+  if (!s) return "";
+  if (mode === "html") return s.html || "";
+  if (mode === "markdown") return s.markdown || "";
+  return s.plain || "";
+}
+
+// applyComposeSignature removes any current signature and, unless it doesn't
+// apply (unlinked / first-message-only on a reply) or was skipped, inserts the
+// variant for `addr`. Idempotent — safe to call on every From change.
+function applyComposeSignature(addr) {
+  const d = composeSigData();
+  if (!d) return;
+  const editor = document.getElementById("compose-wysiwyg");
+  const body = document.querySelector('#compose-form textarea[name="body"]');
+  if (editor) {
+    editor.querySelectorAll("[data-signature]").forEach((n) => n.remove());
+  } else if (body && composeSigText && body.value.includes(composeSigText)) {
+    body.value = body.value.replace(composeSigText, "");
+  }
+  composeSigText = "";
+  const s = d.sigs[(addr || "").toLowerCase().trim()];
+  const isReply = d.kind === "reply" || d.kind === "reply_all";
+  const applies = !!s && !(s.apply === "first" && isReply);
+  updateSigToggle(applies);
+  if (!applies || composeSigSkipped) { if (editor) syncComposeEditor(); return; }
+  const variant = sigVariantText(s, d.mode);
+  if (editor) {
+    const div = document.createElement("div");
+    div.setAttribute("data-signature", "");
+    div.innerHTML = variant; // sanitized server-side in composeSignatures
+    editor.appendChild(div);
+    syncComposeEditor();
+  } else if (body) {
+    composeSigText = "\n\n-- \n" + variant;
+    body.value += composeSigText;
+  }
+}
+
+function updateSigToggle(applies) {
+  const wrap = document.getElementById("compose-sig-toggle-wrap");
+  if (!wrap) return;
+  wrap.hidden = !applies;
+  const cb = document.getElementById("compose-sig-toggle");
+  if (cb) cb.checked = applies && !composeSigSkipped;
+}
+
+function onComposeSigToggle(cb) {
+  composeSigSkipped = !cb.checked;
+  const from = document.querySelector('#compose-form [name="from"]');
+  applyComposeSignature(from ? from.value : (composeSigData()?.el.dataset.from || ""));
+}
+window.onComposeSigToggle = onComposeSigToggle;
+
+// initComposeSignature wires the From selector and does the initial insert. The
+// wired flag makes it run once per compose open.
+function initComposeSignature() {
+  const el = document.getElementById("compose-sig-data");
+  if (!el || el.dataset.wired) return;
+  el.dataset.wired = "1";
+  composeSigText = "";
+  composeSigSkipped = false;
+  const fromSel = document.querySelector('#compose-form select[name="from"]');
+  if (fromSel) fromSel.addEventListener("change", () => applyComposeSignature(fromSel.value));
+  const from = (fromSel ? fromSel.value : "") || el.dataset.from || "";
+  if (el.dataset.auto) {
+    applyComposeSignature(from);
+  } else {
+    // Reopened draft / undo restore: body already carries its signature; don't
+    // re-insert, but keep the toggle available (skipped so it isn't re-added).
+    composeSigSkipped = true;
+    applyComposeSignature(from);
+  }
 }
 
 // Ensure the hidden body textarea is current before the form submits.
@@ -1477,5 +1568,22 @@ document.addEventListener("keydown", (e) => {
   document.addEventListener("DOMContentLoaded", tick);
   document.addEventListener("htmx:afterSwap", (e) => {
     if (e.target && e.target.id === "outgoing-list") tick();
+  });
+})();
+
+// --- preserve #message-list scroll across htmx history navigation. htmx
+// restores the body HTML on Back but not an inner overflow container's
+// scrollTop, so returning to a search/inbox list would jump to the top. Stash
+// the list's scroll keyed by URL when htmx snapshots the page, reapply when it
+// restores. Fixes both list<->detail flows (inbox threads and search results).
+(function () {
+  const pos = Object.create(null);
+  const list = () => document.getElementById("message-list");
+  const save = () => { const l = list(); if (l) pos[location.href] = l.scrollTop; };
+  document.addEventListener("htmx:beforeHistorySave", save);
+  document.addEventListener("htmx:historyRestore", () => {
+    const y = pos[location.href];
+    if (y == null) return;
+    requestAnimationFrame(() => { const l = list(); if (l) l.scrollTop = y; });
   });
 })();

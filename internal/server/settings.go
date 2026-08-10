@@ -11,6 +11,7 @@ import (
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	prefs := s.store.GetPrefs()
+	sigs, _ := s.store.ListSignatures()
 	s.render(w, "settings", map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Prefs":        prefs,
@@ -19,6 +20,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"AppConfig":    s.store.GetAppConfig(),
 		"Presets":      account.PresetNames(),
 		"QAEditor":     qaEditorRows(prefs.QuickActions),
+		"Signatures":   sigs,
+		"Identities":   s.identityLinks(),
 	})
 }
 

@@ -90,6 +90,13 @@ type composeView struct {
 	ThreadContext string // for the embedded ai_reply partial
 	UndoSendDelay int    // seconds the split-button "Send" waits (undo window)
 	Error         string
+	// Signatures maps lowercased identity address -> its linked signature
+	// variants, embedded so the client inserts the right one per From identity.
+	Signatures map[string]sigVar
+	// AutoSignature is true only for a fresh open (new/reply/forward) where the
+	// client should auto-insert the linked signature. False for reopened drafts,
+	// undo-send restores and send-error re-renders (body already carries it).
+	AutoSignature bool
 }
 
 // handleComposeNew serves GET /compose (blank) and GET
@@ -129,7 +136,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			if mode == "" {
 				mode = view.Mode
 			}
-			s.renderPartial(w, "compose", composeView{
+			s.renderCompose(w, composeView{
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
@@ -142,7 +149,9 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			s.prefillReply(&view, orig, r.URL.Query().Get("mode"))
 		}
 	}
-	s.renderPartial(w, "compose", view)
+	// Fresh open (new/reply/forward): the client auto-inserts the linked signature.
+	view.AutoSignature = true
+	s.renderCompose(w, view)
 }
 
 // prefillReply fills the To/Cc/Subject/Body/threading fields of view for a
@@ -341,7 +350,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(s.cfg.Accounts) == 0 {
 		view.Error = "No accounts configured. Add one in Settings → Accounts."
-		s.renderPartial(w, "compose", view)
+		s.renderCompose(w, view)
 		return
 	}
 	// Route SMTP by whichever account owns the chosen From address; the alias
@@ -357,13 +366,13 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	to := mail.SplitAddrList(view.To)
 	if len(to) == 0 {
 		view.Error = "Add at least one recipient."
-		s.renderPartial(w, "compose", view)
+		s.renderCompose(w, view)
 		return
 	}
 	atts, attErr := readAttachments(r)
 	if attErr != "" {
 		view.Error = attErr
-		s.renderPartial(w, "compose", view)
+		s.renderCompose(w, view)
 		return
 	}
 	in := mail.ComposeInput{
@@ -378,7 +387,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
 			slog.Error("compose: send", "account", view.Account, "err", err)
 			view.Error = "Could not send: " + err.Error()
-			s.renderPartial(w, "compose", view)
+			s.renderCompose(w, view)
 			return
 		}
 		if draftID > 0 {
@@ -395,7 +404,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		t, err := time.Parse(time.RFC3339, r.PostFormValue("send_at"))
 		if err != nil {
 			view.Error = "Pick a valid date and time to schedule."
-			s.renderPartial(w, "compose", view)
+			s.renderCompose(w, view)
 			return
 		}
 		sendAt = t
@@ -410,7 +419,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.EnqueueOutbox(o); err != nil {
 		slog.Error("compose: enqueue", "err", err)
 		view.Error = "Could not queue the message: " + err.Error()
-		s.renderPartial(w, "compose", view)
+		s.renderCompose(w, view)
 		return
 	}
 	if draftID > 0 {
@@ -476,7 +485,7 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 	if refs == "" && o.InReplyTo != "" {
 		refs = "<" + o.InReplyTo + ">"
 	}
-	s.renderPartial(w, "compose", composeView{
+	s.renderCompose(w, composeView{
 		CSRF: auth.EnsureCSRF(w, r, s.secure), Accounts: s.cfg.Accounts, DraftID: d.ID,
 		Account: o.Account, From: from, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
 		Body: o.Body, Mode: o.Mode, Kind: "new", InReplyTo: o.InReplyTo, References: refs,

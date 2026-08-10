@@ -78,3 +78,38 @@ func TestSearchHitHighlighted(t *testing.T) {
 		t.Fatalf("hit not highlighted; body:\n%s", body)
 	}
 }
+
+// The htmx path returns the bare list partial and each result row carries an
+// hx-push-url (so opening a result creates a history entry — Back returns to
+// results); a plain navigation returns the full page instead.
+func TestSearchHtmxPartialAndPushURL(t *testing.T) {
+	s := serverWith(t, []config.Account{{Name: "A"}}, func(st *store.Store) {
+		f, _ := st.UpsertFolder("A", "INBOX", "inbox", 0)
+		_ = st.UpsertMessage(&store.Message{
+			Account: "A", FolderID: f, UID: 1, MessageID: "m1",
+			FromName: "Alice", FromAddress: "alice@x.com",
+			Subject: "Quarterly report", Snippet: "numbers inside",
+			Date: time.Now(), IsRead: true,
+		})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/search?q=quarterly&scope=all", nil)
+	req.Header.Set("HX-Request", "true")
+	s.handleSearch(rec, req)
+	body := rec.Body.String()
+	if strings.Contains(body, "<!DOCTYPE") {
+		t.Fatalf("htmx request should return a partial, got full page:\n%s", body)
+	}
+	// & is HTML-escaped to &amp; inside the attribute; browsers decode it back.
+	if !strings.Contains(body, `hx-push-url="/search?scope=all&amp;folder=0&amp;q=quarterly&m=1"`) {
+		t.Fatalf("result row missing hx-push-url; body:\n%s", body)
+	}
+
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/search?q=quarterly&scope=all", nil)
+	s.handleSearch(rec, req) // no HX-Request header → full page
+	if !strings.Contains(rec.Body.String(), "<!DOCTYPE") {
+		t.Fatalf("plain navigation should return the full page")
+	}
+}

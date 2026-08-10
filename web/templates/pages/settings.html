@@ -2,7 +2,7 @@
 {{define "content"}}
 <div class="h-dvh flex flex-col min-h-0"
      x-data="{
-       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','integrations','backup'],
+       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','signatures','integrations','backup'],
        tab: 'appearance',
        init() {
          const h = (location.hash.slice(1) || localStorage.getItem('sm.settingsTab') || '').trim();
@@ -37,6 +37,7 @@
             {id:'syncing', label:'Syncing'},
             {id:'search', label:'Search'},
             {id:'accounts', label:'Accounts'},
+            {id:'signatures', label:'Signatures'},
             {id:'integrations', label:'Integrations'},
             {id:'backup', label:'Backup & restore'}
           ]" :key="t.id">
@@ -339,6 +340,28 @@
               {{end}}
             </div>
             {{end}}
+          </section>
+
+          <section x-show="tab === 'signatures'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Signatures</h2>
+            <p class="text-xs text-zinc-500">Create signatures with plain-text, HTML and Markdown variants; the variant matching your compose editor is inserted. Then link one to each sender identity below.</p>
+            {{template "signatures_manager" (dict "CSRF" .CSRF "Signatures" .Signatures "Accounts" .Accounts "Identities" .Identities)}}
+            <script>
+              document.addEventListener("alpine:init", () => {
+                const blankSig = () => ({ id:0, account:"", name:"", text_plain:"", html:"", markdown:"", apply_mode:"always" });
+                Alpine.data("sigMgr", () => ({
+                  showForm: false, editing: false, f: blankSig(),
+                  startAdd() { this.f = blankSig(); this.editing=false; this.showForm=true; },
+                  edit(json) {
+                    const s = typeof json === "string" ? JSON.parse(json) : json;
+                    this.f = { id:s.ID||0, account:s.Account||"", name:s.Name||"", text_plain:s.TextPlain||"",
+                      html:s.HTML||"", markdown:s.Markdown||"", apply_mode:s.ApplyMode||"always" };
+                    this.editing=true; this.showForm=true;
+                  },
+                  cancel() { this.showForm=false; },
+                }));
+              });
+            </script>
           </section>
 
           <section x-show="tab === 'integrations'" x-cloak class="space-y-6"

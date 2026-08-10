@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -58,7 +59,36 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	csrf := auth.EnsureCSRF(w, r, s.secure)
-	s.renderPartial(w, "search_results", s.searchData(csrf, raw, q, scope, account, folderID, msgs, false))
+	data := s.searchData(csrf, raw, q, scope, account, folderID, msgs, false)
+	// Full page for a direct navigation / reload / htmx history-restore miss
+	// (htmx swaps the whole history element, so it needs the base HTML back);
+	// the plain partial for a normal htmx list swap.
+	if r.Header.Get("HX-Request") == "" || r.Header.Get("HX-History-Restore-Request") != "" {
+		s.renderSearchPage(w, data)
+		return
+	}
+	s.renderPartial(w, "search_results", data)
+}
+
+// renderSearchPage renders the search results inside the full inbox shell, so a
+// pushed /search?q=… URL is bookmarkable and survives a hard reload / Back.
+func (s *Server) renderSearchPage(w http.ResponseWriter, sv map[string]any) {
+	// NOTE: mirrors handleInbox's base data; kept local to avoid editing
+	// server.go (concurrent work there). Fold into one helper if it drifts.
+	prefs := s.store.GetPrefs()
+	totalUnread, _ := s.store.TotalInboxUnread()
+	s.render(w, "inbox", map[string]any{
+		"CSRF":          sv["CSRF"],
+		"Accounts":      s.cfg.Accounts,
+		"Sidebar":       s.sidebarData(),
+		"Statuses":      s.mail.Status(),
+		"Unified":       len(s.cfg.Accounts) > 1,
+		"Saved":         s.savedSearches(),
+		"Prefs":         prefs,
+		"AccountColors": prefs.AccountColors,
+		"TotalUnread":   totalUnread,
+		"SearchView":    sv,
+	})
 }
 
 // handleSearchSuggest renders the instant typeahead dropdown: top local hits, or
@@ -91,6 +121,7 @@ func (s *Server) searchData(csrf, raw string, q *search.SearchQuery, scope searc
 		"Scope":     string(scope),
 		"Account":   account,
 		"Folder":    folderID,
+		"PushBase":  searchPushBase(raw, scope, folderID),
 		"Pills":     pills(q),
 		"Terms":     q.TextTerms(),
 		"Groups":    groups,
@@ -99,6 +130,12 @@ func (s *Server) searchData(csrf, raw string, q *search.SearchQuery, scope searc
 		"Grouped":   scope == search.ScopeAll,
 		"ServerRan": serverRan,
 	}
+}
+
+// searchPushBase is the results-view URL that result rows extend with &m=<id>
+// so opening a result pushes a real history entry (Back returns to results).
+func searchPushBase(raw string, scope search.Scope, folderID int64) string {
+	return "/search?scope=" + string(scope) + "&folder=" + strconv.FormatInt(folderID, 10) + "&q=" + url.QueryEscape(raw)
 }
 
 func groupResults(msgs []store.Message, scope search.Scope) []searchGroup {
@@ -155,7 +192,7 @@ func (s *Server) handleServerSearch(w http.ResponseWriter, r *http.Request) {
 	if ids, ok := s.store.SearchCacheGet(store.QueryHash(raw, scope, account, folderID), serverCacheTTL); ok {
 		msgs, _ := s.store.MessagesByIDs(ids)
 		s.renderPartial(w, "search_server_status", map[string]any{
-			"Cached": true, "Rows": template.HTML(s.renderRows(msgs, q.TextTerms())), "Count": len(msgs), // #nosec G203 -- renderRows output is template-generated, escaped per field.
+			"Cached": true, "Rows": template.HTML(s.renderRows(msgs, q.TextTerms(), searchPushBase(raw, scope, folderID))), "Count": len(msgs), // #nosec G203 -- renderRows output is template-generated, escaped per field.
 		})
 		return
 	}
@@ -223,7 +260,7 @@ func (s *Server) runServerSearch(raw string, q *search.SearchQuery, scope search
 					ids = append(ids, fids...)
 					s.mail.Broadcast("search-results", jsonData(map[string]any{
 						"account": acct,
-						"html":    s.renderRows(msgs, q.TextTerms()),
+						"html":    s.renderRows(msgs, q.TextTerms(), searchPushBase(raw, scope, folderID)),
 					}))
 				}
 			}
@@ -238,11 +275,11 @@ func (s *Server) runServerSearch(raw string, q *search.SearchQuery, scope search
 }
 
 // renderRows renders a batch of result rows to an HTML string for SSE delivery.
-func (s *Server) renderRows(msgs []store.Message, terms []string) string {
+func (s *Server) renderRows(msgs []store.Message, terms []string, push string) string {
 	var b bytes.Buffer
 	for i := range msgs {
 		_ = s.tmpl["inbox"].ExecuteTemplate(&b, "search_row", map[string]any{
-			"Msg": msgs[i], "Terms": terms, "Grouped": false,
+			"Msg": msgs[i], "Terms": terms, "Grouped": false, "Push": push,
 		})
 	}
 	return b.String()

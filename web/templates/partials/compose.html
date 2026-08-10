@@ -23,6 +23,13 @@
       <input type="hidden" name="send_mode" id="compose-send-mode" value="later">
       <input type="hidden" name="send_at" id="compose-send-at" value="">
 
+      {{/* Signature data for the client: address -> {plain,html,markdown,apply}.
+           app.js auto-inserts the linked signature for the From identity and
+           swaps it when From changes. */}}
+      <div id="compose-sig-data" hidden
+        data-sigs="{{toJSON .Signatures}}" data-kind="{{.Kind}}" data-mode="{{.Mode}}"
+        data-from="{{.From}}"{{if .AutoSignature}} data-auto="1"{{end}}></div>
+
       {{with .Error}}<div class="rounded-md border border-red-900/50 bg-red-950/30 p-3 text-red-300 text-xs">{{.}}</div>{{end}}
 
       {{$ids := identities .Accounts}}
@@ -135,6 +142,13 @@
             onchange="document.getElementById('attach-list').textContent=[...this.files].map(f=>f.name).join(', ')">
         </label>
         <span id="attach-list" class="text-xs text-zinc-500 break-all"></span>
+        {{/* Include/skip the linked signature for this compose. Shown by app.js
+             only when the current From identity has an applicable signature. */}}
+        <label id="compose-sig-toggle-wrap" hidden class="inline-flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer ml-1">
+          <input type="checkbox" id="compose-sig-toggle" checked onchange="onComposeSigToggle(this)"
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          Signature
+        </label>
       </div>
 
       {{/* AI assist: one sparkle button opens an inline panel. Replies fetch
