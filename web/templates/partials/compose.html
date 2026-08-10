@@ -3,8 +3,8 @@
      below is identical in all of them. The fullscreen class strings are also
      handed to the client (data-fs-*) so the popup's expand button can swap to
      them without duplicating class lists in app.js. */}}
-{{$fsOuter := "fixed inset-0 z-50 bg-zinc-950 flex justify-center"}}
-{{$fsPanel := "w-full max-w-3xl h-full bg-zinc-900 sm:border-x border-zinc-800 flex flex-col"}}
+{{$fsOuter := "fixed inset-0 z-50 bg-zinc-900"}}
+{{$fsPanel := "w-full h-full bg-zinc-900 flex flex-col"}}
 {{$outer := $fsOuter}}
 {{$panel := $fsPanel}}
 {{if eq .Layout "modal"}}
@@ -19,7 +19,7 @@
 <div id="compose-window" class="{{$outer}}" data-layout="{{.Layout}}" data-fs-outer="{{$fsOuter}}">
   <div id="compose-panel" class="{{$panel}}" data-fs-panel="{{$fsPanel}}"
     role="dialog" {{if ne .Layout "popup"}}aria-modal="true" {{end}}aria-label="Compose message">
-    <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+    <div class="shrink-0 flex items-center justify-between px-4 sm:px-6 py-3 border-b border-zinc-800">
       <h2 class="text-zinc-100 font-semibold text-sm">
         {{if eq .Kind "forward"}}Forward{{else if eq .Kind "reply_all"}}Reply all{{else if eq .Kind "reply"}}Reply{{else}}New message{{end}}
       </h2>
@@ -42,7 +42,7 @@
       hx-on::after-request="if(event.detail.elt===this){onComposeResponse(event)}">
       {{/* Scrolling body + pinned footer, so Send sits on the window's bottom
            edge in every layout instead of floating wherever the content ends. */}}
-      <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
+      <div class="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 sm:px-6 space-y-3">
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
@@ -97,7 +97,7 @@
         </div>
       </div>
       {{if and (not .Cc) (not .Bcc)}}
-      <button type="button" class="text-xs text-indigo-400 hover:text-indigo-300"
+      <button type="button" class="self-start text-xs text-indigo-400 hover:text-indigo-300"
         onclick="document.getElementById('cc-bcc-fields').classList.remove('hidden');this.remove()">Cc/Bcc</button>
       {{end}}
 
@@ -140,7 +140,7 @@
         <button type="button" data-cmd="removeFormat" title="Clear formatting" class="ct-btn">⌫</button>
       </div>
       <div id="compose-wysiwyg" contenteditable="true" data-compose-editor
-        class="compose-wysiwyg min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
+        class="compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
       <textarea name="body" class="hidden">{{.Body}}</textarea>
 
       {{else if eq .Mode "markdown"}}
@@ -155,13 +155,13 @@
       </div>
       <textarea name="body" placeholder="Write your message… (Markdown supported)" rows="12" data-md-write
         hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
-        class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
-      <div id="md-preview" data-md-preview class="hidden compose-wysiwyg min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
+        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+      <div id="md-preview" data-md-preview class="hidden compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
 
       {{else}}
       <textarea name="body" placeholder="Write your message…" rows="12"
         hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
-        class="w-full min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
       {{end}}
 
       <div class="flex items-center gap-2 flex-wrap">
@@ -277,7 +277,7 @@
 
       </div>
 
-      <div class="shrink-0 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-900 px-4 py-3">
+      <div class="shrink-0 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-900 px-4 sm:px-6 py-3">
         <button type="button" id="compose-save-draft" title="Save draft"
           onclick="syncComposeEditor()"
           hx-post="/compose/draft" hx-include="closest form" hx-swap="none"
