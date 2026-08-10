@@ -14,7 +14,7 @@
         <button type="button" data-sig='{{toJSON .}}' @click="edit($event.currentTarget.dataset.sig)"
           class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors duration-150">Edit</button>
         <button type="button"
-          hx-post="/settings/signatures/{{.ID}}/delete" hx-target="#signatures-manager" hx-swap="outerHTML"
+          form="settings-subform" hx-post="/settings/signatures/{{.ID}}/delete" hx-target="#signatures-manager" hx-swap="outerHTML"
           hx-confirm="Delete the signature “{{.Name}}”? Any identity using it will fall back to no signature."
           class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Delete</button>
       </li>
@@ -83,7 +83,7 @@
 
       <div class="flex items-center gap-2 pt-1">
         <button type="button"
-          hx-post="/settings/signatures" hx-include="#sig-fields" hx-target="#signatures-manager" hx-swap="outerHTML"
+          form="settings-subform" hx-post="/settings/signatures" hx-include="#sig-fields" hx-target="#signatures-manager" hx-swap="outerHTML"
           hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not save signature')"
           class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150"
           x-text="editing ? 'Save signature' : 'Add signature'"></button>
@@ -104,8 +104,11 @@
           <span class="block text-sm text-zinc-100 truncate">{{.Name}}{{if .IsAlias}} <span class="text-zinc-500">· alias</span>{{end}}</span>
           <span class="block text-xs text-zinc-500 truncate">{{.Address}}</span>
         </span>
-        <select name="signature_id"
-          hx-post="/settings/signatures/link" hx-trigger="change" hx-swap="none"
+        {{/* Name is per-address: every identity row renders one of these into the
+             same stand-in form, and a shared name would make the server read the
+             first row's value for whichever row was changed. */}}
+        <select name="signature_id:{{.Address}}"
+          form="settings-subform" hx-post="/settings/signatures/link" hx-trigger="change" hx-swap="none"
           hx-vals='{"address": "{{.Address}}"}'
           hx-on::after-request="if(event.detail.successful) toast('Signature updated')"
           class="shrink-0 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500">
