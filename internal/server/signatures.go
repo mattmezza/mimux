@@ -38,7 +38,7 @@ func (s *Server) composeSignatures() map[string]sigVar {
 		}
 		out[addr] = sigVar{
 			Plain:    sig.TextPlain,
-			HTML:     string(mail.SanitizeComposeHTML(sig.HTML)),
+			HTML:     mail.SanitizeComposeHTML(sig.HTML),
 			Markdown: sig.Markdown,
 			Apply:    sig.ApplyMode,
 		}
