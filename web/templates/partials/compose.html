@@ -1,22 +1,52 @@
 {{define "compose"}}
-<div class="fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-0 sm:p-4">
-  <div class="w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-md bg-zinc-900 border border-zinc-800 shadow-xl flex flex-col">
+{{/* Three window layouts. Only these two container elements vary — the form
+     below is identical in all of them. The fullscreen class strings are also
+     handed to the client (data-fs-*) so the popup's expand button can swap to
+     them without duplicating class lists in app.js. */}}
+{{$fsOuter := "fixed inset-0 z-50 bg-zinc-950 flex justify-center"}}
+{{$fsPanel := "w-full max-w-3xl h-full bg-zinc-900 sm:border-x border-zinc-800 flex flex-col"}}
+{{$outer := $fsOuter}}
+{{$panel := $fsPanel}}
+{{if eq .Layout "modal"}}
+  {{$outer = "fixed inset-0 z-50 flex items-start sm:items-center justify-center bg-black/50 p-0 sm:p-4"}}
+  {{$panel = "w-full sm:max-w-2xl h-full sm:h-auto sm:max-h-[90vh] rounded-none sm:rounded-md bg-zinc-900 border border-zinc-800 shadow-xl flex flex-col"}}
+{{else if eq .Layout "popup"}}
+  {{/* No backdrop: the app stays visible and clickable behind it. Below sm:
+       there is no room for a corner popup, so it falls back to full screen. */}}
+  {{$outer = "fixed inset-0 z-50 flex sm:inset-auto sm:bottom-0 sm:right-6 sm:block"}}
+  {{$panel = "w-full h-full bg-zinc-900 flex flex-col sm:w-[32rem] sm:h-auto sm:max-h-[min(70vh,44rem)] sm:rounded-t-lg sm:border sm:border-zinc-700 sm:shadow-2xl sm:shadow-black/60"}}
+{{end}}
+<div id="compose-window" class="{{$outer}}" data-layout="{{.Layout}}" data-fs-outer="{{$fsOuter}}">
+  <div id="compose-panel" class="{{$panel}}" data-fs-panel="{{$fsPanel}}"
+    role="dialog" {{if ne .Layout "popup"}}aria-modal="true" {{end}}aria-label="Compose message">
     <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-zinc-800">
       <h2 class="text-zinc-100 font-semibold text-sm">
         {{if eq .Kind "forward"}}Forward{{else if eq .Kind "reply_all"}}Reply all{{else if eq .Kind "reply"}}Reply{{else}}New message{{end}}
       </h2>
+      <div class="flex items-center gap-0.5">
+      {{if eq .Layout "popup"}}
+      <button type="button" id="compose-expand" title="Full screen" aria-label="Full screen" onclick="expandCompose()"
+        class="hidden sm:block p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/></svg>
+      </button>
+      {{end}}
       <button type="button" title="Close (Esc)" aria-label="Close" onclick="closeCompose()"
         class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
       </button>
+      </div>
     </div>
     <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
       enctype="multipart/form-data" data-undo-delay="{{.UndoSendDelay}}"
-      class="flex-1 overflow-y-auto p-4 space-y-3"
+      class="flex-1 min-h-0 flex flex-col"
       hx-on::after-request="if(event.detail.elt===this){onComposeResponse(event)}">
+      {{/* Scrolling body + pinned footer, so Send sits on the window's bottom
+           edge in every layout instead of floating wherever the content ends. */}}
+      <div class="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
+      <input type="hidden" name="layout" value="{{.Layout}}">
       <input type="hidden" name="mode" value="{{.Mode}}">
       <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
       <input type="hidden" name="references" value="{{.References}}">
@@ -245,7 +275,9 @@
         </div>
       </div>
 
-      <div class="flex justify-end gap-2 pt-2">
+      </div>
+
+      <div class="shrink-0 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-900 px-4 py-3">
         <button type="button" id="compose-save-draft" title="Save draft"
           onclick="syncComposeEditor()"
           hx-post="/compose/draft" hx-include="closest form" hx-swap="none"

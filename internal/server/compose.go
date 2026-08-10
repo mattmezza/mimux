@@ -85,6 +85,7 @@ type composeView struct {
 	Body          string
 	Mode          string // plain|html|markdown compose editor
 	Kind          string // new|reply|reply_all|forward
+	Layout        string // fullscreen|popup|modal window layout
 	InReplyTo     string // original Message-ID, for the In-Reply-To header
 	References    string // full References header value to reuse
 	ThreadContext string // for the embedded ai_reply partial
@@ -100,6 +101,24 @@ type composeView struct {
 	// Templates are the saved message templates, alphabetical, offered in the
 	// compose picker. Filled in by renderCompose.
 	Templates []store.Template
+}
+
+// validLayout whitelists a compose layout to the three the partial can render,
+// so neither a stale pref nor a hand-posted form can inject anything else.
+func validLayout(v, def string) string {
+	switch v {
+	case "fullscreen", "popup", "modal":
+		return v
+	}
+	return def
+}
+
+// layoutForKind picks the layout pref that applies to a compose kind.
+func layoutForKind(p store.Prefs, kind string) string {
+	if kind == "" || kind == "new" {
+		return validLayout(p.ComposeLayout, "fullscreen")
+	}
+	return validLayout(p.ReplyLayout, "popup")
 }
 
 // handleComposeNew serves GET /compose (blank) and GET
@@ -143,6 +162,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
+				Layout: layoutForKind(prefs, d.Kind),
 			})
 			return
 		}
@@ -152,6 +172,8 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			s.prefillReply(&view, orig, r.URL.Query().Get("mode"))
 		}
 	}
+	// Layout depends on the final Kind, so resolve it after the reply prefill.
+	view.Layout = layoutForKind(prefs, view.Kind)
 	// Fresh open (new/reply/forward): the client auto-inserts the linked signature.
 	view.AutoSignature = true
 	s.renderCompose(w, view)
@@ -351,6 +373,8 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		Mode:      r.PostFormValue("mode"),
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
 	}
+	// Keep the window in whatever layout it was opened in across an error re-render.
+	view.Layout = validLayout(r.PostFormValue("layout"), layoutForKind(s.store.GetPrefs(), view.Kind))
 	if len(s.cfg.Accounts) == 0 {
 		view.Error = "No accounts configured. Add one in Settings → Accounts."
 		s.renderCompose(w, view)
@@ -492,7 +516,7 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 		CSRF: auth.EnsureCSRF(w, r, s.secure), Accounts: s.cfg.Accounts, DraftID: d.ID,
 		Account: o.Account, From: from, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
 		Body: o.Body, Mode: o.Mode, Kind: "new", InReplyTo: o.InReplyTo, References: refs,
-		UndoSendDelay: prefs.UndoSendDelay,
+		UndoSendDelay: prefs.UndoSendDelay, Layout: layoutForKind(prefs, "new"),
 	})
 }
 

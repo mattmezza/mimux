@@ -181,6 +181,30 @@
               </div>
             </fieldset>
             <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200">Window layout</legend>
+              <p class="text-xs text-zinc-500">Where the compose window opens. Popups let you keep reading while you write.</p>
+              <div class="flex flex-col sm:flex-row gap-3">
+                <label class="block space-y-1">
+                  <span class="text-sm text-zinc-200">New messages</span>
+                  <select name="compose_layout"
+                    class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                    <option value="fullscreen" {{if eq .Prefs.ComposeLayout "fullscreen"}}selected{{end}}>Full screen</option>
+                    <option value="popup" {{if eq .Prefs.ComposeLayout "popup"}}selected{{end}}>Popup (bottom right)</option>
+                    <option value="modal" {{if eq .Prefs.ComposeLayout "modal"}}selected{{end}}>Centered dialog</option>
+                  </select>
+                </label>
+                <label class="block space-y-1">
+                  <span class="text-sm text-zinc-200">Replies &amp; forwards</span>
+                  <select name="reply_layout"
+                    class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                    <option value="fullscreen" {{if eq .Prefs.ReplyLayout "fullscreen"}}selected{{end}}>Full screen</option>
+                    <option value="popup" {{if eq .Prefs.ReplyLayout "popup"}}selected{{end}}>Popup (bottom right)</option>
+                    <option value="modal" {{if eq .Prefs.ReplyLayout "modal"}}selected{{end}}>Centered dialog</option>
+                  </select>
+                </label>
+              </div>
+            </fieldset>
+            <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200">Undo send</legend>
               <p class="text-xs text-zinc-500">Pressing Send holds the message this long so you can undo it before it leaves.</p>
               <select name="undo_send_delay"

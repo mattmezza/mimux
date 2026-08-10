@@ -45,6 +45,8 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		QuickActions:     store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions"))),
 		SearchScope:      r.PostFormValue("search_scope"),
 		ComposeMode:      r.PostFormValue("compose_mode"),
+		ComposeLayout:    r.PostFormValue("compose_layout"),
+		ReplyLayout:      r.PostFormValue("reply_layout"),
 		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
 	}
 	switch p.UndoSendDelay {
@@ -61,6 +63,16 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	case "plain", "html", "markdown":
 	default:
 		p.ComposeMode = "html"
+	}
+	switch p.ComposeLayout {
+	case "fullscreen", "popup", "modal":
+	default:
+		p.ComposeLayout = "fullscreen"
+	}
+	switch p.ReplyLayout {
+	case "fullscreen", "popup", "modal":
+	default:
+		p.ReplyLayout = "popup"
 	}
 	if p.SyncMonths < 0 {
 		p.SyncMonths = 0
