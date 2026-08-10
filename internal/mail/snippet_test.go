@@ -54,3 +54,56 @@ func TestSnippetTruncatesLong(t *testing.T) {
 		t.Errorf("snippet not truncated: %d runes", len([]rune(got)))
 	}
 }
+
+func TestNestedSnippetParsesMultipart(t *testing.T) {
+	// BODY[1] on a message whose part 1 is itself a multipart returns the whole
+	// nested MIME entity (headers + boundaries), not bare text. The preview must
+	// extract the real text instead of leaking boundary/header junk.
+	raw := "Content-Type: multipart/alternative; boundary=\"mk3-xyz\"\r\n" +
+		"MIME-Version: 1.0\r\n\r\n" +
+		"--mk3-xyz\r\n" +
+		"Content-Type: text/plain; charset=UTF-8\r\n" +
+		"Content-Transfer-Encoding: 7bit\r\n\r\n" +
+		"A new event has been scheduled.\r\n" +
+		"--mk3-xyz\r\n" +
+		"Content-Type: text/html; charset=UTF-8\r\n\r\n" +
+		"<html><body><p>A new event has been scheduled.</p></body></html>\r\n" +
+		"--mk3-xyz--\r\n"
+	got := nestedSnippet([]byte(raw))
+	if strings.Contains(got, "boundary") || strings.Contains(got, "Content-Type") || strings.Contains(got, "mk3") {
+		t.Errorf("snippet leaked MIME junk: %q", got)
+	}
+	if !strings.Contains(got, "A new event has been scheduled") {
+		t.Errorf("snippet missing real text: %q", got)
+	}
+}
+
+func TestNestedSnippetPrefersPlainOverHtml(t *testing.T) {
+	raw := "Content-Type: multipart/alternative; boundary=\"b\"\r\n\r\n" +
+		"--b\r\n" +
+		"Content-Type: text/html\r\n\r\n" +
+		"<html><body><p>HTML body only</p></body></html>\r\n" +
+		"--b\r\n" +
+		"Content-Type: text/plain\r\n\r\n" +
+		"Plain body\r\n" +
+		"--b--\r\n"
+	got := nestedSnippet([]byte(raw))
+	if got != "Plain body" {
+		t.Errorf("should prefer plain part, got %q", got)
+	}
+}
+
+func TestNestedSnippetHTMLFallback(t *testing.T) {
+	raw := "Content-Type: multipart/alternative; boundary=\"b\"\r\n\r\n" +
+		"--b\r\n" +
+		"Content-Type: text/html\r\n\r\n" +
+		"<html><body><p>Only HTML body here</p></body></html>\r\n" +
+		"--b--\r\n"
+	got := nestedSnippet([]byte(raw))
+	if strings.Contains(got, "<") || strings.Contains(got, "html") {
+		t.Errorf("html should be stripped: %q", got)
+	}
+	if !strings.Contains(got, "Only HTML body here") {
+		t.Errorf("expected html text: %q", got)
+	}
+}
