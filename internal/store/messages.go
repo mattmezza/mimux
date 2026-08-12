@@ -24,8 +24,15 @@ type Message struct {
 	IsStarred     bool
 	HasAttachment bool
 	Snippet       string
-	GmThrID       string // Gmail X-GM-THRID, "" when unavailable
-	Labels        string // space-joined Gmail labels, "" for non-Gmail
+	// GmThrID is Gmail's X-GM-THRID. ponytail: always "" today — nothing can
+	// populate it. go-imap/v2 has no Gmail-extension support in any released
+	// version (beta.8 is the newest tag; upstream master has none either), its
+	// FETCH response parser hard-errors on unknown msg-att names
+	// (imapclient/fetch.go: `unsupported msg-att name`), and it exports no raw
+	// command escape hatch. thread.go already prefers this column, so threading
+	// becomes Gmail-exact the moment the library ships X-GM-THRID.
+	GmThrID string
+	Labels  string // space-joined Gmail labels, "" for non-Gmail
 }
 
 // UpsertMessage inserts a message or, on UID conflict, updates the mutable
@@ -72,10 +79,18 @@ func (s *Store) MessageByID(id int64) (*Message, error) {
 	return m, err
 }
 
-// ListMessages returns a folder's messages newest first, capped at limit.
+// ListMessages returns a folder's messages newest first: the newest limit rows,
+// plus every unread row however old. Without the unread arm an unread message
+// older than the limit-th newest is invisible to the list AND to BuildThreads,
+// so it silently vanishes from the Unread filter and its thread renders short.
+// ponytail: no pagination — a *read* thread member older than the window is
+// still missing from the reading pane. Add real paging (or fetch a thread by
+// its id) when that bites.
 func (s *Store) ListMessages(folderID int64, limit int) ([]Message, error) {
 	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
-		WHERE folder_id = ? ORDER BY date DESC LIMIT ?`, folderID, limit)
+		WHERE folder_id = ? AND (is_read = 0 OR id IN (
+			SELECT id FROM messages WHERE folder_id = ? ORDER BY date DESC LIMIT ?))
+		ORDER BY date DESC`, folderID, folderID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -91,12 +106,16 @@ func (s *Store) ListMessages(folderID int64, limit int) ([]Message, error) {
 	return out, rows.Err()
 }
 
-// ListUnifiedInbox returns messages from every account's inbox folder,
-// newest first, capped at limit — the unified "All inboxes" view.
+// ListUnifiedInbox returns messages from every account's inbox folder, newest
+// first — the unified "All inboxes" view. Same window rule as ListMessages:
+// newest limit rows plus every unread row, so the list can never show fewer
+// unread threads than the tab badge counts.
 func (s *Store) ListUnifiedInbox(limit int) ([]Message, error) {
+	const inboxes = `folder_id IN (SELECT id FROM folders WHERE special_use = 'inbox')`
 	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
-		WHERE folder_id IN (SELECT id FROM folders WHERE special_use = 'inbox')
-		ORDER BY date DESC LIMIT ?`, limit)
+		WHERE `+inboxes+` AND (is_read = 0 OR id IN (
+			SELECT id FROM messages WHERE `+inboxes+` ORDER BY date DESC LIMIT ?))
+		ORDER BY date DESC`, limit)
 	if err != nil {
 		return nil, err
 	}
