@@ -433,16 +433,21 @@ func (a *account) drain(c *imapclient.Client) error {
 	}
 }
 
-// submit queues a command for the worker and waits for its result.
+// submit queues a command for the worker and waits for its result. Bounded by
+// submitTimeout so a wedged/unreachable server (worker stuck in connect/backoff,
+// never draining a.cmds) fails the caller instead of hanging on ctx forever —
+// same budget as background()'s post-request IMAP timeout in server/mail.go.
+// cm.done is buffered, so if the worker completes after we've given up, its
+// send doesn't block and the goroutine still exits.
 func (a *account) submit(ctx context.Context, fn func(*imapclient.Client) error) error {
+	ctx, cancel := context.WithTimeout(ctx, submitTimeout)
+	defer cancel()
 	cm := cmd{fn: fn, done: make(chan error, 1)}
 	select {
 	case a.cmds <- cm:
 		a.signalWake()
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-time.After(15 * time.Second):
-		return errors.New("account busy")
 	}
 	select {
 	case err := <-cm.done:
@@ -451,6 +456,9 @@ func (a *account) submit(ctx context.Context, fn func(*imapclient.Client) error)
 		return ctx.Err()
 	}
 }
+
+// submitTimeout bounds a queued IMAP command end-to-end (enqueue + execution).
+const submitTimeout = 30 * time.Second
 
 func sleep(ctx context.Context, d time.Duration) (cancelled bool) {
 	select {

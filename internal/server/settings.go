@@ -51,8 +51,8 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
 		ThreadOrder:      r.PostFormValue("thread_order"),
 		RowDoubleAction:  store.ValidRowAction(r.PostFormValue("row_double_action"), "unread"),
-		SwipeLeftAction:  store.ValidRowAction(r.PostFormValue("swipe_left_action"), "unread"),
-		SwipeRightAction: store.ValidRowAction(r.PostFormValue("swipe_right_action"), "none"),
+		SwipeLeftAction:  store.ValidRowAction(r.PostFormValue("swipe_left_action"), "none"),
+		SwipeRightAction: store.ValidRowAction(r.PostFormValue("swipe_right_action"), "unread"),
 	}
 	switch p.UndoSendDelay {
 	case 3, 5, 10:

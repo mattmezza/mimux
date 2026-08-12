@@ -31,8 +31,8 @@ type Prefs struct {
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
 	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
-	SwipeLeftAction  string            // swipe a list row left; see AllRowActions (default "unread")
-	SwipeRightAction string            // swipe a list row right; see AllRowActions (default "none")
+	SwipeLeftAction  string            // swipe a list row left; see AllRowActions (default "none")
+	SwipeRightAction string            // swipe a list row right; see AllRowActions (default "unread")
 }
 
 // AllRowActions lists what a gesture on a message list row can do — same menu
@@ -152,8 +152,8 @@ func defaultPrefs() Prefs {
 		UndoSendDelay:    5,
 		ThreadOrder:      "oldest",
 		RowDoubleAction:  "unread",
-		SwipeLeftAction:  "unread",
-		SwipeRightAction: "none",
+		SwipeLeftAction:  "none",
+		SwipeRightAction: "unread",
 	}
 }
 

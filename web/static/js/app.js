@@ -318,6 +318,7 @@ function selectRow(row) {
   document.querySelectorAll("#message-list [data-message-row].bg-zinc-800").forEach((r) => r.classList.remove("bg-zinc-800"));
   row.classList.add("bg-zinc-800");
   row.scrollIntoView({ block: "nearest" });
+  window.warmRow?.(row); // same debounced prefetch hover uses, so o/Enter is warm
 }
 function moveSelection(delta) {
   const pane = readingScroller();
@@ -1242,7 +1243,7 @@ document.addEventListener("dblclick", (e) => {
   let startX = 0, startY = 0, startT = 0;
   let swRow = null, axis = null, dx = 0, pane = null;
 
-  const swipeAction = (left) => rowGesturePref(left ? "swipeLeft" : "swipeRight", left ? "unread" : "none");
+  const swipeAction = (left) => rowGesturePref(left ? "swipeLeft" : "swipeRight", left ? "none" : "unread");
 
   function paint(action, left, dist) {
     if (!pane) {
@@ -1924,7 +1925,8 @@ document.addEventListener("keydown", (e) => {
 // command channel that is already what makes a cold body slow. 150ms is under
 // the time it takes to move-and-click, so a deliberate hover still wins.
 //
-// ponytail: mouse only. Add a focus trigger if j/k list nav feels slow.
+// Keyboard nav warms the same way: selectRow calls window.warmRow, sharing the
+// one timer so holding j through 20 rows only warms the row you settle on.
 (function () {
   const WARM_AFTER_MS = 150;
   const warmed = new Set();
@@ -1943,11 +1945,17 @@ document.addEventListener("keydown", (e) => {
       .catch(() => warmed.delete(url)); // let a real click retry it
   }
 
-  document.addEventListener("mouseover", (e) => {
+  // Debounced warm for one row; null/no-data-prefetch just cancels the pending one.
+  window.warmRow = (row) => {
     clearTimeout(timer);
-    const row = e.target.closest && e.target.closest("[data-prefetch]");
-    if (!row) return;
+    if (!row || !row.dataset.prefetch) return;
     const url = row.dataset.prefetch;
     timer = setTimeout(() => warm(url), WARM_AFTER_MS);
+  };
+
+  document.addEventListener("mouseover", (e) => {
+    const row = e.target.closest && e.target.closest("[data-prefetch]");
+    if (row) window.warmRow(row);
+    else clearTimeout(timer);
   });
 })();
