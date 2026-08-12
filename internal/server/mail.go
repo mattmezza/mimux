@@ -214,7 +214,16 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, msgs []stor
 	}
 	data["Folder"] = folder
 	data["Unified"] = unified
-	data["Threads"] = mail.BuildThreads(msgs)
+	threads := mail.BuildThreads(msgs)
+	// The list query is inbox-scoped and windowed, so a thread's own Count misses
+	// the Sent replies gmail.com counts: stamp each row with the whole
+	// conversation's size (one store-wide pass, not one query per row).
+	if sizes, err := s.store.ConversationSizes(); err == nil {
+		for i := range threads {
+			threads[i].Total = sizes[threads[i].RootID()]
+		}
+	}
+	data["Threads"] = threads
 	data["HasMessages"] = len(msgs) > 0
 	if unified {
 		data["ListURL"] = "/u"
@@ -336,9 +345,20 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
 	translateOn := s.store.GetAppConfig().TranslateAPIKey != ""
 	folders, _ := s.store.ListFolders(latest.Account)
+	// Display order only: Thread.Messages must stay oldest-first — LatestMessage,
+	// RootID (the list row key + htmx targets) and the reply target all read its
+	// last element. So reverse a copy here and let the template range over that.
+	ordered := thread.Messages
+	if prefs.ThreadOrder == "newest" {
+		ordered = make([]store.Message, len(thread.Messages))
+		for i, m := range thread.Messages {
+			ordered[len(ordered)-1-i] = m
+		}
+	}
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
+		"Ordered":          ordered,
 		"Latest":           latest,
 		"Folders":          folders,
 		"CurrentFolder":    latest.FolderID,

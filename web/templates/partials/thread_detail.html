@@ -30,7 +30,8 @@
     </div>
   </div>
   <div class="flex-1 overflow-y-auto divide-y divide-zinc-800">
-    {{range $t.Messages}}
+    {{/* .Ordered is Thread.Messages in the user's reading order (Settings > Reading); Thread.Messages itself stays oldest-first for RootID/LatestMessage. */}}
+    {{range .Ordered}}
     {{$msg := .}}
     {{$expanded := or (not .IsRead) (eq .ID $latest.ID)}}
     <div data-thread-msg data-msg-id="{{.ID}}"{{if not .IsRead}} data-unread{{end}} class="{{if $expanded}}expanded{{end}}">

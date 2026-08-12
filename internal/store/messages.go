@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -211,6 +212,94 @@ func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 			return nil, err
 		}
 		_ = rows.Close()
+	}
+	return out, nil
+}
+
+// ConversationSizes returns, for every stored message row, how many messages
+// its whole conversation holds across ALL folders — what gmail.com shows on a
+// list row. The list itself is inbox-scoped and windowed, so a Thread built
+// from it only counts its inbox members (a Sent reply is invisible to it).
+//
+// One projection of the threading columns for every row, then a union-find over
+// Message-ID/References in Go: the same closure ThreadMessages walks, but once
+// for the whole store instead of once per visible row (~150 queries a render).
+// Sizes count distinct (account, message_id) pairs, so Gmail's INBOX/All
+// Mail/Important copies of one message collapse the way ThreadMessages
+// dedups them, while the same newsletter in two accounts stays two messages.
+//
+// ponytail: full table scan per list render — trivial at a few thousand rows
+// (five small columns, no joins). Cache it keyed on the sync generation, or
+// persist a thread id column, if the store ever grows past that.
+func (s *Store) ConversationSizes() (map[int64]int, error) {
+	// JOIN folders like ThreadMessages does: rows orphaned by a deleted folder
+	// (e.g. an account renamed in config.toml) are invisible to the reading pane,
+	// so they must not inflate the list row's count either.
+	rows, err := s.DB.Query(`SELECT m.id, m.account, m.message_id, m.refs, m.in_reply_to
+		FROM messages m JOIN folders f ON f.id = m.folder_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(k string) string {
+		p, ok := parent[k]
+		if !ok {
+			parent[k] = k
+			return k
+		}
+		if p == k {
+			return k
+		}
+		r := find(p)
+		parent[k] = r
+		return r
+	}
+	union := func(a, b string) {
+		ra, rb := find(a), find(b)
+		if ra != rb {
+			parent[ra] = rb
+		}
+	}
+
+	// Grouping runs on the bare Message-ID (ThreadMessages' closure is
+	// deliberately not account-scoped); the counted member is (account, id).
+	rowKey := map[int64]string{}
+	members := map[string]string{} // account\x00message_id -> its grouping key
+	for rows.Next() {
+		var id int64
+		var account, msgID, refs, inReplyTo string
+		if err := rows.Scan(&id, &account, &msgID, &refs, &inReplyTo); err != nil {
+			return nil, err
+		}
+		key := msgID
+		if msgID == "" { // nothing to dedup or link on: stands alone, like BuildThreads
+			key = "\x00row\x00" + strconv.FormatInt(id, 10)
+		}
+		find(key)
+		members[account+"\x00"+key] = key
+		rowKey[id] = key
+		refIDs := splitIDs(refs)
+		if len(refIDs) == 0 {
+			refIDs = splitIDs(inReplyTo)
+		}
+		for _, rid := range refIDs {
+			union(key, rid)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	size := map[string]int{}
+	for _, k := range members {
+		size[find(k)]++
+	}
+	out := make(map[int64]int, len(rowKey))
+	for id, k := range rowKey {
+		out[id] = size[find(k)]
 	}
 	return out, nil
 }
