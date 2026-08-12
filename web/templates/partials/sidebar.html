@@ -31,12 +31,12 @@
     </div>
     <div class="flex items-center gap-1" role="group" aria-label="Quick filters">
       <button type="button" @click="setFilter('')" :aria-pressed="filter===''" :class="filter==='' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
-        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150">All</button>
+        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150" title="Show all (f cycles)">All</button>
       <button type="button" @click="setFilter('unread')" :aria-pressed="filter==='unread'" :class="filter==='unread' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
-        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only unread">
+        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only unread (f cycles)">
         <span class="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>Unread</button>
       <button type="button" @click="setFilter('starred')" :aria-pressed="filter==='starred'" :class="filter==='starred' ? 'bg-zinc-800 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-800/60'"
-        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only starred">
+        class="flex-1 px-2 py-1 rounded-md text-xs font-medium transition-colors duration-150 flex items-center justify-center gap-1" title="Show only starred (f cycles)">
         <span class="text-amber-400">★</span>Starred</button>
     </div>
     {{if gt (len .Sidebar) 1}}

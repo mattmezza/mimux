@@ -30,6 +30,30 @@ type Prefs struct {
 	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
+	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
+	SwipeLeftAction  string            // swipe a list row left; see AllRowActions (default "unread")
+	SwipeRightAction string            // swipe a list row right; see AllRowActions (default "none")
+}
+
+// AllRowActions lists what a gesture on a message list row can do — same menu
+// for the double-click/double-tap and for each swipe direction.
+var AllRowActions = []struct{ ID, Label string }{
+	{"unread", "Mark read / unread"},
+	{"star", "Star / unstar"},
+	{"archive", "Archive"},
+	{"delete", "Delete"},
+	{"open", "Open message"},
+	{"none", "Do nothing"},
+}
+
+// ValidRowAction returns v if it names a row action, else def.
+func ValidRowAction(v, def string) string {
+	for _, a := range AllRowActions {
+		if a.ID == v {
+			return v
+		}
+	}
+	return def
 }
 
 // AllQuickActions lists every message action the user can place in the action
@@ -127,6 +151,9 @@ func defaultPrefs() Prefs {
 		ReplyLayout:      "popup",
 		UndoSendDelay:    5,
 		ThreadOrder:      "oldest",
+		RowDoubleAction:  "unread",
+		SwipeLeftAction:  "unread",
+		SwipeRightAction: "none",
 	}
 }
 
@@ -220,6 +247,15 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("thread_order"); ok && (v == "oldest" || v == "newest") {
 		p.ThreadOrder = v
 	}
+	if v, ok := s.getSetting("row_double_action"); ok {
+		p.RowDoubleAction = ValidRowAction(v, p.RowDoubleAction)
+	}
+	if v, ok := s.getSetting("swipe_left_action"); ok {
+		p.SwipeLeftAction = ValidRowAction(v, p.SwipeLeftAction)
+	}
+	if v, ok := s.getSetting("swipe_right_action"); ok {
+		p.SwipeRightAction = ValidRowAction(v, p.SwipeRightAction)
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -263,6 +299,9 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"reply_layout":       p.ReplyLayout,
 		"undo_send_delay":    strconv.Itoa(p.UndoSendDelay),
 		"thread_order":       p.ThreadOrder,
+		"row_double_action":  p.RowDoubleAction,
+		"swipe_left_action":  p.SwipeLeftAction,
+		"swipe_right_action": p.SwipeRightAction,
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color
