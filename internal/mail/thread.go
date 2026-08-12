@@ -19,6 +19,19 @@ type Thread struct {
 	Latest       time.Time
 	Unread       bool
 	Starred      bool
+	// Total is the conversation's size across ALL folders (store.ConversationSizes),
+	// set by the list handler only; 0 means "not known here".
+	Total int
+}
+
+// Size is what the UI shows as the conversation's message count: the whole
+// conversation when the caller filled Total in, else just this Thread's members
+// (Count keeps meaning "messages in this Thread struct").
+func (t Thread) Size() int {
+	if t.Total > t.Count {
+		return t.Total
+	}
+	return t.Count
 }
 
 // Latest message in the thread (the one a reply targets).

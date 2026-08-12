@@ -48,11 +48,17 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		ComposeLayout:    r.PostFormValue("compose_layout"),
 		ReplyLayout:      r.PostFormValue("reply_layout"),
 		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
+		ThreadOrder:      r.PostFormValue("thread_order"),
 	}
 	switch p.UndoSendDelay {
 	case 3, 5, 10:
 	default:
 		p.UndoSendDelay = 5
+	}
+	switch p.ThreadOrder {
+	case "oldest", "newest":
+	default:
+		p.ThreadOrder = "oldest"
 	}
 	switch p.SearchScope {
 	case "all", "account", "folder":

@@ -99,6 +99,15 @@
             </label>
 
             <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Message order in a conversation</span>
+              <select name="thread_order"
+                class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                <option value="oldest" {{if eq .Prefs.ThreadOrder "oldest"}}selected{{end}}>Newest at the bottom</option>
+                <option value="newest" {{if eq .Prefs.ThreadOrder "newest"}}selected{{end}}>Newest at the top</option>
+              </select>
+            </label>
+
+            <label class="block space-y-1">
               <span class="text-sm text-zinc-200">Message preview lines</span>
               <input type="number" name="preview_lines" min="0" max="3" value="{{.Prefs.PreviewLines}}"
                 class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
