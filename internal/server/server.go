@@ -159,6 +159,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/u", s.handleUnified)
 		r.Get("/f/{id}", s.handleFolder)
 		r.Get("/t/{id}", s.handleThread)
+		r.Get("/t/{id}/rows", s.handleThreadRows)
+		r.Get("/rowmenu/{id}", s.handleRowMenu)
 		r.Get("/oauth/{name}/start", s.handleOAuthStart)
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
