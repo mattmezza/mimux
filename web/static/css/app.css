@@ -218,6 +218,17 @@
   from { opacity: 0; transform: translateY(-4px) scale(0.97); }
 }
 
+/* Row right-click menu (app.js): the same popup, anchored at the pointer. The
+   <details> itself is a zero-size fixed shell, so the menu's own absolute
+   positioning lands exactly where the cursor was; JS clamps left/top into the
+   viewport and the height cap keeps a long "Move to" tree on screen. */
+#row-ctx-menu { position: fixed; width: 0; height: 0; z-index: 40; outline: none; }
+#row-ctx-menu[open] > .msg-actions-more-menu {
+  top: 0; left: 0; right: auto; margin: 0;
+  max-height: calc(100vh - 1rem);
+  overflow-y: auto;
+}
+
 /* "Move to…" folder tree: native <details> disclosure, no JS. Hide the marker,
    rotate the chevron when open, and indent each nested level. */
 .qa-move-summary { list-style: none; cursor: pointer; }

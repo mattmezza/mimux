@@ -226,6 +226,48 @@ function syncSearchFolder() {
   const f = document.getElementById("search-folder");
   if (list && f && list.dataset.folder != null) f.value = list.dataset.folder;
 }
+// Keyboard selection (and scroll) has to survive a list re-render — a resync,
+// new mail or undo swaps a whole new #message-list in, so both the selected row
+// and the scroll position die with the old element. Stash them before the swap
+// and re-apply after. Only for refreshes the list requests itself: a folder
+// switch or a search is a different list, where resurrecting a selection (by id
+// or by position) is never what the user meant.
+let selBefore = null;
+document.addEventListener("htmx:beforeSwap", (e) => {
+  if (!e.target || e.target.id !== "message-list") return;
+  const r = selectedRow();
+  selBefore = e.detail?.requestConfig?.elt?.id !== "message-list" ? null
+    : { id: r?.id, i: r ? listRows().indexOf(r) : -1, scroll: e.target.scrollTop };
+});
+// afterSettle, not afterSwap: with hx-swap="outerHTML" the new section is only
+// in the DOM by then — at afterSwap the class would land on the doomed one.
+document.addEventListener("htmx:afterSettle", (e) => {
+  if (!e.target || e.target.id !== "message-list" || !selBefore) return;
+  const prev = selBefore;
+  selBefore = null;
+  e.target.scrollTop = prev.scroll;
+  if (prev.i < 0) return;
+  const rows = listRows();
+  // Same message if it's still there; otherwise whatever took its place (same
+  // index, clamped to the last row) — archive/delete/filter shifts the rest up,
+  // so that's the row the user was heading towards.
+  const row = rows.find((r) => r.id === prev.id) || rows[Math.min(prev.i, rows.length - 1)];
+  // Not selectRow(): no scrollIntoView (the viewport must not jump under a
+  // background refresh) and no warmRow (a prefetch every 60s is a fetch storm).
+  if (row) row.classList.add("bg-zinc-800");
+});
+// hx-preserve keeps an expanded thread's sub-rows across a list swap, but the
+// disclosure button is a NEW element rendered closed — point it back at the
+// state its container actually has.
+document.addEventListener("htmx:afterSettle", (e) => {
+  if (!e.target || e.target.id !== "message-list") return;
+  e.target.querySelectorAll("li[id^='sub-']:not(.hidden)").forEach((box) => {
+    const btn = box.previousElementSibling?.querySelector(".thread-toggle");
+    if (!btn) return;
+    btn.setAttribute("aria-expanded", "true");
+    btn.firstElementChild.classList.add("rotate-90");
+  });
+});
 document.addEventListener("htmx:afterSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
   syncSearchFolder();
@@ -332,7 +374,9 @@ function moveSelection(delta) {
 }
 function currentId() {
   const r = selectedRow();
-  return r ? r.id.replace("msg-", "") : null;
+  // Sub-rows of an expanded thread carry data-mid (their id is msg-s<id>, since
+  // the thread row owns msg-<id>); every other row keys off its own id.
+  return r ? (r.dataset.mid || r.id.replace("msg-", "")) : null;
 }
 function openSelected() {
   // Nothing selected yet (fresh list, htmx history restore, filter switch):
@@ -346,27 +390,32 @@ function openSelected() {
 }
 function flagSelected(path) {
   const id = currentId();
+  const row = selectedRow();
   if (!id || !window.htmx) return true;
+  // A sub-row is one message: never mark the whole thread, and swap the sub-row
+  // markup back in (?sub=1), not the plain row that would lose the indent.
+  const sub = !!row?.dataset.mid;
   if (path === "read" || path === "unread") {
     // Thread-level: the row id is the thread root, so tell the server to mark
     // EVERY message in the thread. Swap nothing and flip the row in place —
     // swapping the single-message fragment in would clobber a multi-message
     // thread row.
     const makeRead = path === "read";
-    htmx.ajax("POST", `/messages/${id}/${path}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
+    htmx.ajax("POST", `/messages/${id}/${path}`, { headers: sub ? {} : { "X-SM-Thread": "1" }, swap: "none" })
       .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
     return true;
   }
-  htmx.ajax("POST", `/messages/${id}/${path}`, { target: `#msg-${id}`, swap: "outerHTML" });
+  htmx.ajax("POST", `/messages/${id}/${path}${sub ? "?sub=1" : ""}`, { target: row || `#msg-${id}`, swap: "outerHTML" });
   return true;
 }
 function moveSelected(path, label) {
   const id = currentId();
-  const folderId = selectedRow()?.dataset.folder;
+  const row = selectedRow(); // the element, so a sub-row animates out, not its thread row
+  const folderId = row?.dataset.folder;
   if (!id || !window.htmx) return true;
   htmx.ajax("POST", `/messages/${id}/${path}`, { swap: "none" }).then(() => {
     closeReadingPane();
-    removeRowAnimated(document.getElementById(`msg-${id}`));
+    removeRowAnimated(row);
     if (folderId) toastUndo(label, id, folderId);
   });
   return true;
@@ -396,6 +445,9 @@ function closeReadingPane() {
     const qs = p.toString();
     history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : ""));
   }
+  // The pane just lost whatever had focus — hand it back to the list so j/k
+  // keep working (focusSection clamps at 0, so -1 always lands on the list).
+  focusSection(-1);
 }
 window.closeReadingPane = closeReadingPane;
 
@@ -1052,9 +1104,14 @@ document.addEventListener("click", (e) => {
 // and clear data-unread. Adds .just-read so the row stays visible even under an
 // active "Unread" quick filter (per requirement — a just-read message shouldn't
 // vanish out from under you; the next list refresh removes it correctly).
-function markRowRead(id) {
-  const row = id && document.getElementById(`msg-${id}`);
-  if (!row || !row.hasAttribute("data-unread")) return;
+// A message can be on screen twice: as its thread's row (msg-<id>) and as that
+// thread's expanded sub-row (msg-s<id>). Flip both wherever they exist.
+function rowsFor(id) {
+  return id ? [document.getElementById(`msg-${id}`), document.getElementById(`msg-s${id}`)].filter(Boolean) : [];
+}
+function markRowRead(id) { rowsFor(id).forEach(setRowRead); }
+function setRowRead(row) {
+  if (!row.hasAttribute("data-unread")) return;
   row.removeAttribute("data-unread");
   row.classList.add("just-read");
   row.querySelector(".unread-dot")?.remove();
@@ -1069,9 +1126,9 @@ function markRowRead(id) {
 
 // Inverse of markRowRead: flip a row back to unread in place (re-add the dot,
 // re-bold). Used by the double-click read/unread toggle.
-function markRowUnread(id) {
-  const row = id && document.getElementById(`msg-${id}`);
-  if (!row || row.hasAttribute("data-unread")) return;
+function markRowUnread(id) { rowsFor(id).forEach(setRowUnread); }
+function setRowUnread(row) {
+  if (row.hasAttribute("data-unread")) return;
   row.setAttribute("data-unread", "");
   row.classList.remove("just-read");
   const senderRow = row.querySelector(".row-sender")?.parentElement;
@@ -1122,9 +1179,20 @@ function syncThreadRow(pane) {
 // persist each change, then repaint the row. ponytail: one POST per changed
 // message — threads are small; a bulk endpoint would need a thread_id the store
 // doesn't have (threading is derived from headers at render time).
-function markThreadRead(read) {
+function markThreadRead(read, btn) {
+  if (!window.htmx) return;
+  // Same button rendered in a row's right-click menu: there is no thread in the
+  // pane to walk, so mark the whole thread server-side (X-SM-Thread, like the
+  // row gestures do) and flip the row.
+  const ctx = btn && btn.closest("#row-ctx-menu");
+  if (ctx) {
+    const id = ctx.dataset.mid;
+    htmx.ajax("POST", `/messages/${id}/${read ? "read" : "unread"}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
+      .then(() => (read ? markRowRead(id) : markRowUnread(id)));
+    return;
+  }
   const pane = document.getElementById("message-detail");
-  if (!pane || !window.htmx) return;
+  if (!pane) return;
   pane.querySelectorAll("[data-thread-msg]").forEach((block) => {
     if (read === !block.hasAttribute("data-unread")) return; // already in desired state
     const id = block.dataset.msgId;
@@ -1318,7 +1386,9 @@ document.addEventListener("dblclick", (e) => {
     }
     swRow = null;
     const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
-    if (!row || (e.target.closest && e.target.closest(".star-btn"))) return;
+    // Any of the row's own buttons (star, thread disclosure) handles its own
+    // tap — never turn it into an open or a double-tap action.
+    if (!row || (e.target.closest && e.target.closest("button"))) return;
     const t = e.changedTouches[0];
     if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > MOVE_THRESHOLD) return;
     const dblAct = rowGesturePref("dblAction", "unread");
@@ -1338,6 +1408,77 @@ document.addEventListener("dblclick", (e) => {
     }, DOUBLE_TAP_MS);
   });
 })();
+
+// --- right-click context menu on list rows --------------------------------
+// It IS the reading pane's "⋯" overflow menu: /rowmenu/<id> renders the same
+// .msg-actions-more-menu (same qa_btn_t / qa_btn / qa_move templates, same
+// endpoints), and we drop it into a zero-size fixed <details class="msg-actions-more">
+// at the pointer — so the existing outside-click closer, the Escape precedence
+// chain and the menu CSS all apply with nothing new. Long-press on mobile comes
+// free: browsers fire contextmenu for it.
+// Right-click also selects the row (like every mail client), so j/k and the
+// keyboard shortcuts continue from where the pointer was.
+function closeRowMenu() {
+  document.getElementById("row-ctx-menu")?.removeAttribute("open"); // toggle handler cleans up
+}
+
+document.addEventListener("contextmenu", (e) => {
+  const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+  if (!row || !window.htmx) return;
+  e.preventDefault();
+  closeRowMenu(); // one menu at a time
+  selectRow(row);
+  const id = row.dataset.mid || row.id.replace(/^msg-/, "");
+  // A sub-row is always one message; a row with a disclosure button is a
+  // conversation and gets the thread-wide actions.
+  const q = row.dataset.mid ? "?sub=1" : row.querySelector(".thread-toggle") ? "?t=1" : "";
+  const d = document.createElement("details");
+  d.id = "row-ctx-menu";
+  d.className = "msg-actions-more";
+  d.dataset.mid = id;
+  d.dataset.at = Date.now();
+  d.tabIndex = -1;
+  d.open = true;
+  d.style.left = e.clientX + "px";
+  d.style.top = e.clientY + "px";
+  document.body.appendChild(d);
+  // Everything that closes it (Escape, outside click, chosen action) only drops
+  // [open]; clean up and hand focus back to the row from this one place.
+  d.addEventListener("toggle", () => {
+    if (d.open) return;
+    d.remove();
+    row.isConnected && row.focus({ preventScroll: true });
+  });
+  d.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" || ev.key === "Tab") return; // Escape: the global chain closes us
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const items = [...d.querySelectorAll("button, summary")].filter((el) => el.offsetParent !== null);
+      if (items.length) {
+        const i = items.indexOf(document.activeElement);
+        items[(i + (ev.key === "ArrowDown" ? 1 : items.length - 1) + items.length) % items.length].focus();
+      }
+      ev.preventDefault();
+    }
+    ev.stopPropagation(); // an open menu owns the keyboard — no j/k under it
+  });
+  htmx.ajax("GET", `/rowmenu/${id}${q}`, { target: d, swap: "innerHTML" }).then(() => {
+    const m = d.firstElementChild;
+    if (!m) return closeRowMenu();
+    // Clamp into the viewport (the menu is height-capped in CSS, so this always
+    // fits). offsetWidth/Height, not getBoundingClientRect: the pop-in animation
+    // scales the box and would make it measure short.
+    d.style.left = Math.max(8, Math.min(e.clientX, innerWidth - m.offsetWidth - 8)) + "px";
+    d.style.top = Math.max(8, Math.min(e.clientY, innerHeight - m.offsetHeight - 8)) + "px";
+    d.focus({ preventScroll: true }); // arrows/Escape land on the menu, not the list
+  });
+});
+// Scrolling the list (or the page) out from under a pointer-anchored menu closes
+// it — but not scrolling the menu's own "Move to" tree, and not the scroll
+// selectRow itself fires a frame later when the clicked row wasn't fully visible.
+document.addEventListener("scroll", (e) => {
+  const d = document.getElementById("row-ctx-menu");
+  if (d && Date.now() - d.dataset.at > 250 && !e.target.closest?.("#row-ctx-menu")) closeRowMenu();
+}, true);
 
 // Restore a bookmarked open thread (?t=<id>&src=<src>) into the reading pane on
 // full page load. The list itself is rendered server-side (handleInbox reads
@@ -1859,12 +2000,22 @@ document.addEventListener("keydown", (e) => {
     if (e.key === "Escape") t.blur();
     return;
   }
+  // A focused control owns its own Enter/Space: activating it is the browser's
+  // job, not the list keymap's (which would open the selected row instead —
+  // that's what made the star and thread-disclosure buttons keyboard-dead).
+  if (t instanceof HTMLElement && (e.key === "Enter" || e.key === " ") && t.closest("button, summary, a[href]")) return;
   if (e.key === "Escape") {
     const about = document.getElementById("about-overlay");
     if (about && !about.hidden) { about.hidden = true; return; }
     const help = document.getElementById("help-overlay");
     if (help && !help.hidden) { help.hidden = true; return; }
-    if (window.matchMedia("(max-width: 767px)").matches) closeReadingPane();
+    // Modals living inside the reading pane, then an open "⋯" menu — both are
+    // more specific than the pane that contains them.
+    const modal = document.querySelector('[id^="unsub-modal-"]:not([hidden])');
+    if (modal) { modal.hidden = true; return; }
+    const menu = document.querySelector("details.msg-actions-more[open], details.send-more[open]");
+    if (menu) { menu.removeAttribute("open"); return; }
+    closeReadingPane();
     return;
   }
   if (e.key === "Enter") { if (openSelected()) e.preventDefault(); return; }

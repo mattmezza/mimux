@@ -1,0 +1,17 @@
+{{/* row_menu is the right-click context menu of a message-list row. It is the
+     reading pane's "⋯" overflow menu, verbatim: the same .msg-actions-more-menu
+     popup rendered by the same qa_btn_t (thread-wide) / qa_btn (single message)
+     + qa_move templates, only retargeted at the clicked row via Row/Sub.
+     app.js drops it into a fixed <details class="msg-actions-more"> at the
+     pointer, so the existing open/close, Escape and styling all apply. */}}
+{{define "row_menu"}}
+<div class="msg-actions-more-menu" role="menu">
+  {{if .Thread}}
+  {{range .QAMenu}}{{template "qa_btn_t" (dict "ID" . "D" $ "Menu" true)}}{{end}}
+  {{template "qa_move" (dict "M" .Latest "Row" .Row "Folders" .Folders "Cur" .CurrentFolder)}}
+  {{else}}
+  {{range .QAMenu}}{{template "qa_btn" (dict "ID" . "D" $ "Menu" true)}}{{end}}
+  {{template "qa_move" (dict "M" .Msg "Row" .Row "Folders" .Folders "Cur" .CurrentFolder)}}
+  {{end}}
+</div>
+{{end}}
