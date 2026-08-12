@@ -14,6 +14,9 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	if len(p.AccountColors) != 0 {
 		t.Fatalf("expected no account colors, got %v", p.AccountColors)
 	}
+	if p.SwipeLeftAction != "none" || p.SwipeRightAction != "unread" {
+		t.Fatalf("unexpected swipe defaults: SwipeLeftAction=%q, SwipeRightAction=%q", p.SwipeLeftAction, p.SwipeRightAction)
+	}
 }
 
 func TestPrefsRoundTrip(t *testing.T) {

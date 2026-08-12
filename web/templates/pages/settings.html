@@ -107,6 +107,18 @@
               </select>
             </label>
 
+            {{/* Row gestures: same action menu (store.AllRowActions) for the
+                 double-click/double-tap and for each swipe direction. */}}
+            <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200">Message list gestures</legend>
+              <p class="text-xs text-zinc-500">What a double-click (double-tap) or a swipe on a list row does.</p>
+              <div class="flex flex-col sm:flex-row gap-3">
+                {{template "row_action_select" (dict "Name" "row_double_action" "Label" "Double-click / tap" "Cur" .Prefs.RowDoubleAction "Actions" .RowActions)}}
+                {{template "row_action_select" (dict "Name" "swipe_left_action" "Label" "Swipe left" "Cur" .Prefs.SwipeLeftAction "Actions" .RowActions)}}
+                {{template "row_action_select" (dict "Name" "swipe_right_action" "Label" "Swipe right" "Cur" .Prefs.SwipeRightAction "Actions" .RowActions)}}
+              </div>
+            </fieldset>
+
             <label class="block space-y-1">
               <span class="text-sm text-zinc-200">Message preview lines</span>
               <input type="number" name="preview_lines" min="0" max="3" value="{{.Prefs.PreviewLines}}"
@@ -552,4 +564,14 @@
     </div>
   </form>
 </div>
+{{end}}
+
+{{define "row_action_select"}}
+<label class="block space-y-1">
+  <span class="text-sm text-zinc-200">{{.Label}}</span>
+  <select name="{{.Name}}"
+    class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+    {{$cur := .Cur}}{{range .Actions}}<option value="{{.ID}}" {{if eq $cur .ID}}selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+</label>
 {{end}}

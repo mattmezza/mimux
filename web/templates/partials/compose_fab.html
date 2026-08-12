@@ -3,7 +3,7 @@
      in-sidebar Compose/Refresh are then hidden). Hovering/focusing the group
      springs the secondary Refresh button up into view. -->
 <div class="hidden md:block">
-  <div x-show="collapsed" x-cloak class="fab-group fixed bottom-6 right-6 z-30 flex flex-col items-center gap-3">
+  <div x-show="collapsed" x-cloak class="fab-group fixed bottom-12 right-6 z-30 flex flex-col items-center gap-3">
     <button type="button" title="Refresh all accounts now" aria-label="Refresh now"
       hx-post="/refresh" hx-swap="none"
       hx-on::before-request="this.querySelector('svg').classList.add('animate-spin')"

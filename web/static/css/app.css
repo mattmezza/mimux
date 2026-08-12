@@ -118,10 +118,16 @@
 }
 .read-flash { animation: read-flash 700ms ease-out; }
 
-/* h/l section navigation: a subtle ring on the pane that currently has focus. */
+/* h/l section navigation: a quiet accent ring around the pane that currently
+   has focus — soft enough to read as "this pane is live", never a hard rule. */
 [data-section-focus] {
-  box-shadow: inset 2px 0 0 var(--color-indigo-500, #6366f1);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-indigo-500, #6366f1) 40%, transparent);
 }
+/* The rows are focused programmatically by h/l and j/k; they already show
+   selection with a background, and the global :focus-visible ring below would
+   paint a full-width blue rule straight across the list. Real controls (the
+   star button, links, inputs) keep their ring. */
+#message-list [data-message-row]:focus-visible { outline: none; }
 
 /* Sidebar account tree chevron rotates when its section is open. */
 .acct-chevron { transition: transform 150ms ease; }
@@ -247,6 +253,64 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
   pointer-events: none;
 }
 
+/* Swipe-to-act on a list row (see the row-gesture block in app.js). The row's
+   own children translate as one — no wrapper element to add to the templates —
+   and .swipe-pane fills exactly the strip they uncover, so the colour only ever
+   shows where the row isn't. Width and --swipe-x are set from JS, 1:1 with the
+   finger; the settle transition is the spring back. */
+/* Keep a horizontal flick inside the list: without this a swipe in a direction
+   whose action is disabled (we deliberately don't preventDefault there) chains
+   to the browser's overscroll back-navigation.
+   The gesture chains all the way to the viewport, so the root has to opt out. */
+html, #message-list { overscroll-behavior-x: contain; }
+/* Rows are gesture surfaces, not prose: a double-click should run the row
+   action, not flash a selected word, and a swipe shouldn't start a selection. */
+#message-list li[data-message-row] { user-select: none; -webkit-user-select: none; }
+.swipe-row {
+  position: relative;
+  overflow: hidden;
+}
+.swipe-row > :not(.swipe-pane) {
+  transform: translateX(var(--swipe-x, 0px));
+}
+.swipe-row.swipe-settling > :not(.swipe-pane),
+.swipe-row.swipe-settling .swipe-pane {
+  transition: transform 260ms cubic-bezier(0.22, 1.2, 0.36, 1), width 260ms cubic-bezier(0.22, 1.2, 0.36, 1);
+}
+.swipe-pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.375rem;
+  overflow: hidden;
+  white-space: nowrap;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #fff;
+  background: var(--swipe-bg, #52525b);
+}
+.swipe-pane.from-start { right: auto; left: 0; }
+.swipe-pane svg {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+/* Past the commit threshold: brighter pane, icon pops — release now and it fires. */
+.swipe-pane.committed { filter: brightness(1.25); }
+.swipe-pane.committed svg { transform: scale(1.25); }
+/* Tailwind tokens, inlined because the pane is built in JS: indigo-600,
+   amber-500, zinc-600, red-600. */
+.swipe-pane[data-act="unread"] { --swipe-bg: #4f46e5; }
+.swipe-pane[data-act="open"] { --swipe-bg: #4f46e5; }
+.swipe-pane[data-act="star"] { --swipe-bg: #f59e0b; }
+.swipe-pane[data-act="archive"] { --swipe-bg: #52525b; }
+.swipe-pane[data-act="delete"] { --swipe-bg: #dc2626; }
+
 /* Live list refresh (SSE new-mail / manual Refresh): htmx swaps #message-list
    with transition:true, and each row carries a per-row view-transition-name so
    added rows fade in, removed rows fade out, and moved rows slide (FLIP) —
@@ -352,6 +416,19 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
   #message-detail > .flex-1 {
     flex: none;
     overflow-y: visible;
+  }
+  /* ...except the header sticks to the top of that flow and only slides out
+     of view while you scroll *down*; any upward scroll snaps it right back
+     (.hdr-away toggled in app.js). Out of sight, one flick away. */
+  #message-detail > .shrink-0:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: var(--color-zinc-900, #18181b);
+    transition: transform 0.2s ease, margin-bottom 0.2s ease;
+  }
+  #message-detail.hdr-away > .shrink-0:first-child {
+    transform: translateY(-100%);
   }
   /* Full dynamic-viewport height: once the header is scrolled away the body
      owns the whole screen, no dead dark strip at the bottom. */

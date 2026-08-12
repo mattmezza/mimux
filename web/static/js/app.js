@@ -301,19 +301,28 @@ function searchAcctState(account, state, count) {
 
 // --- keybinding manager ---
 // Central map; entries return false to fall through without preventing default.
+// Only rows the user can actually see: the quick filters hide non-matching rows
+// with display:none (see [data-filter] in app.css), so j/k must skip them.
 function listRows() {
-  return [...document.querySelectorAll("#message-list [data-message-row]")];
+  return [...document.querySelectorAll("#message-list [data-message-row]")].filter((r) => r.offsetParent !== null);
 }
+// Visible rows only, like listRows: a filter switch (or a list re-render) can
+// leave the class on a row nobody can see any more, and acting on that row is
+// never what the user meant.
 function selectedRow() {
-  return document.querySelector("#message-list [data-message-row].bg-zinc-800");
+  return listRows().find((r) => r.classList.contains("bg-zinc-800")) || null;
 }
 function selectRow(row) {
   if (!row) return;
-  listRows().forEach((r) => r.classList.remove("bg-zinc-800"));
+  // Query directly (not listRows) so a now-hidden previous selection is cleared.
+  document.querySelectorAll("#message-list [data-message-row].bg-zinc-800").forEach((r) => r.classList.remove("bg-zinc-800"));
   row.classList.add("bg-zinc-800");
   row.scrollIntoView({ block: "nearest" });
+  window.warmRow?.(row); // same debounced prefetch hover uses, so o/Enter is warm
 }
 function moveSelection(delta) {
+  const pane = readingScroller();
+  if (pane) { pane.scrollBy({ top: delta * 120, behavior: "smooth" }); return true; }
   const rows = listRows();
   if (!rows.length) return true;
   let i = rows.indexOf(selectedRow());
@@ -326,8 +335,13 @@ function currentId() {
   return r ? r.id.replace("msg-", "") : null;
 }
 function openSelected() {
-  const r = selectedRow();
-  if (r) r.click();
+  // Nothing selected yet (fresh list, htmx history restore, filter switch):
+  // open the first row, the same fallback focusSection uses — Enter/o doing
+  // nothing at all is what reads as "the shortcut is broken".
+  const r = selectedRow() || listRows()[0];
+  if (!r) return true;
+  selectRow(r);
+  r.click();
   return true;
 }
 function flagSelected(path) {
@@ -384,6 +398,48 @@ function closeReadingPane() {
   }
 }
 window.closeReadingPane = closeReadingPane;
+
+// Mobile: the reading pane's header slides out of the way while you scroll
+// down and comes straight back on the first upward scroll (see .hdr-away in
+// app.css) — always one flick away, never eating body height while reading.
+// Two scrollers feed it: the pane itself (thread view, where the whole
+// conversation is one flow) and each body iframe's own document (single
+// message, where the iframe is 100dvh and swallows the gesture entirely).
+let hdrLastY = 0, hdrFrom = null;
+function hdrScroll(pane, scroller, y, reclaim) {
+  if (window.innerWidth >= 768) return; // the .hdr-away rules are mobile-only
+  // A different scroller (htmx swapped the message, or the gesture moved
+  // between the pane and the body iframe) means a different coordinate space:
+  // re-baseline instead of reading the jump as a scroll.
+  if (scroller !== hdrFrom) { hdrFrom = scroller; hdrLastY = y; return; }
+  if (Math.abs(y - hdrLastY) < 8) return; // ignore jitter and rubber-banding
+  const away = y > hdrLastY && y > 64;
+  hdrLastY = y;
+  const hdr = pane.firstElementChild;
+  if (!hdr || pane.classList.contains("hdr-away") === away) return;
+  pane.classList.toggle("hdr-away", away);
+  // When the iframe scrolls, the pane stays put, so hiding the (sticky, still
+  // in-flow) header would leave a dead strip — pull the body up by its height.
+  // Never when the pane itself scrolls: that would shrink the very
+  // scrollHeight this function measures, and the clamped scrollTop reads back
+  // as an upward scroll, flip-flopping the header forever.
+  hdr.style.marginBottom = reclaim && away ? -hdr.offsetHeight + "px" : "";
+}
+// Capture phase: scroll doesn't bubble, and #message-detail is swapped in by
+// htmx. Thread view scrolls the pane itself.
+document.addEventListener("scroll", (e) => {
+  const p = e.target;
+  if (p && p.id === "message-detail") hdrScroll(p, p, p.scrollTop, false);
+}, true);
+// A single message's body iframe is 100dvh and scrolls its own document, so
+// the gesture never reaches the pane — read it from inside instead.
+function watchBodyScroll(frame) {
+  const doc = frame.contentDocument;
+  const pane = frame.closest("#message-detail");
+  if (doc && pane) {
+    doc.addEventListener("scroll", () => hdrScroll(pane, doc, doc.scrollingElement.scrollTop, true), { passive: true });
+  }
+}
 
 // --- thread view: collapse/expand a message, lazy-loading its body iframe ---
 function toggleThreadMessage(header) {
@@ -581,6 +637,7 @@ window.applyBodyTheme = function (frame) {
   doc.documentElement.classList.toggle("sm-dark", wantDark);
   fitBodyWidth(frame);
   setupBodyZoom(frame);
+  watchBodyScroll(frame);
 };
 
 // --- email body zoom: fit-to-width by default, pinch / ctrl+wheel to zoom ---
@@ -1101,44 +1158,177 @@ function toggleRowRead(row) {
     .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
 }
 
-// Double-click (desktop) a list row to toggle its read/unread state. The
-// single click that precedes it still opens the message.
+// --- row gestures (double-click/tap + swipe) ------------------------------
+// What each gesture does is a preference (Settings > Reading, store.AllRowActions),
+// stamped on the inbox wrapper as data-dbl-action / data-swipe-left / data-swipe-right.
+// The actions themselves reuse the same endpoints and helpers as the keyboard
+// shortcuts and the row/detail buttons — nothing new server-side.
+const ROW_ACTIONS = {
+  unread: {
+    label: (r) => (r.hasAttribute("data-unread") ? "Mark read" : "Mark unread"),
+    icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/>',
+  },
+  star: {
+    label: (r) => (r.hasAttribute("data-starred") ? "Unstar" : "Star"),
+    icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M11.48 3.5a.562.562 0 0 1 1.04 0l2.125 5.111a.563.563 0 0 0 .475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 0 0-.182.557l1.285 5.385a.562.562 0 0 1-.84.61l-4.725-2.885a.562.562 0 0 0-.586 0L6.982 20.54a.562.562 0 0 1-.84-.61l1.285-5.386a.562.562 0 0 0-.182-.557l-4.204-3.602a.562.562 0 0 1 .321-.988l5.518-.442a.563.563 0 0 0 .475-.345L11.48 3.5Z"/>',
+  },
+  archive: {
+    label: () => "Archive",
+    icon: '<path stroke-linecap="round" stroke-linejoin="round" d="m20.25 7.5-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5m6 4.125 2.25 2.25m0 0 2.25 2.25M12 13.875l2.25-2.25M12 13.875l-2.25 2.25M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z"/>',
+  },
+  delete: {
+    label: () => "Delete",
+    icon: '<path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/>',
+  },
+  open: {
+    label: () => "Open",
+    icon: '<path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5 21 12m0 0-7.5 7.5M21 12H3"/>',
+  },
+};
+
+// Read a gesture preference off the inbox wrapper (absent on other pages).
+function rowGesturePref(key, def) {
+  const el = document.querySelector("[data-dbl-action]");
+  return (el && el.dataset[key]) || def;
+}
+
+// Perform a gesture action on a row. Everything routes through the existing
+// helpers, so undo toasts, row animations and thread-aware marking come free.
+function runRowAction(row, action) {
+  if (!row || !ROW_ACTIONS[action]) return;
+  if (action === "unread") return toggleRowRead(row);
+  if (action === "open") return row.click();
+  selectRow(row); // flagSelected/moveSelected act on the selected row
+  if (action === "star") flagSelected(row.querySelector('[hx-post*="unstar"]') ? "unstar" : "star");
+  else if (action === "archive") moveSelected("archive", "Archived");
+  else if (action === "delete") moveSelected("delete", "Deleted");
+}
+
+// Double-click (desktop) a list row. The single click that precedes it still
+// opens the message. Ignored while text is selected or when the double-click
+// landed on one of the row's own controls (star button, links, checkbox).
 document.addEventListener("dblclick", (e) => {
   const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
-  if (row) toggleRowRead(row);
+  if (!row || e.target.closest("button, a, input, label, select, textarea")) return;
+  // Don't hijack a double-click the user is making to select text in the row
+  // (rows are user-select:none, so this only bites if that ever changes).
+  const sel = window.getSelection && window.getSelection();
+  if (sel && !sel.isCollapsed && row.contains(sel.anchorNode)) return;
+  runRowAction(row, rowGesturePref("dblAction", "unread"));
 });
 
-// #8: double-tap (mobile) toggles read/unread WITHOUT opening the message.
+// #8: double-tap (mobile) runs the double-tap action WITHOUT opening the message.
 // Touch devices don't get a real dblclick before the row's own hx-get="click"
 // navigates away on the first tap, so we hold the first tap's click for the
-// double-tap window: a second tap within it cancels the open and toggles
-// read/unread instead; otherwise the held tap opens the message as normal.
+// double-tap window: a second tap within it cancels the open and runs the
+// action instead; otherwise the held tap opens the message as normal.
 // Desktop mouse clicks never fire touchend, so this doesn't touch that path.
 // A touch that moved more than MOVE_THRESHOLD px between start and end is a
 // scroll/drag, not a tap — ignored entirely so lifting a finger mid-scroll
 // doesn't open whatever row happens to be underneath.
+//
+// The same handlers drive swipe-to-act: once the gesture is clearly horizontal
+// it locks to that axis, reveals a coloured action pane in the strip the row
+// uncovers (1:1 with the finger) and fires past the commit threshold. A
+// direction set to "none" never paints and never preventDefaults, so vertical
+// scrolling and pull-to-refresh (which only reads vertical distance) are
+// untouched.
 (function () {
   const DOUBLE_TAP_MS = 300;
   const MOVE_THRESHOLD = 10;
+  const AXIS_LOCK = 8;    // px of travel before the gesture picks an axis
+  const COMMIT = 0.35;    // fraction of the row width that fires the action
+  const FLICK = 0.5;      // px/ms: a fast flick commits before the threshold
   let pendingRow = null, pendingTimer = null;
-  let startX = 0, startY = 0;
+  let startX = 0, startY = 0, startT = 0;
+  let swRow = null, axis = null, dx = 0, pane = null;
+
+  const swipeAction = (left) => rowGesturePref(left ? "swipeLeft" : "swipeRight", left ? "none" : "unread");
+
+  function paint(action, left, dist) {
+    if (!pane) {
+      pane = document.createElement("div");
+      pane.className = "swipe-pane";
+      swRow.classList.add("swipe-row");
+      swRow.appendChild(pane);
+    }
+    if (pane.dataset.act !== action) {
+      pane.dataset.act = action;
+      pane.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">${ROW_ACTIONS[action].icon}</svg><span>${ROW_ACTIONS[action].label(swRow)}</span>`;
+    }
+    pane.classList.toggle("from-start", !left); // swipe right uncovers the left edge
+    pane.classList.toggle("committed", dist > swRow.clientWidth * COMMIT);
+    pane.style.width = dist + "px";
+    swRow.style.setProperty("--swipe-x", (left ? -dist : dist) + "px");
+  }
+
+  // Spring the row back and drop the pane (the action, if any, runs separately).
+  function settle() {
+    if (!swRow) return;
+    const r = swRow, p = pane;
+    pane = null;
+    r.classList.add("swipe-settling");
+    r.style.setProperty("--swipe-x", "0px");
+    if (p) p.style.width = "0px";
+    setTimeout(() => {
+      r.classList.remove("swipe-settling", "swipe-row");
+      r.style.removeProperty("--swipe-x");
+      if (p) p.remove();
+    }, 260);
+  }
+
   document.addEventListener("touchstart", (e) => {
     const t = e.touches[0];
     if (!t) return;
     startX = t.clientX;
     startY = t.clientY;
+    startT = Date.now();
+    axis = null;
+    dx = 0;
+    const r = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+    swRow = r && !e.target.closest("button, a, input, label") ? r : null;
   }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    const t = e.touches[0];
+    if (!swRow || !t) return;
+    const x = t.clientX - startX, y = t.clientY - startY;
+    if (!axis) {
+      if (Math.abs(y) > AXIS_LOCK && Math.abs(y) >= Math.abs(x)) { swRow = null; axis = "v"; return; }
+      if (Math.abs(x) <= AXIS_LOCK) return;
+      axis = "h";
+    }
+    const action = swipeAction(x < 0);
+    if (!ROW_ACTIONS[action]) { dx = 0; return; } // direction disabled: stay out of the way
+    e.preventDefault(); // committed to horizontal — don't let the list scroll too
+    dx = x;
+    paint(action, x < 0, Math.min(Math.abs(x), swRow.clientWidth));
+  }, { passive: false });
+
   document.addEventListener("touchend", (e) => {
+    if (axis === "h" && pane) {
+      e.preventDefault(); // a swipe must not synthesize a click that opens the row
+      const r = swRow, w = r.clientWidth || 1, dt = Math.max(1, Date.now() - startT);
+      const fire = Math.abs(dx) > w * COMMIT || (Math.abs(dx) > 40 && Math.abs(dx) / dt > FLICK);
+      const action = swipeAction(dx < 0);
+      settle();
+      swRow = null;
+      if (fire) runRowAction(r, action);
+      return;
+    }
+    swRow = null;
     const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
     if (!row || (e.target.closest && e.target.closest(".star-btn"))) return;
     const t = e.changedTouches[0];
     if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > MOVE_THRESHOLD) return;
+    const dblAct = rowGesturePref("dblAction", "unread");
+    if (!ROW_ACTIONS[dblAct]) return; // gesture disabled: let the tap open the row, undelayed
     e.preventDefault(); // suppress the synthesized click; we drive it ourselves
     if (pendingRow === row) {
       clearTimeout(pendingTimer);
       pendingTimer = null;
       pendingRow = null;
-      toggleRowRead(row);
+      runRowAction(row, dblAct);
       return;
     }
     pendingRow = row;
@@ -1501,13 +1691,15 @@ document.addEventListener("submit", (e) => {
   if (e.target && e.target.id === "compose-form") syncComposeEditor();
 }, true);
 
-// --- h/l: move focus between the three panes (accounts ↔ messages ↔ reading).
-// A subtle inset ring (see [data-section-focus] in app.css) shows which pane
-// holds focus. ---
+// --- h/l: move focus between the two panes (messages ↔ reading). A subtle
+// inset ring (see [data-section-focus] in app.css) shows which pane holds
+// focus. The sidebar is deliberately out of the cycle: it has no keyboard
+// action of its own (folders have their own g/0–9 jumps), so landing there was
+// a dead end that only cost a keypress to leave. ---
 function sectionEls() {
-  return [document.querySelector("nav"), document.getElementById("message-list"), document.getElementById("reading-pane")];
+  return [document.getElementById("message-list"), document.getElementById("reading-pane")];
 }
-let curSection = 1; // start on the message list
+let curSection = 0; // start on the message list
 function focusSection(delta) {
   const secs = sectionEls();
   curSection = Math.max(0, Math.min(secs.length - 1, curSection + delta));
@@ -1520,10 +1712,26 @@ function focusSection(delta) {
     if (row) { selectRow(row); row.focus?.(); }
   } else if (el.id === "reading-pane") {
     (el.querySelector("#message-detail") || el).focus?.({ preventScroll: true });
-  } else {
-    el.querySelector("a, button")?.focus();
   }
   return true;
+}
+
+// The reading pane's scroll container, but only while that pane holds section
+// focus — that's what makes j/k scroll the email instead of moving the list
+// selection. Desktop scrolls the inner column, mobile scrolls #message-detail
+// itself (see app.css), so just take whichever actually overflows.
+// ponytail: keys typed while a body *iframe* has focus never reach us — click
+// the pane chrome (or press l) to get them back. Cross-document key forwarding
+// isn't worth it.
+function readingScroller() {
+  const rp = document.getElementById("reading-pane");
+  if (!rp || !rp.hasAttribute("data-section-focus")) return null;
+  // Single-message view has no inner column: the body iframe fills the pane and
+  // scrolls its own (same-origin) document — the same one applyBodyTheme styles.
+  return [rp.querySelector("#message-detail > .flex-1.overflow-y-auto"),
+          rp.querySelector("#body-frame")?.contentDocument?.scrollingElement,
+          document.getElementById("message-detail")]
+    .find((e) => e && e.scrollHeight > e.clientHeight + 4) || null;
 }
 
 let goPending = false;
@@ -1539,6 +1747,7 @@ const keymap = {
   "r": () => flagSelected("read"),
   "u": () => flagSelected("unread"),
   "s": () => { if (goPending) { goPending = false; starredSearch(); return true; } return flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"); },
+  "f": () => cycleFilter(),
   "e": () => moveSelected("archive", "Archived"),
   "d": () => { if (goPending) { goPending = false; window.location.href = "/drafts"; return true; } return moveSelected("delete", "Deleted"); },
   "#": () => moveSelected("delete", "Deleted"),
@@ -1555,6 +1764,16 @@ const keymap = {
 for (let n = 1; n <= 9; n++) {
   keymap[String(n)] = () => jumpAccountInbox(n - 1);
 }
+// f cycles the quick filters (All → Unread → Starred). Clicks the sidebar
+// buttons so Alpine keeps owning the state (persistence, ?filter= in the URL).
+function cycleFilter() {
+  const btns = [...document.querySelectorAll('[aria-label="Quick filters"] button')];
+  if (!btns.length) return false;
+  const i = btns.findIndex((b) => b.getAttribute("aria-pressed") === "true");
+  btns[(i + 1) % btns.length].click();
+  return true;
+}
+
 function jumpUnified() {
   const el = document.querySelector("[data-unified]");
   if (el) { el.click(); return true; }
@@ -1706,7 +1925,8 @@ document.addEventListener("keydown", (e) => {
 // command channel that is already what makes a cold body slow. 150ms is under
 // the time it takes to move-and-click, so a deliberate hover still wins.
 //
-// ponytail: mouse only. Add a focus trigger if j/k list nav feels slow.
+// Keyboard nav warms the same way: selectRow calls window.warmRow, sharing the
+// one timer so holding j through 20 rows only warms the row you settle on.
 (function () {
   const WARM_AFTER_MS = 150;
   const warmed = new Set();
@@ -1725,11 +1945,17 @@ document.addEventListener("keydown", (e) => {
       .catch(() => warmed.delete(url)); // let a real click retry it
   }
 
-  document.addEventListener("mouseover", (e) => {
+  // Debounced warm for one row; null/no-data-prefetch just cancels the pending one.
+  window.warmRow = (row) => {
     clearTimeout(timer);
-    const row = e.target.closest && e.target.closest("[data-prefetch]");
-    if (!row) return;
+    if (!row || !row.dataset.prefetch) return;
     const url = row.dataset.prefetch;
     timer = setTimeout(() => warm(url), WARM_AFTER_MS);
+  };
+
+  document.addEventListener("mouseover", (e) => {
+    const row = e.target.closest && e.target.closest("[data-prefetch]");
+    if (row) window.warmRow(row);
+    else clearTimeout(timer);
   });
 })();
