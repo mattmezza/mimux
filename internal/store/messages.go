@@ -179,6 +179,8 @@ func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 				OR instr(' '||m.in_reply_to||' ', ' '||?||' ') > 0)`)
 			args = append(args, id, id, id)
 		}
+		// #nosec G202 -- the concatenated fragment is a fixed template repeated
+		// per id; every Message-ID travels as a bound arg, never as SQL text.
 		rows, err := s.DB.Query(`SELECT `+messageCols+` FROM (
 			SELECT m.*, CASE WHEN f.special_use IN ('inbox', 'sent') THEN 0 ELSE 1 END AS pri
 			FROM messages m JOIN folders f ON f.id = m.folder_id
