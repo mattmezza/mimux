@@ -29,6 +29,7 @@ type Prefs struct {
 	ComposeLayout    string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
 	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
+	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
 }
 
 // AllQuickActions lists every message action the user can place in the action
@@ -125,6 +126,7 @@ func defaultPrefs() Prefs {
 		ComposeLayout:    "fullscreen",
 		ReplyLayout:      "popup",
 		UndoSendDelay:    5,
+		ThreadOrder:      "oldest",
 	}
 }
 
@@ -215,6 +217,9 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("reply_layout"); ok && (v == "fullscreen" || v == "popup" || v == "modal") {
 		p.ReplyLayout = v
 	}
+	if v, ok := s.getSetting("thread_order"); ok && (v == "oldest" || v == "newest") {
+		p.ThreadOrder = v
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -257,6 +262,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"compose_layout":     p.ComposeLayout,
 		"reply_layout":       p.ReplyLayout,
 		"undo_send_delay":    strconv.Itoa(p.UndoSendDelay),
+		"thread_order":       p.ThreadOrder,
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

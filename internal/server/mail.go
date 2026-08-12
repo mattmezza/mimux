@@ -214,7 +214,16 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, msgs []stor
 	}
 	data["Folder"] = folder
 	data["Unified"] = unified
-	data["Threads"] = mail.BuildThreads(msgs)
+	threads := mail.BuildThreads(msgs)
+	// The list query is inbox-scoped and windowed, so a thread's own Count misses
+	// the Sent replies gmail.com counts: stamp each row with the whole
+	// conversation's size (one store-wide pass, not one query per row).
+	if sizes, err := s.store.ConversationSizes(); err == nil {
+		for i := range threads {
+			threads[i].Total = sizes[threads[i].RootID()]
+		}
+	}
+	data["Threads"] = threads
 	data["HasMessages"] = len(msgs) > 0
 	if unified {
 		data["ListURL"] = "/u"
@@ -275,41 +284,47 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	var msgs []store.Message
 	src := r.URL.Query().Get("src")
 	unified := src == "u"
 	var scopeFolder int64
-	if unified {
-		msgs, _ = s.store.ListUnifiedInbox(listLimit)
-	} else if fid, err := strconv.ParseInt(src, 10, 64); err == nil {
-		scopeFolder = fid
-		msgs, _ = s.store.ListMessages(fid, listLimit)
+	if !unified {
+		if fid, err := strconv.ParseInt(src, 10, 64); err == nil {
+			scopeFolder = fid
+		}
+	}
+	// A stale list row (message moved/deleted out of the scope it was opened
+	// from) renders the empty pane rather than a message whose body no longer
+	// fetches — same rule as before, just checked before the thread is built.
+	if !s.messageInScope(id, unified, scopeFolder) {
+		_, _ = w.Write([]byte(readingPaneEmpty))
+		return
+	}
+	// The conversation comes from a Message-ID closure over every folder, not
+	// from the list window: the list is inbox-scoped and capped, so the user's
+	// own Sent replies and older read members were missing from the pane.
+	var msgs []store.Message
+	if seed, err := s.store.MessageByID(id); err == nil && seed != nil {
+		msgs, _ = s.store.ThreadMessages(seed)
 	}
 	var thread *mail.Thread
 	for _, t := range mail.BuildThreads(msgs) {
-		if t.RootID() == id {
-			tt := t
-			thread = &tt
+		for _, m := range t.Messages {
+			// Match by membership, not RootID: the newest message of the full
+			// conversation is often a Sent reply, not the clicked list row.
+			if m.ID == id {
+				tt := t
+				thread = &tt
+				break
+			}
+		}
+		if thread != nil {
 			break
 		}
 	}
-	// Single-message threads (or a stale/lost thread) render exactly like a
-	// plain message; {id} already names that message.
+	// Single-message threads (or a message the closure couldn't place) render
+	// exactly like a plain message; {id} already names that message, and
+	// handleMessage 404s it if the row is gone.
 	if thread == nil || thread.Count == 1 {
-		// A nil thread means {id} is not the latest message of any thread in the
-		// requested scope — either an older member of a multi-message thread
-		// (its row is still valid and renders fine as a plain message) or a
-		// thread whose root was moved/deleted out of this scope (a stale list
-		// row). The latter's row survives in the store — the optimistic move
-		// relocates it to the trash folder — but its folder/UID no longer
-		// resolve, so falling through would render a message whose body fetch
-		// fails with "Could not load this message. The account may be offline."
-		// Drop it to the empty reading pane instead; the list refresh on the
-		// next sync re-roots or removes the stale thread row.
-		if thread == nil && !s.messageInScope(id, unified, scopeFolder) {
-			_, _ = w.Write([]byte(readingPaneEmpty))
-			return
-		}
 		s.handleMessage(w, r)
 		return
 	}
@@ -330,9 +345,20 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
 	translateOn := s.store.GetAppConfig().TranslateAPIKey != ""
 	folders, _ := s.store.ListFolders(latest.Account)
+	// Display order only: Thread.Messages must stay oldest-first — LatestMessage,
+	// RootID (the list row key + htmx targets) and the reply target all read its
+	// last element. So reverse a copy here and let the template range over that.
+	ordered := thread.Messages
+	if prefs.ThreadOrder == "newest" {
+		ordered = make([]store.Message, len(thread.Messages))
+		for i, m := range thread.Messages {
+			ordered[len(ordered)-1-i] = m
+		}
+	}
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
+		"Ordered":          ordered,
 		"Latest":           latest,
 		"Folders":          folders,
 		"CurrentFolder":    latest.FolderID,
