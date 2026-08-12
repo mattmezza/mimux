@@ -73,14 +73,14 @@ func TestBuildThreads(t *testing.T) {
 			want: []string{"A,B", "X"},
 		},
 		{
-			name: "subject fallback groups header-less messages",
+			name: "header-less same-subject messages stay apart (gmail parity)",
 			msgs: []store.Message{
 				msg("A", "a@x", "", "", "Project update", 1),
 				msg("B", "b@x", "", "", "Re: Project update", 2),
 				msg("C", "c@x", "", "", "Fwd: [list] Project update", 3),
 				msg("D", "d@x", "", "", "Unrelated", 4),
 			},
-			want: []string{"A,B,C", "D"},
+			want: []string{"A", "B", "C", "D"},
 		},
 		{
 			name: "header-less different subjects stay apart",
@@ -158,22 +158,6 @@ func TestThreadMessagesChronological(t *testing.T) {
 	}
 }
 
-func TestNormalizeSubject(t *testing.T) {
-	cases := map[string]string{
-		"Re: Hello":             "hello",
-		"RE: FW: Hello":         "hello",
-		"Fwd: [dev-list] Hello": "hello",
-		"[list] Re: Deploy":     "deploy",
-		"no prefix":             "no prefix",
-		"Re: Re: Re: nested":    "nested",
-	}
-	for in, want := range cases {
-		if got := normalizeSubject(in); got != want {
-			t.Errorf("normalizeSubject(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func withThrid(m store.Message, thrid string) store.Message {
 	m.GmThrID = thrid
 	return m
@@ -187,9 +171,8 @@ func withAccount(m store.Message, acct string) store.Message {
 // TestThreadingAccountScoping documents the unified-inbox threading policy:
 // strong signals (a genuine References/Message-ID chain) MAY span accounts —
 // that is the whole point of a unified conversation you're on via two mailboxes
-// — but the weak signals must not. Subject-only grouping and per-mailbox Gmail
-// thread ids are account-scoped, so unrelated same-subject mail and colliding
-// thread ids in two inboxes stay separate.
+// — but the weak signals must not. Per-mailbox Gmail thread ids are
+// account-scoped, so colliding thread ids in two inboxes stay separate.
 func TestThreadingAccountScoping(t *testing.T) {
 	tests := []struct {
 		name string
@@ -198,8 +181,8 @@ func TestThreadingAccountScoping(t *testing.T) {
 	}{
 		{
 			// Duplicate Message-ID with no reference linkage (the same newsletter
-			// delivered to two inboxes): the second copy gets its own container
-			// and the account-scoped subject fallback keeps them apart.
+			// delivered to two inboxes): the second copy gets its own container,
+			// so the two stay apart.
 			name: "duplicate newsletter across accounts stays separate",
 			msgs: []store.Message{
 				withAccount(msg("A", "news@x", "", "", "Weekly digest", 1), "acct1"),

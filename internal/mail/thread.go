@@ -28,10 +28,10 @@ func (t Thread) LatestMessage() store.Message { return t.Messages[len(t.Messages
 func (t Thread) RootID() int64 { return t.Messages[len(t.Messages)-1].ID }
 
 // BuildThreads groups a folder's messages into conversations using JWZ
-// threading over References/In-Reply-To, with normalized-subject grouping as a
-// fallback for messages that carry no threading headers. Messages carrying a
-// Gmail thread id (X-GM-THRID) are grouped strictly by it. Pure and
-// in-memory: no I/O, no schema dependency beyond the message rows passed in.
+// threading over References/In-Reply-To. Messages that carry no threading
+// headers stand alone — same as gmail.com. Messages carrying a Gmail thread id
+// (X-GM-THRID) are grouped strictly by it. Pure and in-memory: no I/O, no
+// schema dependency beyond the message rows passed in.
 func BuildThreads(msgs []store.Message) []Thread {
 	var jwzMsgs []store.Message
 	byThrid := map[string][]store.Message{}
@@ -175,31 +175,14 @@ func jwzThreads(msgs []store.Message) []Thread {
 		}
 	}
 
-	// Subject fallback: merge header-less groups (no References/In-Reply-To on
-	// any message) that share a normalized subject.
-	// Subject-only grouping is a weak signal: scope it by account so unrelated
-	// same-subject mail across accounts (two inboxes' "Invoice" messages) can't
-	// collapse in the unified view. Reference/Message-ID linkage above stays
-	// account-agnostic, so a genuine conversation you're on via two accounts
-	// still threads together.
-	bySubject := map[string]int{}
-	var merged [][]store.Message
+	// No subject fallback: Message-ID/References linkage is the only signal.
+	// Gmail doesn't thread header-less mail that merely shares a subject, and
+	// merging on subject alone collapsed unrelated notification mail (a month of
+	// "New reasons prevent pages from being indexed on site X") into one row,
+	// making the list disagree with gmail.com. NOTE: exact-subject grouping
+	// is what X-GM-THRID would replace anyway — see store.Message.GmThrID.
+	out := make([]Thread, 0, len(groups))
 	for _, g := range groups {
-		if headerless(g) {
-			if subj := normalizeSubject(threadSubject(g)); subj != "" {
-				key := g[0].Account + "\x00" + subj
-				if idx, ok := bySubject[key]; ok {
-					merged[idx] = append(merged[idx], g...)
-					continue
-				}
-				bySubject[key] = len(merged)
-			}
-		}
-		merged = append(merged, g)
-	}
-
-	out := make([]Thread, 0, len(merged))
-	for _, g := range merged {
 		out = append(out, makeThread(g))
 	}
 	return out
@@ -229,15 +212,6 @@ func flatten(c *container, out *[]store.Message) {
 	for _, ch := range c.children {
 		flatten(ch, out)
 	}
-}
-
-func headerless(g []store.Message) bool {
-	for _, m := range g {
-		if strings.TrimSpace(m.Refs) != "" || strings.TrimSpace(m.InReplyTo) != "" {
-			return false
-		}
-	}
-	return true
 }
 
 // threadSubject returns the subject of the earliest message in a group.
@@ -275,31 +249,4 @@ func makeThread(msgs []store.Message) Thread {
 		}
 	}
 	return t
-}
-
-// normalizeSubject strips Re:/Fwd:/list-prefix noise for subject-based
-// grouping and lowercases the remainder.
-func normalizeSubject(s string) string {
-	s = strings.TrimSpace(s)
-	for {
-		lower := strings.ToLower(s)
-		trimmed := false
-		for _, p := range []string{"re:", "fwd:", "fw:", "aw:", "sv:", "antw:", "wg:"} {
-			if strings.HasPrefix(lower, p) {
-				s = strings.TrimSpace(s[len(p):])
-				trimmed = true
-				break
-			}
-		}
-		if !trimmed && strings.HasPrefix(s, "[") {
-			if i := strings.IndexByte(s, ']'); i > 0 {
-				s = strings.TrimSpace(s[i+1:])
-				trimmed = true
-			}
-		}
-		if !trimmed {
-			break
-		}
-	}
-	return strings.ToLower(strings.TrimSpace(s))
 }
