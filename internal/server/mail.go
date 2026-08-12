@@ -299,28 +299,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(readingPaneEmpty))
 		return
 	}
-	// The conversation comes from a Message-ID closure over every folder, not
-	// from the list window: the list is inbox-scoped and capped, so the user's
-	// own Sent replies and older read members were missing from the pane.
-	var msgs []store.Message
-	if seed, err := s.store.MessageByID(id); err == nil && seed != nil {
-		msgs, _ = s.store.ThreadMessages(seed)
-	}
-	var thread *mail.Thread
-	for _, t := range mail.BuildThreads(msgs) {
-		for _, m := range t.Messages {
-			// Match by membership, not RootID: the newest message of the full
-			// conversation is often a Sent reply, not the clicked list row.
-			if m.ID == id {
-				tt := t
-				thread = &tt
-				break
-			}
-		}
-		if thread != nil {
-			break
-		}
-	}
+	thread := s.conversationOf(id)
 	// Single-message threads (or a message the closure couldn't place) render
 	// exactly like a plain message; {id} already names that message, and
 	// handleMessage 404s it if the row is gone.
@@ -371,6 +350,97 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"QAMenu":           qaMenu,
 		"QAMsg":            threadMsgActions(qaBar, qaMenu, translateOn),
 	})
+}
+
+// conversationOf returns the whole conversation containing message id. The
+// closure is over Message-IDs across every folder, not the list window: the
+// list is inbox-scoped and capped, so Sent replies and older read members would
+// otherwise be missing. nil when the message can't be placed.
+func (s *Server) conversationOf(id int64) *mail.Thread {
+	var msgs []store.Message
+	if seed, err := s.store.MessageByID(id); err == nil && seed != nil {
+		msgs, _ = s.store.ThreadMessages(seed)
+	}
+	for _, t := range mail.BuildThreads(msgs) {
+		for _, m := range t.Messages {
+			// Match by membership, not RootID: the newest message of the full
+			// conversation is often a Sent reply, not the clicked list row.
+			if m.ID == id {
+				tt := t
+				return &tt
+			}
+		}
+	}
+	return nil
+}
+
+// handleThreadRows renders a thread's messages as indented list sub-rows (the
+// inline disclosure under a thread row) — same conversation the pane shows.
+func (s *Server) handleThreadRows(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	t := s.conversationOf(id)
+	if t == nil {
+		w.WriteHeader(http.StatusNoContent) // htmx: no swap, the row stays as it was
+		return
+	}
+	msgs := t.Messages // oldest-first, like the pane's default order
+	if s.store.GetPrefs().ThreadOrder == "newest" {
+		msgs = make([]store.Message, len(t.Messages))
+		for i, m := range t.Messages {
+			msgs[len(msgs)-1-i] = m
+		}
+	}
+	s.renderPartial(w, "thread_subrows", msgs)
+}
+
+// rowMenuActions are the actions a list row's right-click menu can offer: the
+// pane-only ones (dark/translate/refetch drive the open message's iframe) mean
+// nothing when there's no body on screen.
+var rowMenuActions = map[string]bool{
+	"reply": true, "replyall": true, "forward": true, "archive": true,
+	"star": true, "unread": true, "spam": true, "delete": true,
+}
+
+// handleRowMenu renders the right-click context menu of one list row — the same
+// quick-action menu + "Move to" tree the reading pane's "⋯" shows, rendered by
+// the same templates. ?t=1 means the row is a multi-message thread (thread-wide
+// actions, like thread_detail's header), ?sub=1 an expanded thread's sub-row
+// (single message, msg-s<id> row + the ?sub=1 swap).
+func (s *Server) handleRowMenu(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	bar, menu := s.quickActionLists(s.store.GetPrefs().QuickActions, rowMenuActions)
+	folders, _ := s.store.ListFolders(msg.Account)
+	sub := r.URL.Query().Get("sub") != ""
+	row := strconv.FormatInt(msg.ID, 10)
+	if sub {
+		row = "s" + row
+	}
+	data := map[string]any{
+		"CSRF":          auth.EnsureCSRF(w, r, s.secure),
+		"Msg":           msg,
+		"Row":           row,
+		"Sub":           sub,
+		"Folders":       folders,
+		"CurrentFolder": msg.FolderID,
+		"QAMenu":        append(append([]string{}, bar...), menu...),
+	}
+	if r.URL.Query().Get("t") != "" {
+		if t := s.conversationOf(msg.ID); t != nil && t.Count > 1 {
+			latest := t.LatestMessage()
+			data["Thread"], data["Latest"] = t, latest
+			// Move targets follow the message the actions act on.
+			data["Folders"], _ = s.store.ListFolders(latest.Account)
+			data["CurrentFolder"] = latest.FolderID
+		}
+	}
+	s.renderPartial(w, "row_menu", data)
 }
 
 func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
@@ -464,7 +534,7 @@ func (s *Server) handleMarkRead(read bool) http.HandlerFunc {
 			msg.IsRead = read
 			s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, msg, read) })
 		}
-		s.renderPartial(w, "message_row", msg)
+		s.renderPartial(w, rowTemplate(r), msg)
 	}
 }
 
@@ -520,8 +590,17 @@ func (s *Server) handleStar(star bool) http.HandlerFunc {
 		_ = s.store.SetStarred(msg.ID, star)
 		msg.IsStarred = star
 		s.background(func(ctx context.Context) error { return s.mail.SetStarred(ctx, msg, star) })
-		s.renderPartial(w, "message_row", msg)
+		s.renderPartial(w, rowTemplate(r), msg)
 	}
+}
+
+// rowTemplate picks the row markup a star/read swap should return: ?sub=1 comes
+// from a thread's expanded sub-row, which has its own id scheme and indent.
+func rowTemplate(r *http.Request) string {
+	if r.URL.Query().Get("sub") != "" {
+		return "sub_row"
+	}
+	return "message_row"
 }
 
 // undoGrace is the window during which a move/archive/delete/spam action can
