@@ -21,6 +21,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"AppConfig":    s.store.GetAppConfig(),
 		"Presets":      account.PresetNames(),
 		"QAEditor":     qaEditorRows(prefs.QuickActions),
+		"RowActions":   store.AllRowActions,
 		"Signatures":   sigs,
 		"Templates":    tpls,
 		"Identities":   s.identityLinks(),
@@ -49,6 +50,9 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		ReplyLayout:      r.PostFormValue("reply_layout"),
 		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
 		ThreadOrder:      r.PostFormValue("thread_order"),
+		RowDoubleAction:  store.ValidRowAction(r.PostFormValue("row_double_action"), "unread"),
+		SwipeLeftAction:  store.ValidRowAction(r.PostFormValue("swipe_left_action"), "unread"),
+		SwipeRightAction: store.ValidRowAction(r.PostFormValue("swipe_right_action"), "none"),
 	}
 	switch p.UndoSendDelay {
 	case 3, 5, 10:
