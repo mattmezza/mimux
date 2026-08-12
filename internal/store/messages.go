@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"strings"
 	"time"
 )
 
@@ -129,6 +130,101 @@ func (s *Store) ListUnifiedInbox(limit int) ([]Message, error) {
 		out = append(out, *m)
 	}
 	return out, rows.Err()
+}
+
+// ThreadMessages returns every message of seed's conversation, across ALL
+// folders, found by Message-ID/References closure rather than by scanning a
+// list window: the reading pane must show the Sent replies and the
+// read-and-old members that ListMessages/ListUnifiedInbox never return.
+//
+// Deliberately NOT account-scoped: a genuine reference chain may span accounts
+// in the unified view (mail.TestThreadingAccountScoping, and the /t render
+// test both assert it). BuildThreads applies the account policy for the weak
+// signals — the dedup key here is (account, message_id) so the same newsletter
+// delivered to two accounts stays two rows.
+//
+// Gmail's IMAP publishes one message as separate rows in INBOX, [Gmail]/All
+// Mail and [Gmail]/Important, so those copies are deduped, keeping the
+// inbox/sent one when there is one (that row's folder+UID is the sensible
+// target for replies and flag changes).
+func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
+	ids := map[string]bool{}
+	var pending []string
+	add := func(raw string) {
+		for _, id := range splitIDs(raw) {
+			if !ids[id] {
+				ids[id] = true
+				pending = append(pending, id)
+			}
+		}
+	}
+	add(seed.MessageID)
+	add(seed.Refs)
+	add(seed.InReplyTo)
+
+	best := map[string]Message{} // message_id -> chosen row
+	var out []Message
+	// ponytail: bounded at 5 rounds — converges in 1-2 for real mail; a
+	// pathological reference chain just renders a slightly short thread.
+	for round := 0; round < 5 && len(pending) > 0; round++ {
+		batch := pending
+		pending = nil
+		where := make([]string, 0, len(batch))
+		var args []any
+		for _, id := range batch {
+			// Token match on the space-joined refs/in-reply-to columns (no LIKE,
+			// so `_` and `%` inside a Message-ID can't wildcard).
+			where = append(where, `(m.message_id = ? OR instr(' '||m.refs||' ', ' '||?||' ') > 0
+				OR instr(' '||m.in_reply_to||' ', ' '||?||' ') > 0)`)
+			args = append(args, id, id, id)
+		}
+		rows, err := s.DB.Query(`SELECT `+messageCols+` FROM (
+			SELECT m.*, CASE WHEN f.special_use IN ('inbox', 'sent') THEN 0 ELSE 1 END AS pri
+			FROM messages m JOIN folders f ON f.id = m.folder_id
+			WHERE `+strings.Join(where, " OR ")+`
+		) ORDER BY pri, id`, args...)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			m, err := scanMessage(rows)
+			if err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			if m.MessageID == "" { // no id to dedup on: keep every copy, as BuildThreads does
+				out = append(out, *m)
+				continue
+			}
+			key := m.Account + "\x00" + m.MessageID
+			if _, dup := best[key]; dup {
+				continue // ORDER BY pri already put the inbox/sent copy first
+			}
+			best[key] = *m
+			out = append(out, *m)
+			add(m.MessageID)
+			add(m.Refs)
+			add(m.InReplyTo)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+	return out, nil
+}
+
+// splitIDs splits a Message-ID / References / In-Reply-To value into bare ids.
+func splitIDs(s string) []string {
+	fields := strings.Fields(s)
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if id := strings.Trim(f, "<> \t"); id != "" {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 // SetLabels stores the space-joined Gmail label set for a message.

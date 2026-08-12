@@ -30,3 +30,54 @@ func TestUpsertMessageRefreshesDate(t *testing.T) {
 		t.Fatalf("date not refreshed on conflict: got %s want %s", got.Date, real)
 	}
 }
+
+// TestThreadMessagesClosure: the reading pane's conversation must reach beyond
+// the inbox list window — the user's Sent reply and an older read member — and
+// must collapse Gmail's INBOX/All Mail/Important copies of one message into a
+// single row, preferring the inbox/sent copy.
+func TestThreadMessagesClosure(t *testing.T) {
+	s := open(t)
+	inbox, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	sent, _ := s.UpsertFolder("A", "Sent", "sent", 1)
+	all, _ := s.UpsertFolder("A", "All Mail", "archive", 2)
+	other, _ := s.UpsertFolder("B", "INBOX", "inbox", 0)
+
+	day := func(d int) time.Time { return time.Date(2026, 7, d, 0, 0, 0, 0, time.UTC) }
+	put := func(acct string, folder int64, uid uint32, msgID, inReplyTo, refs string, d int) {
+		if err := s.UpsertMessage(&Message{Account: acct, FolderID: folder, UID: uid, MessageID: msgID,
+			InReplyTo: inReplyTo, Refs: refs, Subject: "Switching your API", Date: day(d)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	put("A", inbox, 1, "root@x", "", "", 15) // read, older than any window
+	put("A", all, 2, "root@x", "", "", 15)   // Gmail duplicate
+	put("A", sent, 3, "reply@x", "root@x", "root@x", 16)
+	put("A", all, 4, "reply@x", "root@x", "root@x", 16) // Gmail duplicate
+	put("A", inbox, 5, "last@x", "reply@x", "root@x reply@x", 17)
+	put("B", other, 6, "root@x", "", "", 15) // same message-id, other account: NOT a Gmail copy
+
+	seed, err := s.MessageByFolderUID(inbox, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.ThreadMessages(seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]int64{}
+	for _, m := range msgs {
+		key := m.Account + "/" + m.MessageID
+		if _, dup := got[key]; dup {
+			t.Errorf("duplicate copy of %s in closure", key)
+		}
+		got[key] = m.FolderID
+	}
+	// 3 for account A (its All Mail copies collapsed), plus B's same-id message,
+	// which is a different message and must survive as its own row.
+	if len(got) != 4 {
+		t.Fatalf("want 4 rows, got %d: %v", len(got), got)
+	}
+	if got["A/root@x"] != inbox || got["A/reply@x"] != sent || got["A/last@x"] != inbox || got["B/root@x"] != other {
+		t.Errorf("dedup kept the wrong copies: %v (inbox=%d sent=%d all=%d other=%d)", got, inbox, sent, all, other)
+	}
+}
