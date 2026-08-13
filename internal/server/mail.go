@@ -241,6 +241,20 @@ func (s *Server) handleStatusbar(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status()})
 }
 
+// handleSyncing renders the tiny "Syncing…" indicator in the message list's
+// sticky header — the mobile equivalent of the (hidden md:flex) statusbar dot,
+// since that's exactly where background syncs otherwise land unannounced.
+func (s *Server) handleSyncing(w http.ResponseWriter, r *http.Request) {
+	syncing := false
+	for _, st := range s.mail.Status() {
+		if st.State == "syncing" {
+			syncing = true
+			break
+		}
+	}
+	s.renderPartial(w, "syncing", map[string]any{"Syncing": syncing})
+}
+
 // handleHealth re-renders the sidebar accounts-health rows (live-updated over
 // SSE when sync status changes).
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
