@@ -120,7 +120,10 @@ func accountEqual(a, b config.Account) bool {
 		a.OAuth2ClientID != b.OAuth2ClientID || a.OAuth2ClientSecret != b.OAuth2ClientSecret ||
 		a.IMAPHost != b.IMAPHost || a.IMAPPort != b.IMAPPort ||
 		a.SMTPHost != b.SMTPHost || a.SMTPPort != b.SMTPPort ||
-		len(a.Aliases) != len(b.Aliases) {
+		len(a.Aliases) != len(b.Aliases) ||
+		!intPtrEqual(a.SyncIntervalMin, b.SyncIntervalMin) ||
+		!intPtrEqual(a.MaxPerSync, b.MaxPerSync) ||
+		!intPtrEqual(a.SyncMonths, b.SyncMonths) {
 		return false
 	}
 	for i := range a.Aliases {
@@ -129,6 +132,15 @@ func accountEqual(a, b config.Account) bool {
 		}
 	}
 	return true
+}
+
+// intPtrEqual compares two optional overrides: nil counts as different from
+// any set value, even 0.
+func intPtrEqual(a, b *int) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // account looks up a running worker under the lock.
@@ -396,10 +408,17 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 	}
 }
 
-// pollInterval is the user-configured sync cadence (Settings → "Check every N
-// minutes"), falling back to a 5-minute default.
+// syncSettings resolves this account's effective sync-interval/max-per-sync/
+// sync-months: its own override where set (Settings → Syncing, per-account
+// section), else the global Prefs value.
+func (a *account) syncSettings() (intervalMin, maxPerSync, syncMonths int) {
+	return store.EffectiveSyncSettings(a.m.st.GetPrefs(), a.cfg)
+}
+
+// pollInterval is the effective sync cadence (Settings → "Check every N
+// minutes", account override or global), falling back to a 5-minute default.
 func (a *account) pollInterval() time.Duration {
-	if n := a.m.st.GetPrefs().SyncIntervalMin; n > 0 {
+	if n, _, _ := a.syncSettings(); n > 0 {
 		return time.Duration(n) * time.Minute
 	}
 	return config.DefaultPollInterval

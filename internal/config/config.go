@@ -69,6 +69,11 @@ type Account struct {
 	IMAPPort           int
 	SMTPHost           string
 	SMTPPort           int
+	// Per-account overrides for the Settings → Syncing knobs; nil means
+	// "inherit the global value" (see store.EffectiveSyncSettings).
+	SyncIntervalMin *int
+	MaxPerSync      *int
+	SyncMonths      *int
 }
 
 // Alias is an extra send/receive identity on an account, with its own sender

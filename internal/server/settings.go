@@ -1,7 +1,9 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/mattmezza/sm/internal/account"
@@ -13,6 +15,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	prefs := s.store.GetPrefs()
 	sigs, _ := s.store.ListSignatures()
 	tpls, _ := s.store.ListTemplates()
+	msgCount, _ := s.store.MessageCount()
 	s.render(w, "settings", map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Prefs":        prefs,
@@ -25,7 +28,34 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"Signatures":   sigs,
 		"Templates":    tpls,
 		"Identities":   s.identityLinks(),
+		"DBSize":       s.dbSizeHuman(),
+		"MessageCount": msgCount,
 	})
+}
+
+// dbSizeHuman totals the main SQLite file plus its -wal/-shm siblings (present
+// under WAL journaling) and renders a humanized size for Settings → Syncing.
+func (s *Server) dbSizeHuman() string {
+	var total int64
+	for _, suffix := range [...]string{"", "-wal", "-shm"} {
+		if fi, err := os.Stat(s.cfg.DB.Path + suffix); err == nil {
+			total += fi.Size()
+		}
+	}
+	return humanBytes(total)
+}
+
+func humanBytes(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
@@ -123,6 +153,19 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return
 	}
+	// Per-account sync overrides (Settings → Syncing, per-account section):
+	// blank inherits the global values just saved above.
+	for _, a := range s.accounts() {
+		interval := parseOverride(r.PostFormValue("sync_interval_min:"+a.Name), 1)
+		maxPerSync := parseOverride(r.PostFormValue("max_per_sync:"+a.Name), 1)
+		syncMonths := parseOverride(r.PostFormValue("sync_months:"+a.Name), 0)
+		if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths); err != nil {
+			http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
+			return
+		}
+	}
+	// Reload so running workers pick up any changed per-account override.
+	s.mail.Reload()
 	if r.Header.Get("HX-Request") != "" {
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -163,4 +206,21 @@ func atoiDefault(s string, def int) int {
 		return n
 	}
 	return def
+}
+
+// parseOverride parses a per-account sync-override field: blank (or
+// unparseable) means "inherit the global value" (nil); otherwise it's clamped
+// like its global counterpart.
+func parseOverride(s string, min int) *int {
+	if s == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return nil
+	}
+	if n < min {
+		n = min
+	}
+	return &n
 }

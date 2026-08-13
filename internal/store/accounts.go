@@ -11,22 +11,46 @@ import (
 // accountCols is the column list shared by the account queries.
 const accountCols = `name, sender_name, provider, email, auth, password,
 	oauth2_client_id, oauth2_client_secret, imap_host, imap_port,
-	smtp_host, smtp_port, aliases, position`
+	smtp_host, smtp_port, aliases, position,
+	sync_interval_min, max_per_sync, sync_months`
 
 func scanAccount(sc interface{ Scan(...any) error }) (config.Account, int, error) {
 	var a config.Account
 	var aliasesJSON string
 	var pos int
+	var syncInterval, maxPerSync, syncMonths sql.NullInt64
 	err := sc.Scan(&a.Name, &a.SenderName, &a.Provider, &a.Email, &a.Auth, &a.Password,
 		&a.OAuth2ClientID, &a.OAuth2ClientSecret, &a.IMAPHost, &a.IMAPPort,
-		&a.SMTPHost, &a.SMTPPort, &aliasesJSON, &pos)
+		&a.SMTPHost, &a.SMTPPort, &aliasesJSON, &pos,
+		&syncInterval, &maxPerSync, &syncMonths)
 	if err != nil {
 		return a, 0, err
 	}
 	if aliasesJSON != "" {
 		_ = json.Unmarshal([]byte(aliasesJSON), &a.Aliases)
 	}
+	a.SyncIntervalMin = nullIntPtr(syncInterval)
+	a.MaxPerSync = nullIntPtr(maxPerSync)
+	a.SyncMonths = nullIntPtr(syncMonths)
 	return a, pos, nil
+}
+
+// nullIntPtr converts a nullable column into the override-pointer shape used
+// by config.Account (nil = "inherit the global value").
+func nullIntPtr(n sql.NullInt64) *int {
+	if !n.Valid {
+		return nil
+	}
+	v := int(n.Int64)
+	return &v
+}
+
+// intOrNull is the inverse of nullIntPtr: a nil override binds as SQL NULL.
+func intOrNull(p *int) any {
+	if p == nil {
+		return nil
+	}
+	return *p
 }
 
 // ListAccounts returns every account, normalized (preset hosts filled in), in
@@ -83,9 +107,12 @@ func (s *Store) UpsertAccount(a config.Account) error {
 	if err != nil {
 		return err
 	}
+	// sync_interval_min/max_per_sync/sync_months are deliberately absent from the
+	// ON CONFLICT SET list (like position): they're edited separately from
+	// Settings → Syncing, so a plain account-form save must not clobber them.
 	_, err = s.DB.Exec(`
 		INSERT INTO accounts (`+accountCols+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)))
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)), ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			sender_name = excluded.sender_name,
 			provider = excluded.provider,
@@ -101,8 +128,37 @@ func (s *Store) UpsertAccount(a config.Account) error {
 			aliases = excluded.aliases`,
 		a.Name, a.SenderName, a.Provider, a.Email, a.Auth, a.Password,
 		a.OAuth2ClientID, a.OAuth2ClientSecret, a.IMAPHost, a.IMAPPort,
-		a.SMTPHost, a.SMTPPort, string(b), a.Name)
+		a.SMTPHost, a.SMTPPort, string(b), a.Name,
+		intOrNull(a.SyncIntervalMin), intOrNull(a.MaxPerSync), intOrNull(a.SyncMonths))
 	return err
+}
+
+// SetAccountSyncOverrides updates only the three per-account sync-override
+// columns (nil clears an override back to "inherit global"). Kept separate
+// from UpsertAccount, which never touches these, so Settings → Syncing can't
+// clobber the rest of the account and vice versa.
+func (s *Store) SetAccountSyncOverrides(name string, intervalMin, maxPerSync, syncMonths *int) error {
+	_, err := s.DB.Exec(`UPDATE accounts SET sync_interval_min = ?, max_per_sync = ?, sync_months = ? WHERE name = ?`,
+		intOrNull(intervalMin), intOrNull(maxPerSync), intOrNull(syncMonths), name)
+	return err
+}
+
+// EffectiveSyncSettings resolves the sync-interval/max-per-sync/sync-months
+// knobs for one account: its own override where set, else the global
+// Settings → Syncing value. A pure function of Prefs + Account so it's cheap
+// to unit test without a live DB.
+func EffectiveSyncSettings(p Prefs, a config.Account) (intervalMin, maxPerSync, syncMonths int) {
+	intervalMin, maxPerSync, syncMonths = p.SyncIntervalMin, p.MaxPerSync, p.SyncMonths
+	if a.SyncIntervalMin != nil {
+		intervalMin = *a.SyncIntervalMin
+	}
+	if a.MaxPerSync != nil {
+		maxPerSync = *a.MaxPerSync
+	}
+	if a.SyncMonths != nil {
+		syncMonths = *a.SyncMonths
+	}
+	return
 }
 
 // DeleteAccount removes an account and all of its synced mail in one
