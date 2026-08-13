@@ -2,6 +2,7 @@ package ai
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -90,12 +91,18 @@ func normalizeMode(m string) string {
 }
 
 // ErrMessage turns an AI failure into the user-facing sentence every AI feature
-// shows (exported for the summary strip, which renders server-side).
+// shows (exported for the summary strip, which renders server-side). Only the
+// two actionable cases get their own wording; everything else is transient as
+// far as the user is concerned — chat already retried it — so the message says
+// so instead of casting doubt on a key that is fine.
 func ErrMessage(err error) string {
-	if err == ErrDisabled {
+	switch {
+	case errors.Is(err, ErrDisabled):
 		return "AI is off — add an OpenRouter key in Settings → AI."
+	case errors.Is(err, ErrAuth):
+		return "OpenRouter rejected your API key — check it in Settings → AI."
 	}
-	return "AI is unavailable. Check your OpenRouter key or try again."
+	return "The AI service is busy or unreachable — try again in a moment."
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

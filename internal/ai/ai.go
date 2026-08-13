@@ -9,7 +9,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -17,7 +19,25 @@ import (
 // ErrDisabled is returned when no API key is configured.
 var ErrDisabled = errors.New("ai: disabled (no openrouter api key configured)")
 
+// ErrAuth is returned when OpenRouter rejects the key (401/403) — permanent,
+// and the only failure worth pointing the user at Settings for.
+var ErrAuth = errors.New("ai: openrouter rejected the api key")
+
 const apiURL = "https://openrouter.ai/api/v1/chat/completions"
+
+// Retry tuning. OpenRouter (and the provider behind it) hands out 429s and
+// short-lived 5xx/empty responses often enough that a second click usually
+// works; these make chat do that click itself. chatBudget caps every attempt
+// plus backoff, so retries stay inside the old single-shot timeout and the
+// browser never waits longer than before.
+// ponytail: fixed backoff, no jitter — knobs are maxAttempts, retryBackoff,
+// maxRetryWait and chatBudget.
+const (
+	maxAttempts  = 3
+	retryBackoff = 700 * time.Millisecond // multiplied by the attempt number
+	maxRetryWait = 5 * time.Second        // ceiling on a Retry-After header
+	chatBudget   = 60 * time.Second
+)
 
 // Prefs are the user-tunable knobs (Settings → AI) folded into every prompt.
 type Prefs struct {
@@ -206,6 +226,8 @@ func splitSubject(s string) (subject, body string) {
 	return strings.TrimSpace(rest), ""
 }
 
+// chat is the single call path for every AI feature, so the retry lives here
+// and all of them get it.
 func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string, error) {
 	if c == nil || c.APIKey == "" {
 		return "", ErrDisabled
@@ -220,9 +242,35 @@ func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string
 	if err != nil {
 		return "", err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(body))
+	ctx, cancel := context.WithTimeout(ctx, chatBudget)
+	defer cancel()
+
+	var lastErr error
+	for attempt := 1; ; attempt++ {
+		out, wait, err := c.chatOnce(ctx, body, attempt)
+		if err == nil {
+			return out, nil
+		}
+		lastErr = err
+		if wait == 0 || attempt == maxAttempts {
+			return "", lastErr
+		}
+		slog.Warn("ai: transient failure, retrying", "attempt", attempt, "in", wait, "err", err)
+		select {
+		case <-ctx.Done():
+			return "", lastErr
+		case <-time.After(wait):
+		}
+	}
+}
+
+// chatOnce runs one request. On failure it returns how long to wait before the
+// next attempt, or 0 when the failure is permanent (no key, bad key, bad
+// request, unparseable reply) and retrying would only delay the honest error.
+func (c *Client) chatOnce(ctx context.Context, reqBody []byte, attempt int) (string, time.Duration, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(reqBody))
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.APIKey)
@@ -233,26 +281,66 @@ func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("ai: request failed: %w", err)
+		if ctx.Err() != nil { // caller went away, or the budget is spent
+			return "", 0, fmt.Errorf("ai: request failed: %w", err)
+		}
+		return "", backoff(attempt), fmt.Errorf("ai: request failed: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", fmt.Errorf("ai: read response: %w", err)
+		return "", backoff(attempt), fmt.Errorf("ai: read response: %w", err)
 	}
+	// Decoded before the status check but tolerated if it fails: a gateway 502
+	// is an HTML page, and the status is the interesting part of it.
 	var out chatResponse
-	if err := json.Unmarshal(data, &out); err != nil {
-		return "", fmt.Errorf("ai: decode response: %w", err)
+	decodeErr := json.Unmarshal(data, &out)
+	apiMsg := ""
+	if out.Error != nil {
+		apiMsg = out.Error.Message
 	}
 	if resp.StatusCode != http.StatusOK {
-		if out.Error != nil && out.Error.Message != "" {
-			return "", fmt.Errorf("ai: api error: %s", out.Error.Message)
+		err := fmt.Errorf("ai: api returned status %d: %s", resp.StatusCode, detail(apiMsg, data))
+		switch {
+		case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+			return "", 0, fmt.Errorf("%w (status %d): %s", ErrAuth, resp.StatusCode, detail(apiMsg, data))
+		case resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= 500:
+			return "", retryAfter(resp.Header, attempt), err
 		}
-		return "", fmt.Errorf("ai: api returned status %d", resp.StatusCode)
+		return "", 0, err
+	}
+	if decodeErr != nil {
+		return "", 0, fmt.Errorf("ai: decode response: %w (%s)", decodeErr, detail("", data))
 	}
 	if len(out.Choices) == 0 {
-		return "", errors.New("ai: no completion returned")
+		// 200 with an error body (or with nothing in it) is a provider hiccup —
+		// OpenRouter does this instead of a 5xx often enough to be worth a retry.
+		return "", backoff(attempt), fmt.Errorf("ai: no completion returned: %s", detail(apiMsg, data))
 	}
-	return strings.TrimSpace(out.Choices[0].Message.Content), nil
+	return strings.TrimSpace(out.Choices[0].Message.Content), 0, nil
+}
+
+func backoff(attempt int) time.Duration { return time.Duration(attempt) * retryBackoff }
+
+// retryAfter honours OpenRouter's Retry-After (seconds), capped so one rate
+// limit can't eat the whole budget, and falls back to the fixed backoff.
+func retryAfter(h http.Header, attempt int) time.Duration {
+	if s, err := strconv.Atoi(h.Get("Retry-After")); err == nil && s > 0 {
+		return min(time.Duration(s)*time.Second, maxRetryWait)
+	}
+	return backoff(attempt)
+}
+
+// detail prefers OpenRouter's error message and falls back to a truncated raw
+// body, so a gateway's HTML error page still says something in the log.
+func detail(apiMsg string, body []byte) string {
+	if apiMsg != "" {
+		return apiMsg
+	}
+	s := strings.TrimSpace(string(body))
+	if len(s) > 200 {
+		s = s[:200] + "…"
+	}
+	return s
 }

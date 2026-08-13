@@ -3,10 +3,12 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDraft_Disabled(t *testing.T) {
@@ -87,6 +89,80 @@ func TestRefine_APIError(t *testing.T) {
 	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
 	if _, err := c.Refine(context.Background(), "plain", "hello", "shorter"); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestChat_RetriesTransient(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		if hits == 1 {
+			w.Header().Set("Retry-After", "0") // ignored, falls back to the backoff
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limited"}}`))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	got, err := c.Refine(context.Background(), "plain", "hello", "shorter")
+	if err != nil || got != "ok" {
+		t.Fatalf("Refine = %q, err = %v", got, err)
+	}
+	if hits != 2 {
+		t.Errorf("attempts = %d, want 2", hits)
+	}
+}
+
+func TestChat_NoRetryOnAuth(t *testing.T) {
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error":{"message":"invalid key"}}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	_, err := c.Refine(context.Background(), "plain", "hello", "shorter")
+	if !errors.Is(err, ErrAuth) {
+		t.Fatalf("err = %v, want ErrAuth", err)
+	}
+	if hits != 1 {
+		t.Errorf("attempts = %d, want 1 (401 is permanent)", hits)
+	}
+	if msg := ErrMessage(err); !strings.Contains(msg, "API key") {
+		t.Errorf("ErrMessage = %q", msg)
+	}
+}
+
+func TestChat_CancelledContextSkipsBackoff(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		cancel() // the browser walked away mid-flight
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	start := time.Now()
+	if _, err := c.Refine(ctx, "plain", "hello", "shorter"); err == nil {
+		t.Fatal("expected error")
+	}
+	if elapsed := time.Since(start); elapsed > retryBackoff/2 {
+		t.Errorf("slept out the backoff: %v", elapsed)
+	}
+	if hits != 1 {
+		t.Errorf("attempts = %d, want 1", hits)
 	}
 }
 
