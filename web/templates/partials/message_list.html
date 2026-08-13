@@ -66,8 +66,12 @@
      fade-in — triggered by #message-list's own in-flight request, a signal
      this template has no way to know about — has something to reveal. Real,
      server-confirmed syncing (.is-syncing) forces it visible outright. */}}
+{{/* No "load" here, unlike the inline copy above: this markup IS the /syncing
+     response, and it replaces itself (outerHTML). A load trigger would fire the
+     moment the swap lands and refetch forever — the inline copy can carry one
+     because it only ever arrives with a whole #message-list. */}}
 {{define "syncing"}}
-<span id="list-syncing" hx-get="/syncing" hx-trigger="load, sm:sync from:body, every 60s" hx-swap="outerHTML"
+<span id="list-syncing" hx-get="/syncing" hx-trigger="sm:sync from:body, every 60s" hx-swap="outerHTML"
   class="htmx-indicator flex items-center gap-1.5 text-[11px] font-normal text-zinc-500{{if .Syncing}} is-syncing{{end}}">
   <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg><span>Syncing…</span>
 </span>
