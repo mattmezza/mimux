@@ -102,11 +102,13 @@ func (m *Manager) Reload() {
 			m:      m,
 			cmds:   make(chan cmd, 64),
 			wake:   make(chan struct{}, 1),
+			warm:   make(chan struct{}, 1),
 			cancel: cancel,
 			status: AccountStatus{Account: ac.Name, State: "syncing"},
 		}
 		m.accounts[name] = a
 		go a.run(ctx)
+		go a.runWarmer(ctx)
 	}
 }
 
@@ -160,6 +162,7 @@ func (m *Manager) Subscribe() (<-chan Event, func()) { return m.hub.subscribe() 
 func (m *Manager) Wake(accountName string) {
 	if a := m.account(accountName); a != nil {
 		a.signalWake()
+		a.signalWarm() // the warmer parks on ErrNoToken too
 	}
 }
 
@@ -191,7 +194,8 @@ type account struct {
 	m      *Manager
 	cmds   chan cmd
 	wake   chan struct{}
-	cancel context.CancelFunc // stops this worker (Reload/remove)
+	warm   chan struct{}      // nudges the background body warmer (see warm.go)
+	cancel context.CancelFunc // stops this worker + its warmer (Reload/remove)
 
 	mu     sync.Mutex
 	status AccountStatus
@@ -222,6 +226,9 @@ func (a *account) setStatus(state, msg string) {
 // to at most one per sync cycle to avoid a refresh storm.
 func (a *account) signalListChanged() {
 	a.m.hub.broadcast(Event{Type: "new-mail", Data: a.cfg.Name})
+	// Same trigger the warmer wants: the message list gained/changed rows, so
+	// there may be inbox bodies to cache. A spurious nudge costs one query.
+	a.signalWarm()
 }
 
 func (a *account) signalWake() {
