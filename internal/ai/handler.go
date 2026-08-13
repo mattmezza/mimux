@@ -9,14 +9,15 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mattmezza/sm/internal/mail"
+	"github.com/mattmezza/sm/internal/store"
 )
 
 // Routes returns a mountable router exposing the AI-assist JSON endpoints. CSRF
 // is enforced by the global auth.CSRF middleware already applied in
 // server.Handler(), so no CSRF check is duplicated here. Clients are built per
-// request (newClient) so key/model/prefs edited in Settings take effect
-// without a restart.
-func Routes(newClient func() *Client) chi.Router {
+// request (newClient, one feature at a time) so key/model/prefs edited in
+// Settings take effect without a restart.
+func Routes(newClient func(store.AIFeature) *Client) chi.Router {
 	r := chi.NewRouter()
 
 	// POST /ai/options — reply directions for the message being replied to.
@@ -26,7 +27,7 @@ func Routes(newClient func() *Client) chi.Router {
 			httpErr(w, http.StatusBadRequest, "No message to reply to.")
 			return
 		}
-		opts, err := newClient().Options(r.Context(), ctx)
+		opts, err := newClient(store.AIOptions).Options(r.Context(), ctx)
 		if err != nil {
 			slog.Error("ai options", "err", err)
 			httpErr(w, http.StatusBadGateway, ErrMessage(err))
@@ -45,7 +46,7 @@ func Routes(newClient func() *Client) chi.Router {
 			return
 		}
 		wantSubject := r.PostFormValue("want_subject") == "1"
-		res, err := newClient().Draft(r.Context(), mode, r.PostFormValue("context"), direction, wantSubject)
+		res, err := newClient(store.AICompose).Draft(r.Context(), mode, r.PostFormValue("context"), direction, wantSubject)
 		if err != nil {
 			slog.Error("ai draft", "err", err)
 			httpErr(w, http.StatusBadGateway, ErrMessage(err))
@@ -66,7 +67,7 @@ func Routes(newClient func() *Client) chi.Router {
 			httpErr(w, http.StatusBadRequest, "Nothing to refine yet.")
 			return
 		}
-		draft, err := newClient().Refine(r.Context(), mode, text, r.PostFormValue("action"))
+		draft, err := newClient(store.AIRefine).Refine(r.Context(), mode, text, r.PostFormValue("action"))
 		if err != nil {
 			slog.Error("ai refine", "err", err)
 			httpErr(w, http.StatusBadGateway, ErrMessage(err))

@@ -340,23 +340,71 @@ func boolStr(b bool) string {
 	return "0"
 }
 
+// AIFeature names one of the four AI features. Each one can pin its own model;
+// everything else it needs lives in the matching AppConfig field.
+type AIFeature string
+
+const (
+	AICompose   AIFeature = "compose"   // writes a compose/reply draft
+	AIOptions   AIFeature = "options"   // suggests reply directions
+	AIRefine    AIFeature = "refine"    // rewrites an existing draft
+	AISummarize AIFeature = "summarize" // condenses a message
+)
+
+// defaultAIModel is what every feature runs on until the user says otherwise.
+const defaultAIModel = "anthropic/claude-sonnet-4-6"
+
 // AppConfig holds the integration credentials that used to live in config.toml's
 // [translate] and [ai] sections. Kept out of Prefs because Prefs is handed to
 // templates and these values are secret.
 type AppConfig struct {
 	TranslateAPIKey string
 	TranslateTarget string // ISO code, default "en"
-	AIKey           string // OpenRouter API key
-	AIModel         string // default "anthropic/claude-sonnet-4-6"
-	AITone          string // professional|neutral|friendly|casual, default neutral
-	AIBrevity       string // concise|normal|detailed, default normal
-	AIReplyOptions  int    // reply directions to generate (2-5), default 3
-	AILanguage      string // "auto" or a fixed language name, default auto
-	AISummaryLevel  string // default detail level for Summarize; see AllSummaryLevels
+	AIKey           string // OpenRouter API key — one account, shared by every feature
+	AIModel         string // default model, default "anthropic/claude-sonnet-4-6"
+	// Per-feature model overrides. Blank inherits AIModel — same
+	// inherit-or-global shape as the per-account sync overrides.
+	AIComposeModel   string
+	AIOptionsModel   string
+	AIRefineModel    string
+	AISummarizeModel string
+	// Tone/brevity/language are shared: they describe the user's voice, not one
+	// feature, and refine's own action ("more formal", "warmer") already carries
+	// its per-call direction.
+	// ponytail: shared, not duplicated per feature — split them into
+	// ai_<feature>_tone/brevity/language if someone actually wants a formal
+	// draft and a casual rewrite.
+	AITone         string // professional|neutral|friendly|casual, default neutral (compose + refine)
+	AIBrevity      string // concise|normal|detailed, default normal (compose + refine)
+	AILanguage     string // "auto" or a fixed language name, default auto (compose + refine + summarize)
+	AIReplyOptions int    // reply directions to generate (2-5), default 3 (options only)
+	AISummaryLevel string // default detail level for Summarize; see AllSummaryLevels
+}
+
+// ModelFor resolves the model one feature runs on: its own override where set,
+// else the default model. Mirrors EffectiveSyncSettings.
+// ponytail: four flat fields and a switch, not a feature registry — there are
+// four features and they are listed right here.
+func (c AppConfig) ModelFor(f AIFeature) string {
+	var override string
+	switch f {
+	case AICompose:
+		override = c.AIComposeModel
+	case AIOptions:
+		override = c.AIOptionsModel
+	case AIRefine:
+		override = c.AIRefineModel
+	case AISummarize:
+		override = c.AISummarizeModel
+	}
+	if override != "" {
+		return override
+	}
+	return c.AIModel
 }
 
 func (s *Store) GetAppConfig() AppConfig {
-	c := AppConfig{TranslateTarget: "en", AIModel: "anthropic/claude-sonnet-4-6",
+	c := AppConfig{TranslateTarget: "en", AIModel: defaultAIModel,
 		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto",
 		AISummaryLevel: "brief"}
 	if v, ok := s.getSetting("translate_api_key"); ok {
@@ -368,9 +416,15 @@ func (s *Store) GetAppConfig() AppConfig {
 	if v, ok := s.getSetting("ai_openrouter_key"); ok {
 		c.AIKey = v
 	}
+	// ai_model stays the default model, so an install that configured it before
+	// the per-feature split keeps running on it everywhere.
 	if v, ok := s.getSetting("ai_model"); ok && v != "" {
 		c.AIModel = v
 	}
+	c.AIComposeModel, _ = s.getSetting("ai_compose_model")
+	c.AIOptionsModel, _ = s.getSetting("ai_options_model")
+	c.AIRefineModel, _ = s.getSetting("ai_refine_model")
+	c.AISummarizeModel, _ = s.getSetting("ai_summarize_model")
 	if v, ok := s.getSetting("ai_tone"); ok && v != "" {
 		c.AITone = v
 	}
@@ -396,7 +450,7 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		c.TranslateTarget = "en"
 	}
 	if c.AIModel == "" {
-		c.AIModel = "anthropic/claude-sonnet-4-6"
+		c.AIModel = defaultAIModel
 	}
 	if c.AITone == "" {
 		c.AITone = "neutral"
@@ -416,11 +470,16 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		"translate_target":  c.TranslateTarget,
 		"ai_openrouter_key": c.AIKey,
 		"ai_model":          c.AIModel,
-		"ai_tone":           c.AITone,
-		"ai_brevity":        c.AIBrevity,
-		"ai_reply_options":  strconv.Itoa(c.AIReplyOptions),
-		"ai_language":       c.AILanguage,
-		"ai_summary_level":  c.AISummaryLevel,
+		// Overrides are stored as-is: blank means "inherit ai_model".
+		"ai_compose_model":   c.AIComposeModel,
+		"ai_options_model":   c.AIOptionsModel,
+		"ai_refine_model":    c.AIRefineModel,
+		"ai_summarize_model": c.AISummarizeModel,
+		"ai_tone":            c.AITone,
+		"ai_brevity":         c.AIBrevity,
+		"ai_reply_options":   strconv.Itoa(c.AIReplyOptions),
+		"ai_language":        c.AILanguage,
+		"ai_summary_level":   c.AISummaryLevel,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

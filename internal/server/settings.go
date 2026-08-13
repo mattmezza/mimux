@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 
 	"github.com/mattmezza/sm/internal/account"
 	"github.com/mattmezza/sm/internal/auth"
@@ -152,11 +153,16 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		TranslateTarget: target,
 		AIKey:           r.PostFormValue("ai_openrouter_key"),
 		AIModel:         r.PostFormValue("ai_model"),
-		AITone:          r.PostFormValue("ai_tone"),
-		AIBrevity:       r.PostFormValue("ai_brevity"),
-		AIReplyOptions:  atoiDefault(r.PostFormValue("ai_reply_options"), 3),
-		AILanguage:      r.PostFormValue("ai_language"),
-		AISummaryLevel:  r.PostFormValue("ai_summary_level"),
+		// Per-feature model overrides: blank inherits the default model above.
+		AIComposeModel:   strings.TrimSpace(r.PostFormValue("ai_compose_model")),
+		AIOptionsModel:   strings.TrimSpace(r.PostFormValue("ai_options_model")),
+		AIRefineModel:    strings.TrimSpace(r.PostFormValue("ai_refine_model")),
+		AISummarizeModel: strings.TrimSpace(r.PostFormValue("ai_summarize_model")),
+		AITone:           r.PostFormValue("ai_tone"),
+		AIBrevity:        r.PostFormValue("ai_brevity"),
+		AIReplyOptions:   atoiDefault(r.PostFormValue("ai_reply_options"), 3),
+		AILanguage:       r.PostFormValue("ai_language"),
+		AISummaryLevel:   r.PostFormValue("ai_summary_level"),
 	}); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return

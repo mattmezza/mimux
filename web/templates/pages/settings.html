@@ -510,13 +510,16 @@
                 </span>
               </label>
               <label class="block space-y-1">
-                <span class="text-sm text-zinc-200">Model</span>
+                <span class="text-sm text-zinc-200">Default model</span>
                 <input type="text" name="ai_model" value="{{.AppConfig.AIModel}}" placeholder="anthropic/claude-sonnet-4-6"
                   class="w-full max-w-md rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                <span class="block text-xs text-zinc-500">Used by every feature that doesn't pin its own model below.</span>
               </label>
 
-              {{/* Draft style — folded into every AI prompt. */}}
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md pt-1">
+              {{/* Writing style — shared, because it describes your voice rather
+                   than one feature: it is folded into drafts and rewrites, and
+                   the language also into summaries. */}}
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-md pt-1">
                 <label class="block space-y-1">
                   <span class="text-sm text-zinc-200">Tone</span>
                   <select name="ai_tone" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
@@ -537,26 +540,7 @@
                   </select>
                 </label>
                 <label class="block space-y-1">
-                  <span class="text-sm text-zinc-200">Reply options</span>
-                  <select name="ai_reply_options" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-                    {{$n := .AppConfig.AIReplyOptions}}
-                    <option value="2" {{if eq $n 2}}selected{{end}}>2</option>
-                    <option value="3" {{if eq $n 3}}selected{{end}}>3</option>
-                    <option value="4" {{if eq $n 4}}selected{{end}}>4</option>
-                    <option value="5" {{if eq $n 5}}selected{{end}}>5</option>
-                  </select>
-                </label>
-                <label class="block space-y-1">
-                  <span class="text-sm text-zinc-200">Summary detail</span>
-                  <select name="ai_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-                    {{$s := .AppConfig.AISummaryLevel}}
-                    <option value="oneline" {{if eq $s "oneline"}}selected{{end}}>One line</option>
-                    <option value="brief" {{if eq $s "brief"}}selected{{end}}>Brief (bullets)</option>
-                    <option value="detailed" {{if eq $s "detailed"}}selected{{end}}>Detailed</option>
-                  </select>
-                </label>
-                <label class="block space-y-1">
-                  <span class="text-sm text-zinc-200">Reply language</span>
+                  <span class="text-sm text-zinc-200">Language</span>
                   <select name="ai_language" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
                     {{$l := .AppConfig.AILanguage}}
                     <option value="auto" {{if eq $l "auto"}}selected{{end}}>Auto (match the message)</option>
@@ -565,7 +549,70 @@
                   </select>
                 </label>
               </div>
-              <p class="text-xs text-zinc-500">Tone, length and language shape every AI draft. Summary detail is only the starting level — each summary can be switched from its own strip. Keys and settings are saved with the Save button below.</p>
+              <p class="text-xs text-zinc-500">Tone and length shape drafts and rewrites; the language also applies to summaries.</p>
+
+              {{/* Per-feature blocks — same inherit-or-global shape as the
+                   per-account sync overrides on the Syncing tab. */}}
+              <div class="space-y-3 pt-2 border-t border-zinc-800">
+                <h3 class="text-sm font-semibold text-zinc-100">Per-feature</h3>
+                <p class="text-xs text-zinc-500">Leave a model blank to use the default above — a cheap model is usually enough for summaries, a stronger one for drafts.</p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                    <span class="block text-sm text-zinc-200">Compose &amp; reply drafts</span>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Model</span>
+                      <input type="text" name="ai_compose_model" value="{{.AppConfig.AIComposeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    </label>
+                  </div>
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                    <span class="block text-sm text-zinc-200">Reply options</span>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Model</span>
+                      <input type="text" name="ai_options_model" value="{{.AppConfig.AIOptionsModel}}" placeholder="{{.AppConfig.AIModel}}"
+                        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    </label>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Directions to suggest</span>
+                      <select name="ai_reply_options" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                        {{$n := .AppConfig.AIReplyOptions}}
+                        <option value="2" {{if eq $n 2}}selected{{end}}>2</option>
+                        <option value="3" {{if eq $n 3}}selected{{end}}>3</option>
+                        <option value="4" {{if eq $n 4}}selected{{end}}>4</option>
+                        <option value="5" {{if eq $n 5}}selected{{end}}>5</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                    <span class="block text-sm text-zinc-200">Refine draft</span>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Model</span>
+                      <input type="text" name="ai_refine_model" value="{{.AppConfig.AIRefineModel}}" placeholder="{{.AppConfig.AIModel}}"
+                        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    </label>
+                    <span class="block text-xs text-zinc-500">The Shorter / More formal / Friendlier buttons set the direction of each rewrite.</span>
+                  </div>
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                    <span class="block text-sm text-zinc-200">Summarize</span>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Model</span>
+                      <input type="text" name="ai_summarize_model" value="{{.AppConfig.AISummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    </label>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Detail level</span>
+                      <select name="ai_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                        {{$s := .AppConfig.AISummaryLevel}}
+                        <option value="oneline" {{if eq $s "oneline"}}selected{{end}}>One line</option>
+                        <option value="brief" {{if eq $s "brief"}}selected{{end}}>Brief (bullets)</option>
+                        <option value="detailed" {{if eq $s "detailed"}}selected{{end}}>Detailed</option>
+                      </select>
+                    </label>
+                    <span class="block text-xs text-zinc-500">Only the starting level — each summary can be switched from its own strip.</span>
+                  </div>
+                </div>
+              </div>
+              <p class="text-xs text-zinc-500">Keys and settings are saved with the Save button below.</p>
             </div>
           </section>
 

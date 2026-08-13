@@ -41,6 +41,62 @@ func TestPrefsRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAIModelFor(t *testing.T) {
+	s := open(t)
+	// Nothing configured: every feature runs on the built-in default.
+	c := s.GetAppConfig()
+	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize} {
+		if got := c.ModelFor(f); got != defaultAIModel {
+			t.Fatalf("%s model = %q, want the default", f, got)
+		}
+	}
+	// One override set: only that feature moves off the default model.
+	c.AIModel = "big/model"
+	c.AISummarizeModel = "cheap/model"
+	if err := s.SaveAppConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	c = s.GetAppConfig()
+	if got := c.ModelFor(AISummarize); got != "cheap/model" {
+		t.Errorf("summarize model = %q", got)
+	}
+	if got := c.ModelFor(AICompose); got != "big/model" {
+		t.Errorf("compose model = %q, want the default model", got)
+	}
+	// Cleared override falls back to the default model again.
+	c.AISummarizeModel = ""
+	if err := s.SaveAppConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetAppConfig().ModelFor(AISummarize); got != "big/model" {
+		t.Errorf("cleared override: summarize model = %q", got)
+	}
+}
+
+func TestAIConfigUpgradeFromFlatKeys(t *testing.T) {
+	// An install configured before the per-feature split: only the old flat keys
+	// exist. They must keep working as the shared defaults.
+	s := open(t)
+	for k, v := range map[string]string{
+		"ai_model": "old/model", "ai_tone": "friendly", "ai_brevity": "concise",
+		"ai_language": "Italian", "ai_reply_options": "5", "ai_summary_level": "detailed",
+	} {
+		if err := s.setSetting(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	c := s.GetAppConfig()
+	if c.AIModel != "old/model" || c.AITone != "friendly" || c.AIBrevity != "concise" ||
+		c.AILanguage != "Italian" || c.AIReplyOptions != 5 || c.AISummaryLevel != "detailed" {
+		t.Fatalf("old settings not preserved: %+v", c)
+	}
+	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize} {
+		if got := c.ModelFor(f); got != "old/model" {
+			t.Errorf("%s model = %q, want the previously configured model", f, got)
+		}
+	}
+}
+
 func TestSplitQuickActions(t *testing.T) {
 	// New format: placement + order preserved, unknown ids and dupes dropped.
 	bar, menu := SplitQuickActions("archive=bar,reply=bar,star=menu,bogus=bar,reply=menu,delete=menu")
