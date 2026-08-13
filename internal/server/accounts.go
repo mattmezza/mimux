@@ -2,9 +2,9 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -220,6 +220,11 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 	s.refreshAccounts()
 	s.mail.Reload()
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	_, _ = w.Write([]byte("Imported " + strconv.Itoa(sum.Accounts) + " account(s), " +
-		strconv.Itoa(sum.Settings) + " setting(s), " + strconv.Itoa(sum.Tokens) + " token(s)."))
+	// Zeros are shown on purpose: "0 labelled message(s)" is how the user learns
+	// labels found no synced mail to re-attach to yet (see store.Import).
+	_, _ = w.Write([]byte(fmt.Sprintf(
+		"Imported %d account(s), %d setting(s), %d token(s), %d filter(s), %d signature(s), "+
+			"%d template(s), %d saved search(es), %d trusted sender(s), %d labelled message(s).",
+		sum.Accounts, sum.Settings, sum.Tokens, sum.Filters, sum.Signatures,
+		sum.Templates, sum.Searches, sum.Senders, sum.Labels)))
 }
