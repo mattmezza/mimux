@@ -2090,6 +2090,12 @@ document.addEventListener("keydown", (e) => {
         return;
       }
     }
+    // NOTE: an input inside an open "⋯"-style popover (the label add-form
+    // text field) needs Escape to close that popover, not just blur — this
+    // branch returns before the generic details.msg-actions-more[open] closer
+    // below ever runs, so it can't be reused as-is for a focused input.
+    const popover = e.key === "Escape" && t.closest("details.msg-actions-more[open]");
+    if (popover) popover.removeAttribute("open");
     if (e.key === "Escape") t.blur();
     return;
   }

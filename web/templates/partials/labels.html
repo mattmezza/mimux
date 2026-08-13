@@ -7,7 +7,10 @@
      Context: dict M=<message> Known=<[]string labels in use> */}}
 {{define "label_pills"}}
 {{- $m := .M -}}
-<div id="labels-{{$m.ID}}" class="flex flex-wrap items-center gap-1 pt-0.5">
+{{/* NOTE: no vertical padding here — this now sits inline in the date row
+     (message_detail) as a flex item next to the date text, and in thread_detail
+     it still gets top spacing for free from the parent's space-y-0.5. */}}
+<div id="labels-{{$m.ID}}" class="flex flex-wrap items-center gap-1">
   {{range messageLabels $m.Labels}}
   <span class="group inline-flex items-center rounded bg-zinc-800 text-[10px] text-zinc-400">
     <button type="button" title="Search this label"
@@ -20,7 +23,11 @@
       class="px-1 text-zinc-600 opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-red-400">×</button>
   </span>
   {{end}}
-  <details class="relative">
+  {{/* NOTE: reuses the "⋯" overflow menu's close mechanism (app.js +
+       app.css, both keyed off .msg-actions-more) for outside-click and Escape
+       instead of writing a second handler — see app.js for the one Escape
+       tweak that was needed for the focused text input. */}}
+  <details class="relative msg-actions-more" ontoggle="if(this.open)this.querySelector('input').focus()">
     <summary class="list-none cursor-pointer rounded bg-zinc-800 px-1.5 text-[10px] text-zinc-500 hover:text-indigo-300" title="Add label" aria-label="Add label">+</summary>
     <form class="absolute left-0 z-20 mt-1 flex gap-1 rounded-md border border-zinc-700 bg-zinc-800 p-1.5 shadow-lg"
       hx-post="/messages/{{$m.ID}}/label" hx-target="#labels-{{$m.ID}}" hx-swap="outerHTML"
