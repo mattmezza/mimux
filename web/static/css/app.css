@@ -105,6 +105,17 @@
 [data-filter="starred"] #message-list-items li[data-message-row]:not([data-starred]) {
   display: none;
 }
+/* …and with a filter on, hide the load-more sentinel too: nearly every appended
+   row is filtered away, which leaves the sentinel still on screen after the
+   swap, which auto-loads the next page, all the way to the bottom of the
+   mailbox. Under Unread there is nothing to page to anyway (page one carries
+   every unread conversation, however old). Under Starred an old starred thread
+   stays out of reach — exactly as unreachable as it was before paging existed.
+   NOTE: filter the page server-side if that ever needs fixing. */
+[data-filter="unread"] #list-more,
+[data-filter="starred"] #list-more {
+  display: none;
+}
 /* A message just marked read (while open) stays visible under the Unread filter
    instead of vanishing mid-read; the next list refresh re-filters it out. */
 [data-filter="unread"] #message-list-items li[data-message-row].just-read {

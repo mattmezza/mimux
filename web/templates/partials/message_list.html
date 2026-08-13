@@ -16,7 +16,7 @@
   </div>
   {{if .HasMessages}}
   <ul id="message-list-items">
-    {{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker)}}{{end}}
+    {{template "message_page" .}}
   </ul>
   {{else}}
   <div class="empty-state flex-1 flex flex-col items-center justify-center gap-2 text-center p-8">
@@ -36,6 +36,30 @@
   </div>
   {{end}}
 </section>
+{{end}}
+
+{{/* One page of list rows, plus the sentinel that loads the page after it. Sent
+     on its own for every page but the first, swapped over the old sentinel, so
+     appending a page never touches a row already on screen — selection, j/k
+     position and scroll all survive untouched. */}}
+{{define "message_page"}}
+{{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker)}}{{end}}
+{{/* No NextCursor means the scope is exhausted and the sentinel simply isn't
+     rendered. intersect, not htmx's revealed: revealed only listens for scroll
+     on window, and #message-list is its own scroll container, so it would never
+     fire here. The button IS the sentinel — one element, auto-load when it
+     scrolls into view and a manual click for when it doesn't (a short viewport,
+     a browser without IntersectionObserver). Carries no data-message-row, so
+     j/k skip it; app.css hides it outright while a quick filter is on. */}}
+{{if .NextCursor}}
+<li id="list-more">
+  <button type="button" hx-get="{{.ListURL}}?before={{.NextCursor}}" hx-trigger="intersect once, click"
+    hx-target="closest li" hx-swap="outerHTML"
+    class="w-full px-3 py-3 text-xs text-zinc-500 hover:bg-zinc-800/60 hover:text-zinc-300 transition-colors duration-150">
+    Load older messages
+  </button>
+</li>
+{{end}}
 {{end}}
 
 {{/* Markup is always rendered (never empty) so the CSS-only .htmx-indicator

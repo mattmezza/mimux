@@ -208,9 +208,19 @@ func (s *Server) sidebarData() []sidebarAccount {
 	return out
 }
 
-// fillList populates a template data map with a threaded message list. folder
-// is nil for the unified view.
-func (s *Server) fillList(data map[string]any, folder *store.Folder, msgs []store.Message, unified bool) {
+// fillList populates a template data map with one page of the threaded message
+// list. folder is nil for the unified view; before is the page cursor the
+// previous page handed out ("" for the first page).
+func (s *Server) fillList(data map[string]any, folder *store.Folder, unified bool, before string) {
+	var msgs []store.Message
+	var next string
+	if unified {
+		msgs, next, _ = s.store.ListUnifiedInboxPage(before, listLimit)
+	} else if folder != nil {
+		msgs, next, _ = s.store.ListMessagesPage(folder.ID, before, listLimit)
+	}
+	// "" once the scope is exhausted, which is what drops the load-more sentinel.
+	data["NextCursor"] = next
 	// The htmx-swapped list fragment (handleFolder/handleUnified) has no Prefs in
 	// its data; supply them so rows can read badge/favicon prefs and colors. The
 	// full-page path (handleInbox) already set these, so don't re-query there.
@@ -281,18 +291,28 @@ func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	msgs, _ := s.store.ListMessages(f.ID, listLimit)
+	before := r.URL.Query().Get("before")
 	data := map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)}
-	s.fillList(data, f, msgs, false)
-	s.renderPartial(w, "message_list", data)
+	s.fillList(data, f, false, before)
+	s.renderPartial(w, listTemplate(before), data)
 }
 
 // handleUnified renders the "All inboxes" threaded list partial.
 func (s *Server) handleUnified(w http.ResponseWriter, r *http.Request) {
-	msgs, _ := s.store.ListUnifiedInbox(listLimit)
+	before := r.URL.Query().Get("before")
 	data := map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)}
-	s.fillList(data, nil, msgs, true)
-	s.renderPartial(w, "message_list", data)
+	s.fillList(data, nil, true, before)
+	s.renderPartial(w, listTemplate(before), data)
+}
+
+// listTemplate picks the markup a list request wants: the whole section for a
+// fresh render, only the page's rows + the next sentinel when the sentinel is
+// appending page N+1 into a list that is already on screen.
+func listTemplate(before string) string {
+	if before != "" {
+		return "message_page"
+	}
+	return "message_list"
 }
 
 // handleThread renders a whole conversation in the reading pane. The {id} is
