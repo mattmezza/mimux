@@ -344,8 +344,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	if fid != "" {
 		if id, err := strconv.ParseInt(fid, 10, 64); err == nil {
 			if f, _ := s.store.FolderByID(id); f != nil {
-				msgs, _ := s.store.ListMessages(f.ID, listLimit)
-				s.fillList(data, f, msgs, false)
+				s.fillList(data, f, false, "")
 				s.render(w, "inbox", data)
 				return
 			}
@@ -354,11 +353,9 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	// Default landing view: unified inbox when more than one account, the
 	// single account's inbox otherwise.
 	if len(s.cfg.Accounts) > 1 {
-		msgs, _ := s.store.ListUnifiedInbox(listLimit)
-		s.fillList(data, nil, msgs, true)
+		s.fillList(data, nil, true, "")
 	} else if current, _ := s.store.FirstInbox(); current != nil {
-		msgs, _ := s.store.ListMessages(current.ID, listLimit)
-		s.fillList(data, current, msgs, false)
+		s.fillList(data, current, false, "")
 	}
 	s.render(w, "inbox", data)
 }

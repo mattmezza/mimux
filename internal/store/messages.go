@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -89,56 +90,223 @@ func (s *Store) MessageByID(id int64) (*Message, error) {
 	return m, err
 }
 
-// ListMessages returns a folder's messages newest first: the newest limit rows,
-// plus every unread row however old. Without the unread arm an unread message
-// older than the limit-th newest is invisible to the list AND to BuildThreads,
-// so it silently vanishes from the Unread filter and its thread renders short.
-// ponytail: no pagination — a *read* thread member older than the window is
-// still missing from the reading pane. Add real paging (or fetch a thread by
-// its id) when that bites.
+// ListMessages returns a folder's first page of messages, newest first: the
+// newest limit conversations (whole), plus every conversation holding an unread
+// message however old. Without the unread arm an unread message older than the
+// limit-th newest is invisible to the list AND to BuildThreads, so it silently
+// vanishes from the Unread filter and its thread renders short.
 func (s *Store) ListMessages(folderID int64, limit int) ([]Message, error) {
-	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
-		WHERE folder_id = ? AND (is_read = 0 OR id IN (
-			SELECT id FROM messages WHERE folder_id = ? ORDER BY date DESC LIMIT ?))
-		ORDER BY date DESC`, folderID, folderID, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = rows.Close() }()
-	var out []Message
-	for rows.Next() {
-		m, err := scanMessage(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *m)
-	}
-	return out, rows.Err()
+	msgs, _, err := s.ListMessagesPage(folderID, "", limit)
+	return msgs, err
 }
 
-// ListUnifiedInbox returns messages from every account's inbox folder, newest
-// first — the unified "All inboxes" view. Same window rule as ListMessages:
-// newest limit rows plus every unread row, so the list can never show fewer
-// unread threads than the tab badge counts.
+// ListMessagesPage is ListMessages one page at a time — see listPage.
+func (s *Store) ListMessagesPage(folderID int64, before string, limit int) ([]Message, string, error) {
+	return s.listPage(`m.folder_id = ?`, []any{folderID}, before, limit)
+}
+
+// ListUnifiedInbox returns the first page of every account's inbox folder,
+// newest first — the unified "All inboxes" view. Same rule as ListMessages, so
+// the list can never show fewer unread threads than the tab badge counts.
 func (s *Store) ListUnifiedInbox(limit int) ([]Message, error) {
-	const inboxes = `folder_id IN (SELECT id FROM folders WHERE special_use = 'inbox')`
-	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
-		WHERE `+inboxes+` AND (is_read = 0 OR id IN (
-			SELECT id FROM messages WHERE `+inboxes+` ORDER BY date DESC LIMIT ?))
-		ORDER BY date DESC`, limit)
+	msgs, _, err := s.ListUnifiedInboxPage("", limit)
+	return msgs, err
+}
+
+// ListUnifiedInboxPage is ListUnifiedInbox one page at a time — see listPage.
+func (s *Store) ListUnifiedInboxPage(before string, limit int) ([]Message, string, error) {
+	return s.listPage(`f.special_use = 'inbox'`, nil, before, limit)
+}
+
+// listPage returns one page of a list scope, newest first, paged by
+// CONVERSATION rather than by row: a page holds every message of the
+// conversations whose newest message falls in its band, so a page boundary can
+// never cut a thread in half — LIMIT/OFFSET on date would hand BuildThreads the
+// younger half of a conversation on one page and the older half on the next,
+// rendering it as two half-rows.
+//
+// before is the opaque cursor the previous page returned ("" starts at the top);
+// next is "" once the scope is exhausted, which is what makes the list's
+// load-more sentinel disappear. It is a (date, id) pair rather than an offset
+// because the list mutates under the user constantly — a sync inserts at the
+// top, archive/delete removes in the middle — and an offset skips and
+// duplicates rows across exactly that churn.
+//
+// ponytail: one union-find pass over the scope's threading columns per page
+// fetch — the same scan ConversationSizes already runs per render. Persist a
+// thread id column if the store ever outgrows that. A page is limit
+// CONVERSATIONS, so it is only as bounded as they are: one pathological
+// conversation (a mailing list where every message References the same root)
+// pulls all of its members into one page. Cap the members per conversation to
+// the newest few if that ever shows up.
+func (s *Store) listPage(where string, args []any, before string, limit int) ([]Message, string, error) {
+	rows, err := s.conversationRows(where, args...)
+	if err != nil {
+		return nil, "", err
+	}
+	// Fold the rows into conversations: member ids, the newest member (what the
+	// list sorts and pages on) and whether anything in there is unread.
+	type conv struct {
+		key    string // "<date>_<id>" of the newest member: sort key and cursor
+		unread bool
+		ids    []int64
+	}
+	byConv := map[string]*conv{}
+	order := make([]*conv, 0, len(rows))
+	for _, r := range rows {
+		c := byConv[r.Conv]
+		if c == nil {
+			c = &conv{}
+			byConv[r.Conv] = c
+			order = append(order, c)
+		}
+		c.ids = append(c.ids, r.ID)
+		c.unread = c.unread || !r.Read
+		// Dates are stored as UTC RFC3339 (fixed width), so they sort
+		// lexicographically and the id merely breaks ties: the whole cursor is a
+		// plain string compare, in Go and in the URL alike.
+		if k := r.Date + "_" + strconv.FormatInt(r.ID, 10); k > c.key {
+			c.key = k
+		}
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i].key > order[j].key })
+
+	var ids []int64
+	next, n, more := "", 0, false
+	for _, c := range order {
+		if before != "" && (c.key >= before || c.unread) {
+			continue // already delivered: newer than the cursor, or unread on page one
+		}
+		if n < limit {
+			ids = append(ids, c.ids...)
+			next = c.key
+			n++
+			continue
+		}
+		if before == "" && c.unread {
+			// Page one keeps every unread conversation, however old — the window
+			// rule ListMessages has always promised. Keep sweeping for more of
+			// them rather than breaking out here.
+			ids = append(ids, c.ids...)
+			continue
+		}
+		more = true
+		if before != "" {
+			break // later pages have no unread tail to sweep up
+		}
+	}
+	if !more { // nothing left below this page: the sentinel must go away
+		next = ""
+	}
+	if len(ids) == 0 {
+		return nil, "", nil
+	}
+	in := make([]string, len(ids))
+	for i, id := range ids {
+		in[i] = strconv.FormatInt(id, 10)
+	}
+	// #nosec G202 -- the interpolated ids are int64 primary keys just read out of
+	// this same table, never user input.
+	msgRows, err := s.DB.Query(`SELECT ` + messageCols + ` FROM messages
+		WHERE id IN (` + strings.Join(in, ",") + `) ORDER BY date DESC`)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = msgRows.Close() }()
+	var out []Message
+	for msgRows.Next() {
+		m, err := scanMessage(msgRows)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, *m)
+	}
+	return out, next, msgRows.Err()
+}
+
+// convRow is one message row's threading facts — enough to group a scope into
+// conversations without loading whole messages.
+type convRow struct {
+	ID      int64
+	Account string
+	Date    string // stored UTC RFC3339, so it sorts as a plain string
+	Read    bool
+	Key     string // this row's own grouping key: its Message-ID, or a row token
+	Conv    string // the conversation it landed in (its union-find root)
+}
+
+// conversationRows groups the messages matching where (a fragment over
+// `messages m JOIN folders f`) into conversations with a union-find over
+// Message-ID/References: the same closure ThreadMessages walks, but once for
+// the whole scope instead of once per row. Coarser than BuildThreads' JWZ pass
+// and deliberately so — a page cut on these groups can never split a thread the
+// finer grouping would keep together.
+//
+// The join is what drops rows orphaned by a deleted folder (e.g. an account
+// renamed in config.toml): they are invisible to the reading pane, so they must
+// stay invisible to the list and to the size count too.
+func (s *Store) conversationRows(where string, args ...any) ([]convRow, error) {
+	// #nosec G202 -- where is a fixed fragment from this package; every value is bound.
+	rows, err := s.DB.Query(`SELECT m.id, m.account, m.date, m.is_read, m.message_id, m.refs, m.in_reply_to
+		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE `+where, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
-	var out []Message
+
+	parent := map[string]string{}
+	var find func(string) string
+	find = func(k string) string {
+		p, ok := parent[k]
+		if !ok {
+			parent[k] = k
+			return k
+		}
+		if p == k {
+			return k
+		}
+		r := find(p)
+		parent[k] = r
+		return r
+	}
+	union := func(a, b string) {
+		ra, rb := find(a), find(b)
+		if ra != rb {
+			parent[ra] = rb
+		}
+	}
+
+	var out []convRow
 	for rows.Next() {
-		m, err := scanMessage(rows)
-		if err != nil {
+		var r convRow
+		var msgID, refs, inReplyTo string
+		if err := rows.Scan(&r.ID, &r.Account, &r.Date, &r.Read, &msgID, &refs, &inReplyTo); err != nil {
 			return nil, err
 		}
-		out = append(out, *m)
+		// Grouping runs on the bare Message-ID (ThreadMessages' closure is
+		// deliberately not account-scoped); callers scope the members they count.
+		r.Key = msgID
+		if msgID == "" { // nothing to dedup or link on: stands alone, like BuildThreads
+			r.Key = "\x00row\x00" + strconv.FormatInt(r.ID, 10)
+		}
+		find(r.Key)
+		refIDs := splitIDs(refs)
+		if len(refIDs) == 0 {
+			refIDs = splitIDs(inReplyTo)
+		}
+		for _, rid := range refIDs {
+			union(r.Key, rid)
+		}
+		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Roots only settle once every union is in.
+	for i := range out {
+		out[i].Conv = find(out[i].Key)
+	}
+	return out, nil
 }
 
 // ThreadMessages returns every message of seed's conversation, across ALL
@@ -231,85 +399,34 @@ func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 // list row. The list itself is inbox-scoped and windowed, so a Thread built
 // from it only counts its inbox members (a Sent reply is invisible to it).
 //
-// One projection of the threading columns for every row, then a union-find over
-// Message-ID/References in Go: the same closure ThreadMessages walks, but once
-// for the whole store instead of once per visible row (~150 queries a render).
-// Sizes count distinct (account, message_id) pairs, so Gmail's INBOX/All
-// Mail/Important copies of one message collapse the way ThreadMessages
-// dedups them, while the same newsletter in two accounts stays two messages.
+// One conversationRows pass over the whole store — the same grouping the list's
+// paging runs, once for every row instead of once per visible row (~150 queries
+// a render). Sizes count distinct (account, message_id) pairs, so Gmail's
+// INBOX/All Mail/Important copies of one message collapse the way
+// ThreadMessages dedups them, while the same newsletter in two accounts stays
+// two messages.
 //
 // ponytail: full table scan per list render — trivial at a few thousand rows
-// (five small columns, no joins). Cache it keyed on the sync generation, or
+// (five small columns, one join). Cache it keyed on the sync generation, or
 // persist a thread id column, if the store ever grows past that.
 func (s *Store) ConversationSizes() (map[int64]int, error) {
-	// JOIN folders like ThreadMessages does: rows orphaned by a deleted folder
-	// (e.g. an account renamed in config.toml) are invisible to the reading pane,
-	// so they must not inflate the list row's count either.
-	rows, err := s.DB.Query(`SELECT m.id, m.account, m.message_id, m.refs, m.in_reply_to
-		FROM messages m JOIN folders f ON f.id = m.folder_id`)
+	rows, err := s.conversationRows(`1 = 1`)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-
-	parent := map[string]string{}
-	var find func(string) string
-	find = func(k string) string {
-		p, ok := parent[k]
-		if !ok {
-			parent[k] = k
-			return k
-		}
-		if p == k {
-			return k
-		}
-		r := find(p)
-		parent[k] = r
-		return r
-	}
-	union := func(a, b string) {
-		ra, rb := find(a), find(b)
-		if ra != rb {
-			parent[ra] = rb
-		}
-	}
-
-	// Grouping runs on the bare Message-ID (ThreadMessages' closure is
-	// deliberately not account-scoped); the counted member is (account, id).
-	rowKey := map[int64]string{}
-	members := map[string]string{} // account\x00message_id -> its grouping key
-	for rows.Next() {
-		var id int64
-		var account, msgID, refs, inReplyTo string
-		if err := rows.Scan(&id, &account, &msgID, &refs, &inReplyTo); err != nil {
-			return nil, err
-		}
-		key := msgID
-		if msgID == "" { // nothing to dedup or link on: stands alone, like BuildThreads
-			key = "\x00row\x00" + strconv.FormatInt(id, 10)
-		}
-		find(key)
-		members[account+"\x00"+key] = key
-		rowKey[id] = key
-		refIDs := splitIDs(refs)
-		if len(refIDs) == 0 {
-			refIDs = splitIDs(inReplyTo)
-		}
-		for _, rid := range refIDs {
-			union(key, rid)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
 	size := map[string]int{}
-	for _, k := range members {
-		size[find(k)]++
+	counted := map[string]bool{} // account\x00grouping-key: one message, however many copies
+	for _, r := range rows {
+		mk := r.Account + "\x00" + r.Key
+		if counted[mk] {
+			continue
+		}
+		counted[mk] = true
+		size[r.Conv]++
 	}
-	out := make(map[int64]int, len(rowKey))
-	for id, k := range rowKey {
-		out[id] = size[find(k)]
+	out := make(map[int64]int, len(rows))
+	for _, r := range rows {
+		out[r.ID] = size[r.Conv]
 	}
 	return out, nil
 }

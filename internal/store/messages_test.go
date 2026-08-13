@@ -82,6 +82,98 @@ func TestThreadMessagesClosure(t *testing.T) {
 	}
 }
 
+// TestListMessagesPage: the list pages by conversation, so the three ways
+// row-based paging goes wrong can't happen — a message repeated on two pages, a
+// conversation cut in half by the boundary (BuildThreads would render it as two
+// half-rows), and a message arriving between two fetches skipping a row the way
+// LIMIT/OFFSET does.
+func TestListMessagesPage(t *testing.T) {
+	s := open(t)
+	inbox, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	day := func(d int) time.Time { return time.Date(2026, 7, d, 0, 0, 0, 0, time.UTC) }
+	// Read: page one carries every unread conversation however old, which would
+	// leave nothing for the later pages to hold.
+	put := func(uid uint32, msgID, refs string, d int) int64 {
+		if err := s.UpsertMessage(&Message{Account: "A", FolderID: inbox, UID: uid, MessageID: msgID,
+			Refs: refs, Subject: "Switching your API", Date: day(d), IsRead: true}); err != nil {
+			t.Fatal(err)
+		}
+		m, err := s.MessageByFolderUID(inbox, uid)
+		if err != nil || m == nil {
+			t.Fatalf("message %d missing: %v", uid, err)
+		}
+		return m.ID
+	}
+	// Five conversations, newest member first: a(20), b(19 and 5 — the straddler
+	// a row-based page boundary would cut), c(18), d(6), e(4).
+	a := put(1, "a@x", "", 20)
+	bOld := put(2, "b1@x", "", 5)
+	bNew := put(3, "b2@x", "b1@x", 19)
+	c := put(4, "c@x", "", 18)
+	d := put(5, "d@x", "", 6)
+	e := put(6, "e@x", "", 4)
+
+	page := func(before string) ([]int64, string) {
+		t.Helper()
+		msgs, next, err := s.ListMessagesPage(inbox, before, 2) // 2 conversations a page
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := make([]int64, 0, len(msgs))
+		for _, m := range msgs {
+			ids = append(ids, m.ID)
+		}
+		return ids, next
+	}
+	has := func(ids []int64, id int64) bool {
+		for _, got := range ids {
+			if got == id {
+				return true
+			}
+		}
+		return false
+	}
+
+	p1, cur1 := page("")
+	if !has(p1, bNew) || !has(p1, bOld) {
+		t.Fatalf("conversation split across the page boundary: page 1 = %v, want both %d and %d", p1, bNew, bOld)
+	}
+	if !has(p1, a) || len(p1) != 3 {
+		t.Fatalf("page 1 = %v, want exactly the two newest conversations (%d + %d,%d)", p1, a, bNew, bOld)
+	}
+	if cur1 == "" {
+		t.Fatal("page 1 handed out no cursor, so the list can never reach page 2")
+	}
+
+	// A message arriving between the two fetches must not push a row past the
+	// cursor and out of sight — the failure mode LIMIT/OFFSET has.
+	put(7, "new@x", "", 30)
+
+	p2, cur2 := page(cur1)
+	if len(p2) != 2 || !has(p2, c) || !has(p2, d) {
+		t.Fatalf("page 2 = %v, want exactly %d and %d", p2, c, d)
+	}
+	p3, cur3 := page(cur2)
+	if len(p3) != 1 || !has(p3, e) {
+		t.Fatalf("page 3 = %v, want just %d", p3, e)
+	}
+	if cur3 != "" {
+		t.Errorf("last page still offers a cursor (%q): the load-more sentinel would never disappear", cur3)
+	}
+	seen := map[int64]bool{}
+	for _, ids := range [][]int64{p1, p2, p3} {
+		for _, id := range ids {
+			if seen[id] {
+				t.Errorf("message %d rendered on two pages", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != 6 { // the day-30 arrival belongs to page one, which is already on screen
+		t.Errorf("pages covered %d of the 6 stored messages: %v", len(seen), seen)
+	}
+}
+
 // TestConversationSizes: a list row must show the WHOLE conversation's size the
 // way gmail.com does — the Sent reply counts, Gmail's All Mail/Important copies
 // of one message do not — even though the list itself only ever sees the inbox

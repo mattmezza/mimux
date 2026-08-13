@@ -280,6 +280,21 @@ document.addEventListener("htmx:afterSettle", (e) => {
     btn.firstElementChild.classList.add("rotate-90");
   });
 });
+// A page appended by the #list-more sentinel can, in one race, repeat a row the
+// first page already showed: page one carries every unread conversation however
+// old, and later pages skip those — but a conversation read since page one
+// rendered is no longer skipped, so it arrives a second time. Two <li>s with one
+// id breaks every #msg-<id> htmx target in the list, so drop the late copy and
+// keep the one already on screen (it holds the selection). A whole-list refresh
+// can't produce this: it replaces the list outright, back at page one.
+document.addEventListener("htmx:afterSettle", (e) => {
+  if (!e.target?.closest?.("#message-list-items")) return;
+  const seen = new Set();
+  document.querySelectorAll("#message-list-items > li[id]").forEach((li) => {
+    if (seen.has(li.id)) li.remove();
+    else seen.add(li.id);
+  });
+});
 document.addEventListener("htmx:afterSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
   syncSearchFolder();
