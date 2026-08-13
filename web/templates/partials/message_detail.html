@@ -38,7 +38,7 @@
           {{if $m.ToAddresses}}<div class="truncate" title="{{$m.ToAddresses}}"><span class="text-zinc-500">To</span> {{$m.ToAddresses}}</div>{{end}}
           {{if $m.CcAddresses}}<div class="truncate" title="{{$m.CcAddresses}}"><span class="text-zinc-500">Cc</span> {{$m.CcAddresses}}</div>{{end}}
           {{with receivedAlias $m.Account $m.ToAddresses $m.CcAddresses}}<div class="truncate"><span class="text-zinc-500">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
-          {{with messageLabels $m.Labels}}<div class="flex flex-wrap gap-1 pt-0.5">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}
+          {{template "label_pills" (dict "M" $m "Known" $.Known)}}
           <div class="flex items-center gap-2 flex-wrap text-zinc-500">
             <span>{{$m.Date.Format "Mon, 2 Jan 2006 15:04"}}</span>
             {{if .Unsub.Kind}}
@@ -52,6 +52,7 @@
   </div>
   {{if .Blocked}}{{template "ext_banner" (dict "ID" $m.ID "Scope" "#message-detail")}}{{end}}
   {{if .TranslateEnabled}}{{template "translate_bar" .}}{{template "translate_js" .}}{{end}}
+  {{template "summary_bar" .}}{{template "summary_js" .}}
   {{if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
   {{/* Calendar invite card. Always lazy-loaded — whether a message carries an
        inline text/calendar part is only known after parsing its body; the
@@ -176,6 +177,13 @@
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
   {{if $menu}}<span>Translate</span>{{end}}
+</button>
+{{else if eq .ID "summarize"}}
+<button type="button" title="Summarize" aria-label="Summarize"
+  onclick="smSummarize(document.querySelector('#message-detail [data-summary-bar]'), {{$m.ID}}, '')"
+  class="{{$btn}} hover:text-indigo-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5M17.25 12l3 3-3 3"/></svg>
+  {{if $menu}}<span>Summarize</span>{{end}}
 </button>
 {{else if eq .ID "refetch"}}
 <button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"

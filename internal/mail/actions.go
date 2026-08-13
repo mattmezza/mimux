@@ -117,6 +117,31 @@ func (m *Manager) storeFlag(ctx context.Context, msg *store.Message, flag imap.F
 	})
 }
 
+// SetLabel adds (add) or removes a user label on a message and persists the
+// new space-joined value, updating msg in place. It is the one place labels
+// are written — the reading pane, the row menu and the "label" filter action
+// all come through here.
+//
+// ponytail: local-only, no server round-trip. Unlike \Seen/\Flagged there is
+// no cheap IMAP call to make: go-imap/v2 beta.8 (newest tag, and upstream
+// master too) can neither FETCH nor STORE Gmail's X-GM-LABELS — its encoders
+// reject the unknown atom and the response parser errors on it, with no raw
+// command escape hatch. So a label applied here never reaches gmail.com and a
+// label applied in gmail.com never reaches here. Give this the storeFlag
+// treatment (an a.submit STORE, backgrounded by the caller) the moment the
+// library ships Gmail-extension support.
+func (m *Manager) SetLabel(msg *store.Message, label string, add bool) error {
+	labels := RemoveLabel(msg.Labels, label)
+	if add {
+		labels = AddLabel(msg.Labels, label)
+	}
+	if labels == msg.Labels {
+		return nil
+	}
+	msg.Labels = labels
+	return m.st.SetLabels(msg.ID, labels)
+}
+
 // Move relocates a message to the account's folder with the given special-use
 // role (trash/archive/spam), via MOVE or COPY+\Deleted+EXPUNGE fallback.
 func (m *Manager) Move(ctx context.Context, msg *store.Message, targetSpecial string) error {

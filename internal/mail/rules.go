@@ -53,9 +53,7 @@ func (a *account) runRules(ctx context.Context, folderID int64, uid uint32) {
 	}
 }
 
-// applyAction runs a single filter action against msg. label is not
-// implemented yet (needs Gmail label support, phase 4) — it's logged and
-// skipped rather than treated as an error.
+// applyAction runs a single filter action against msg.
 func (m *Manager) applyAction(ctx context.Context, msg *store.Message, act filter.Action) error {
 	switch act.Type {
 	case filter.ActionMarkRead:
@@ -73,13 +71,9 @@ func (m *Manager) applyAction(ctx context.Context, msg *store.Message, act filte
 	case filter.ActionForward:
 		return m.forwardMessage(ctx, msg, act.Arg)
 	case filter.ActionLabel:
-		// ponytail: go-imap/v2 beta.8 can neither request nor STORE the Gmail
-		// X-GM-LABELS extension item (its FETCH/STORE encoders reject unknown
-		// atoms and the response parser errors on them), so applying a Gmail
-		// label from a filter isn't wired. Logged+skipped for every provider;
-		// implement once the library ships Gmail-extension support.
-		slog.Info("filter: label action unsupported by the IMAP client; skipping", "arg", act.Arg)
-		return nil
+		// Same write path (and the same IMAP-push gap) as labelling by hand
+		// from the reading pane — see SetLabel.
+		return m.SetLabel(msg, act.Arg, true)
 	default:
 		return fmt.Errorf("filter: unknown action %q", act.Type)
 	}

@@ -1,0 +1,56 @@
+{{/* AI summary UI, shaped like the translate bar: summary_bar is the slim strip
+     above the iframe, empty (and hidden) until a summary is asked for;
+     summary_js holds the one helper, included once per reading pane. The strip
+     swaps itself for summary_view, which the server renders from the cache or a
+     fresh OpenRouter call — so the detail chips are just another request. */}}
+
+{{define "summary_bar"}}<div data-summary-bar class="shrink-0 empty:hidden"></div>{{end}}
+
+{{define "summary_js"}}
+<script>
+if (!window.smSummarize) {
+  // Load (or reload, at another level) the summary of message id into bar.
+  // level "" lets the server apply the configured default.
+  window.smSummarize = function (bar, id, level) {
+    if (!bar) return;
+    bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b bg-zinc-800/60 border-zinc-800 text-zinc-400";
+    bar.textContent = "Summarizing…";
+    htmx.ajax("GET", "/messages/" + id + "/summary" + (level ? "?level=" + level : ""),
+      { target: bar, swap: "outerHTML" });
+  };
+
+  window.smSummaryDismiss = function (bar) {
+    bar.className = "shrink-0 empty:hidden";
+    bar.textContent = "";
+  };
+}
+</script>
+{{end}}
+
+{{/* summary_view is the loaded strip. Context: dict ID=<message id>
+     Level=<current level> and either Summary(+Truncated) or Err. */}}
+{{define "summary_view"}}
+<div data-summary-bar class="shrink-0 flex items-start gap-3 px-4 py-2 text-xs border-b
+  {{if .Err}}bg-red-500/10 border-red-500/20 text-red-300{{else}}bg-indigo-500/10 border-indigo-500/20 text-indigo-300{{end}}">
+  {{if .Err}}
+  <span class="flex-1">{{.Err}}</span>
+  {{else}}
+  <div class="flex-1 min-w-0 space-y-1">
+    <div class="whitespace-pre-line break-words">{{.Summary}}</div>
+    {{if .Truncated}}<div class="text-indigo-300/60">Summary of the beginning of this message — it was too long to send in full.</div>{{end}}
+  </div>
+  <div class="shrink-0 flex items-center gap-1">
+    {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "oneline" "Label" "1 line")}}
+    {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "brief" "Label" "Brief")}}
+    {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "detailed" "Label" "Detailed")}}
+  </div>
+  {{end}}
+  <button type="button" title="Dismiss" aria-label="Dismiss summary" class="shrink-0 underline hover:opacity-80"
+    onclick="smSummaryDismiss(this.closest('[data-summary-bar]'))">Dismiss</button>
+</div>
+{{end}}
+
+{{define "summary_chip"}}
+<button type="button" class="rounded px-1.5 py-0.5 {{if eq .Cur .Level}}bg-indigo-500/25 text-indigo-200{{else}}text-indigo-300/70 hover:bg-indigo-500/15{{end}}"
+  onclick="smSummarize(this.closest('[data-summary-bar]'), {{.ID}}, '{{.Level}}')">{{.Label}}</button>
+{{end}}

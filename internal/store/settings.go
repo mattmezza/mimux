@@ -56,6 +56,24 @@ func ValidRowAction(v, def string) string {
 	return def
 }
 
+// AllSummaryLevels lists the AI summary detail levels — the Settings default
+// and the segmented control on the summary strip pick from the same list.
+var AllSummaryLevels = []struct{ ID, Label string }{
+	{"oneline", "One line"},
+	{"brief", "Brief"},
+	{"detailed", "Detailed"},
+}
+
+// ValidSummaryLevel returns v if it names a summary level, else def.
+func ValidSummaryLevel(v, def string) string {
+	for _, l := range AllSummaryLevels {
+		if l.ID == v {
+			return v
+		}
+	}
+	return def
+}
+
 // AllQuickActions lists every message action the user can place in the action
 // bar, in the "⋯" menu, or hide entirely — in their default display order.
 var AllQuickActions = []struct{ ID, Label string }{
@@ -67,6 +85,7 @@ var AllQuickActions = []struct{ ID, Label string }{
 	{"star", "Star / unstar"},
 	{"dark", "Toggle dark/light message"},
 	{"translate", "Translate"},
+	{"summarize", "Summarize (AI)"},
 	{"refetch", "Re-fetch from server"},
 	{"spam", "Mark as spam"},
 	{"delete", "Delete"},
@@ -333,11 +352,13 @@ type AppConfig struct {
 	AIBrevity       string // concise|normal|detailed, default normal
 	AIReplyOptions  int    // reply directions to generate (2-5), default 3
 	AILanguage      string // "auto" or a fixed language name, default auto
+	AISummaryLevel  string // default detail level for Summarize; see AllSummaryLevels
 }
 
 func (s *Store) GetAppConfig() AppConfig {
 	c := AppConfig{TranslateTarget: "en", AIModel: "anthropic/claude-sonnet-4-6",
-		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto"}
+		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto",
+		AISummaryLevel: "brief"}
 	if v, ok := s.getSetting("translate_api_key"); ok {
 		c.TranslateAPIKey = v
 	}
@@ -364,6 +385,9 @@ func (s *Store) GetAppConfig() AppConfig {
 	if v, ok := s.getSetting("ai_language"); ok && v != "" {
 		c.AILanguage = v
 	}
+	if v, ok := s.getSetting("ai_summary_level"); ok {
+		c.AISummaryLevel = ValidSummaryLevel(v, c.AISummaryLevel)
+	}
 	return c
 }
 
@@ -386,6 +410,7 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 	if c.AILanguage == "" {
 		c.AILanguage = "auto"
 	}
+	c.AISummaryLevel = ValidSummaryLevel(c.AISummaryLevel, "brief")
 	kv := map[string]string{
 		"translate_api_key": c.TranslateAPIKey,
 		"translate_target":  c.TranslateTarget,
@@ -395,6 +420,7 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		"ai_brevity":        c.AIBrevity,
 		"ai_reply_options":  strconv.Itoa(c.AIReplyOptions),
 		"ai_language":       c.AILanguage,
+		"ai_summary_level":  c.AISummaryLevel,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

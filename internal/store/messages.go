@@ -34,7 +34,11 @@ type Message struct {
 	// command escape hatch. thread.go already prefers this column, so threading
 	// becomes Gmail-exact the moment the library ships X-GM-THRID.
 	GmThrID string
-	Labels  string // space-joined Gmail labels, "" for non-Gmail
+	// Labels is the space-joined label set: Gmail's X-GM-LABELS when sync can
+	// ever fetch them, plus the labels the user applies here (mail.AddLabel /
+	// mail.RemoveLabel, which keep the "_ means space" token convention
+	// mail.MessageLabels reverses on display). One column, one code path.
+	Labels string
 }
 
 // UpsertMessage inserts a message or, on UID conflict, updates the mutable
@@ -42,6 +46,9 @@ type Message struct {
 // so a re-fetch heals rows written before the INTERNALDATE fallback landed,
 // where a missing Date: header had been now()-stamped and floated old mail to
 // the top; for correct rows excluded.date equals the stored value (a no-op).
+// labels only overwrites when the incoming value is non-empty: user-applied
+// labels live in that same column and sync hands us "" for every message it
+// can't read X-GM-LABELS for (today: all of them), which would wipe them.
 func (s *Store) UpsertMessage(m *Message) error {
 	_, err := s.DB.Exec(`
 		INSERT INTO messages
@@ -50,7 +57,8 @@ func (s *Store) UpsertMessage(m *Message) error {
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(folder_id, uid) DO UPDATE SET
 			date = excluded.date, is_read = excluded.is_read, is_starred = excluded.is_starred,
-			has_attachment = excluded.has_attachment, snippet = excluded.snippet, labels = excluded.labels`,
+			has_attachment = excluded.has_attachment, snippet = excluded.snippet,
+			labels = CASE WHEN excluded.labels = '' THEN labels ELSE excluded.labels END`,
 		m.Account, m.FolderID, m.UID, m.MessageID, m.InReplyTo, m.Refs, m.FromName, m.FromAddress,
 		m.ToAddresses, m.CcAddresses, m.Subject, m.Date.UTC().Format(time.RFC3339), m.Size,
 		b2i(m.IsRead), b2i(m.IsStarred), b2i(m.HasAttachment), m.Snippet, m.GmThrID, m.Labels)
@@ -318,10 +326,32 @@ func splitIDs(s string) []string {
 	return out
 }
 
-// SetLabels stores the space-joined Gmail label set for a message.
+// SetLabels stores the space-joined label set for a message.
 func (s *Store) SetLabels(id int64, labels string) error {
 	_, err := s.DB.Exec(`UPDATE messages SET labels = ? WHERE id = ?`, labels, id)
 	return err
+}
+
+// DistinctLabels returns every distinct non-empty labels column value — the
+// raw space-joined rows, since splitting them into individual labels is
+// mail.AllLabels' job (store can't import mail). Feeds the add-label
+// autocomplete. ponytail: one DISTINCT over a short column, no index; add one
+// if the message table ever gets big enough for it to show.
+func (s *Store) DistinctLabels() ([]string, error) {
+	rows, err := s.DB.Query(`SELECT DISTINCT labels FROM messages WHERE labels != ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []string
+	for rows.Next() {
+		var l string
+		if err := rows.Scan(&l); err != nil {
+			return nil, err
+		}
+		out = append(out, l)
+	}
+	return out, rows.Err()
 }
 
 // FolderUIDs returns the set of UIDs currently stored for a folder, for

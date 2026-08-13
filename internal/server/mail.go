@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mattmezza/sm/internal/ai"
 	"github.com/mattmezza/sm/internal/auth"
 	"github.com/mattmezza/sm/internal/config"
 	"github.com/mattmezza/sm/internal/mail"
@@ -35,6 +36,7 @@ var templateFuncs = template.FuncMap{
 	"folderLabel":    folderLabel,
 	"folderTree":     folderTree,
 	"messageLabels":  mail.MessageLabels,
+	"labelToken":     mail.LabelToken,
 	"dict":           dict,
 	"highlight":      highlight,
 	"identities":     identities,
@@ -85,6 +87,9 @@ func (s *Server) quickActionLists(pref string, supported map[string]bool) (bar, 
 		out := ids[:0]
 		for _, id := range ids {
 			if id == "translate" && s.store.GetAppConfig().TranslateAPIKey == "" {
+				continue
+			}
+			if id == "summarize" && s.store.GetAppConfig().AIKey == "" {
 				continue
 			}
 			if supported != nil && !supported[id] {
@@ -365,6 +370,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"QABar":            qaBar,
 		"QAMenu":           qaMenu,
 		"QAMsg":            threadMsgActions(qaBar, qaMenu, translateOn),
+		"Known":            s.knownLabels(),
 	})
 }
 
@@ -446,6 +452,7 @@ func (s *Server) handleRowMenu(w http.ResponseWriter, r *http.Request) {
 		"Folders":       folders,
 		"CurrentFolder": msg.FolderID,
 		"QAMenu":        append(append([]string{}, bar...), menu...),
+		"Known":         s.knownLabels(),
 	}
 	if r.URL.Query().Get("t") != "" {
 		if t := s.conversationOf(msg.ID); t != nil && t.Count > 1 {
@@ -500,6 +507,7 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 		"QABar":            qaBar,
 		"QAMenu":           qaMenu,
 		"Unsub":            unsub,
+		"Known":            s.knownLabels(),
 	})
 }
 
@@ -557,6 +565,61 @@ func (s *Server) translatedBody(ctx context.Context, body string) string {
 		slog.Error("translate: cache save", "err", err)
 	}
 	return out
+}
+
+// handleMessageSummary renders the AI summary strip above the body iframe.
+// ?level= (oneline|brief|detailed) overrides the configured default, so the
+// strip's segmented control can re-request another level. Summaries are cached
+// per message+level, so re-opening a message — or coming back to a level
+// already generated — never bills the user twice. Failures render into the
+// strip instead of failing the swap.
+func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	cfg := s.store.GetAppConfig()
+	level := store.ValidSummaryLevel(r.URL.Query().Get("level"), cfg.AISummaryLevel)
+	view := map[string]any{"ID": msg.ID, "Level": level}
+	key := store.SummaryCacheKey(msg.ID, level)
+	if sum, truncated, ok, err := s.store.SummaryCached(key); err == nil && ok {
+		view["Summary"], view["Truncated"] = sum, truncated
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	body, err := s.mail.PlainText(r.Context(), msg)
+	if err != nil || strings.TrimSpace(body) == "" {
+		slog.Error("summarize: body", "id", msg.ID, "err", err)
+		view["Err"] = "Couldn't read this message's text."
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	sum, truncated, err := s.aiClient().Summarize(r.Context(), level, body)
+	if err != nil {
+		slog.Error("ai summarize", "err", err)
+		view["Err"] = ai.ErrMessage(err)
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	if err := s.store.SaveSummary(key, sum, truncated); err != nil {
+		slog.Error("summarize: cache save", "err", err)
+	}
+	view["Summary"], view["Truncated"] = sum, truncated
+	s.renderPartial(w, "summary_view", view)
+}
+
+// aiClient builds an OpenRouter client from the stored settings. Built per call
+// so a key/model/prefs change in Settings takes effect without a restart.
+func (s *Server) aiClient() *ai.Client {
+	c := s.store.GetAppConfig()
+	cl := ai.NewClient(c.AIKey, c.AIModel)
+	cl.Prefs = ai.Prefs{
+		Tone:         c.AITone,
+		Brevity:      c.AIBrevity,
+		ReplyOptions: c.AIReplyOptions,
+		Language:     c.AILanguage,
+	}
+	return cl
 }
 
 // markBody adds a bare attribute to the document's <html> tag, which the
@@ -784,6 +847,34 @@ func (s *Server) cancelPendingMove(id int64) bool {
 	}
 	delete(s.pending, id)
 	return t.Stop()
+}
+
+// handleLabel adds ("label" form value) or removes (+ "remove=1") a user label
+// on a message and swaps the header's label row back. The write is local and
+// immediate — mail.SetLabel has no server round-trip to defer (see its
+// ponytail note), so there is nothing to background and nothing to undo beyond
+// the pill's own ×.
+func (s *Server) handleLabel(w http.ResponseWriter, r *http.Request) {
+	msg := s.messageFromReq(w, r)
+	if msg == nil {
+		return
+	}
+	if err := s.mail.SetLabel(msg, r.FormValue("label"), r.FormValue("remove") == ""); err != nil {
+		slog.Error("label", "err", err)
+		http.Error(w, "Couldn't save the label.", http.StatusInternalServerError)
+		return
+	}
+	s.renderPartial(w, "label_pills", map[string]any{"M": msg, "Known": s.knownLabels()})
+}
+
+// knownLabels is every label already in use, for the add-label autocomplete.
+func (s *Server) knownLabels() []string {
+	raws, err := s.store.DistinctLabels()
+	if err != nil {
+		slog.Error("label: distinct", "err", err)
+		return nil
+	}
+	return mail.AllLabels(raws)
 }
 
 // handleAllowSender persists the "always load external content" preference; the

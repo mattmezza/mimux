@@ -138,3 +138,41 @@ func TestConversationSizes(t *testing.T) {
 		t.Errorf("size seen from the All Mail copy = %d, want 4", got)
 	}
 }
+
+// TestLabelsSurviveResync: user labels live in the same column sync writes, and
+// sync hands us "" for every message it can't read X-GM-LABELS for (today: all
+// of them). An empty incoming value must not clobber what the user applied.
+func TestLabelsSurviveResync(t *testing.T) {
+	s := open(t)
+	f, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	m := &Message{Account: "A", FolderID: f, UID: 1, Subject: "hi", Date: time.Now().UTC()}
+	if err := s.UpsertMessage(m); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := s.MessageByFolderUID(f, 1)
+	if err := s.SetLabels(stored.ID, "Work Project_X"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertMessage(m); err != nil { // same UID re-synced, Labels still ""
+		t.Fatal(err)
+	}
+	got, err := s.MessageByFolderUID(f, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Labels != "Work Project_X" {
+		t.Fatalf("labels after re-sync = %q, want %q", got.Labels, "Work Project_X")
+	}
+	// A real Gmail label set, once the client can fetch one, still wins.
+	m.Labels = `\Inbox Work`
+	if err := s.UpsertMessage(m); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ = s.MessageByFolderUID(f, 1); got.Labels != `\Inbox Work` {
+		t.Fatalf("server labels not applied: %q", got.Labels)
+	}
+	raws, err := s.DistinctLabels()
+	if err != nil || len(raws) != 1 || raws[0] != `\Inbox Work` {
+		t.Fatalf("DistinctLabels = %v, %v", raws, err)
+	}
+}
