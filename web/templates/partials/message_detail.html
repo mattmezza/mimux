@@ -38,13 +38,13 @@
           {{if $m.ToAddresses}}<div class="truncate" title="{{$m.ToAddresses}}"><span class="text-zinc-500">To</span> {{$m.ToAddresses}}</div>{{end}}
           {{if $m.CcAddresses}}<div class="truncate" title="{{$m.CcAddresses}}"><span class="text-zinc-500">Cc</span> {{$m.CcAddresses}}</div>{{end}}
           {{with receivedAlias $m.Account $m.ToAddresses $m.CcAddresses}}<div class="truncate"><span class="text-zinc-500">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
-          {{template "label_pills" (dict "M" $m "Known" $.Known)}}
           <div class="flex items-center gap-2 flex-wrap text-zinc-500">
             <span>{{$m.Date.Format "Mon, 2 Jan 2006 15:04"}}</span>
             {{if .Unsub.Kind}}
             <button type="button" class="hover:text-red-400 underline decoration-dotted underline-offset-2"
               onclick="document.getElementById('unsub-modal-{{$m.ID}}').hidden=false">Unsubscribe</button>
             {{end}}
+            {{template "label_pills" (dict "M" $m "Known" $.Known)}}
           </div>
         </div>
       </div>
