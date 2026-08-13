@@ -114,6 +114,7 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 		data = make(map[string]any)
 	}
 	data["Version"] = s.version
+	s.appearanceData(data)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "base", data); err != nil {
 		slog.Error("render", "page", page, "err", err)
@@ -133,11 +134,10 @@ func (s *Server) Handler() http.Handler {
 		b, _ := fs.ReadFile(web.FS, "static/js/sw.js")
 		_, _ = w.Write(b)
 	})
-	r.Get("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/manifest+json")
-		b, _ := fs.ReadFile(web.FS, "static/manifest.json")
-		_, _ = w.Write(b)
-	})
+	// Manifest and icon are generated from the stored look settings (and must
+	// stay reachable pre-auth: the login and setup pages show the icon too).
+	r.Get("/manifest.json", s.handleManifest)
+	r.Get("/icon.svg", s.handleIcon)
 
 	r.Get("/setup", s.handleSetupForm)
 	r.Post("/setup", s.handleSetup)
