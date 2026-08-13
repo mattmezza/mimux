@@ -34,6 +34,7 @@
       <div class="mt-1 text-xs text-zinc-500">{{$t.Count}} messages · {{range $i, $p := $t.Participants}}{{if $i}}, {{end}}{{$p}}{{end}}</div>
     </div>
   </div>
+  {{if .TranslateEnabled}}{{template "translate_js" .}}{{end}}
   <div class="flex-1 overflow-y-auto divide-y divide-zinc-800">
     {{/* .Ordered is Thread.Messages in the user's reading order (Settings > Reading); Thread.Messages itself stays oldest-first for RootID/LatestMessage. */}}
     {{range .Ordered}}
@@ -66,12 +67,12 @@
              were blocked is only known once the body is parsed, and we don't want
              to force that fetch for every collapsed message just to check. */}}
         <div hx-get="/messages/{{.ID}}/ext-banner" hx-trigger="revealed" hx-swap="outerHTML"></div>
+        {{if $.TranslateEnabled}}{{template "translate_bar" .}}{{end}}
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
                 onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
         <div class="mt-2 flex items-center gap-1 flex-wrap">
           {{range $.QAMsg}}{{template "qa_btn_m" (dict "ID" . "M" $msg "D" $)}}{{end}}
         </div>
-        <div class="mt-1" data-translate-result></div>
       </div>
     </div>
     {{end}}
@@ -146,7 +147,7 @@
 </button>
 {{else if eq .ID "translate"}}
 <button type="button" title="Translate" aria-label="Translate"
-  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)translateFrame(f,f.closest('[data-thread-body]').querySelector('[data-translate-result]'))"
+  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)smTranslate(f,f.closest('[data-thread-body]').querySelector('[data-translate-bar]'))"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
   {{if $menu}}<span>Translate</span>{{end}}
@@ -224,7 +225,7 @@
 </button>
 {{else if eq .ID "translate"}}
 <button type="button" title="Translate" aria-label="Translate"
-  onclick="translateFrame(this.closest('[data-thread-body]').querySelector('iframe'), this.closest('[data-thread-body]').querySelector('[data-translate-result]'))"
+  onclick="var b=this.closest('[data-thread-body]');smTranslate(b.querySelector('iframe'), b.querySelector('[data-translate-bar]'))"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3.75h7.5M3 5.621a48.474 48.474 0 0 1 6-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m6.334-12.138a24.007 24.007 0 0 1 4.877 8.855M11.667 5.25c1.598 1.058 4.312 1.5 6.833 1.5"/></svg>
 </button>

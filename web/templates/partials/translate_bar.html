@@ -1,0 +1,57 @@
+{{/* Translation UI. There is no separate rendering path: the body iframe is
+     simply re-pointed at /messages/{id}/body?tr=1, which serves the SAME
+     sanitized HTML with only its text nodes translated — layout, images and
+     styling survive. Dropping the param again shows the original.
+
+     translate_bar is the slim strip above the iframe; it stays empty (and
+     hidden) until a translation loads. translate_js holds the two helpers,
+     included once per reading pane. */}}
+
+{{define "translate_bar"}}<div data-translate-bar class="shrink-0 empty:hidden"></div>{{end}}
+
+{{define "translate_js"}}
+<script>
+if (!window.smTranslate) {
+  // Toggle a message body between original and translated, then repaint the bar
+  // once the iframe has loaded. State lives in the iframe URL, nowhere else.
+  window.smTranslate = function (frame, bar) {
+    if (!frame || !bar || !frame.src) return;
+    var u = new URL(frame.src, location.href);
+    var on = u.searchParams.get("tr") !== "1";
+    if (on) { u.searchParams.set("tr", "1"); } else { u.searchParams.delete("tr"); }
+    frame.addEventListener("load", function done() {
+      frame.removeEventListener("load", done);
+      smTranslateBar(frame, bar);
+    });
+    bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b bg-zinc-800/60 border-zinc-800 text-zinc-400";
+    bar.textContent = on ? "Translating…" : "";
+    frame.src = u.pathname + u.search;
+  };
+
+  // The body handler tags <html> with data-sm-lang (translated) or
+  // data-sm-error (translation unavailable — the original is being shown).
+  window.smTranslateBar = function (frame, bar) {
+    var root = null;
+    try { root = frame.contentDocument.documentElement; } catch (e) { /* cross-origin: nothing to show */ }
+    var lang = root && root.dataset.smLang;
+    var failed = root && root.dataset.smError !== undefined;
+    bar.textContent = "";
+    if (!lang && !failed) { bar.className = "shrink-0 empty:hidden"; return; }
+    bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b " +
+      (failed ? "bg-red-500/10 border-red-500/20 text-red-300"
+              : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300");
+    var msg = document.createElement("span");
+    msg.textContent = failed
+      ? "Translation unavailable. Check your Translate API key in Settings."
+      : "Translated from " + lang;
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "underline hover:opacity-80";
+    btn.textContent = failed ? "Dismiss" : "Show original";
+    btn.onclick = function () { smTranslate(frame, bar); };
+    bar.appendChild(msg);
+    bar.appendChild(btn);
+  };
+}
+</script>
+{{end}}

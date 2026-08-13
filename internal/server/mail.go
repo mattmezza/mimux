@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"html"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 	"github.com/mattmezza/sm/internal/config"
 	"github.com/mattmezza/sm/internal/mail"
 	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/sm/internal/translate"
 )
 
 const listLimit = 200
@@ -525,8 +527,44 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#a1a1aa;padding:12px">Could not load this message. The account may be offline.</body>`))
 		return
 	}
+	if r.URL.Query().Get("tr") == "1" {
+		body = s.translatedBody(r.Context(), body)
+	}
 	// #nosec G705 -- body is sanitized by the two-pass sanitizer and served under a strict CSP inside a sandboxed iframe.
 	_, _ = w.Write([]byte(body))
+}
+
+// translatedBody returns the same sanitized document with its human-readable
+// text nodes translated — same markup, images and styling, so the reading pane
+// keeps the real HTML email instead of a plain-text dump. Results are cached by
+// (document, target language) in the existing translations table. Any failure
+// falls back to the original, marked so the pane can show why.
+func (s *Server) translatedBody(ctx context.Context, body string) string {
+	cfg := s.store.GetAppConfig()
+	if cfg.TranslateAPIKey == "" {
+		return markBody(body, "data-sm-error")
+	}
+	key := store.TranslationCacheKey(body, cfg.TranslateTarget)
+	if out, _, ok, err := s.store.TranslationCached(key); err == nil && ok {
+		return out
+	}
+	out, lang, err := translate.NewClient(cfg.TranslateAPIKey, cfg.TranslateTarget).TranslateHTML(ctx, body)
+	if err != nil {
+		slog.Error("translate body", "err", err)
+		return markBody(body, "data-sm-error")
+	}
+	if err := s.store.SaveTranslation(key, out, lang); err != nil {
+		slog.Error("translate: cache save", "err", err)
+	}
+	return out
+}
+
+// markBody adds a bare attribute to the document's <html> tag, which the
+// reading pane reads off contentDocument.documentElement.
+// NOTE: string replace, not a reparse — the document is always our own
+// renderBodyDocument output, whose first tag is a literal "<html>".
+func markBody(body, attr string) string {
+	return strings.Replace(body, "<html>", "<html "+attr+">", 1)
 }
 
 func (s *Server) handleMarkRead(read bool) http.HandlerFunc {
