@@ -377,6 +377,17 @@ html, #message-list { overscroll-behavior-x: contain; }
   transition-delay: 250ms;
 }
 
+/* "Syncing…" pill in the message list header (see the "syncing" partial):
+   shown for two independent, both-truthful reasons — #message-list has a
+   request in flight (any cause: SSE reconnect catch-up, new-mail push, pull-
+   to-refresh — the generic .htmx-indicator rule above, scoped by nesting) or
+   the server confirms an account is actually mid-IMAP-sync (.is-syncing, from
+   its own periodic self-poll). The first covers a sync that started and
+   finished entirely while the tab was backgrounded/disconnected, where the
+   client never got to observe the real "syncing" state — the case that used
+   to make rows silently appear/disappear with no feedback at all. */
+#list-syncing.is-syncing { opacity: 1; }
+
 /* Settings Save button: dim + swap label to "Saving…" while the htmx POST is in
    flight (the class lands on the enclosing form). */
 .htmx-request #settings-save { opacity: .65; pointer-events: none; }
