@@ -22,7 +22,8 @@ func seedConfig(t *testing.T, s *Store) {
 	}
 	months := 12
 	max := 500
-	if err := s.SetAccountSyncOverrides("work", nil, &max, &months); err != nil {
+	bodyCache := 50
+	if err := s.SetAccountSyncOverrides("work", nil, &max, &months, &bodyCache); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.setSetting("ai_api_key", "sk-test"); err != nil {
@@ -112,8 +113,10 @@ func TestConfigRoundTrip(t *testing.T) {
 		t.Errorf("account not restored: %+v", acc)
 	}
 	if acc.SyncIntervalMin != nil || acc.MaxPerSync == nil || *acc.MaxPerSync != 500 ||
-		acc.SyncMonths == nil || *acc.SyncMonths != 12 {
-		t.Errorf("sync overrides not restored: %v %v %v", acc.SyncIntervalMin, acc.MaxPerSync, acc.SyncMonths)
+		acc.SyncMonths == nil || *acc.SyncMonths != 12 ||
+		acc.BodyCache == nil || *acc.BodyCache != 50 {
+		t.Errorf("sync overrides not restored: %v %v %v %v",
+			acc.SyncIntervalMin, acc.MaxPerSync, acc.SyncMonths, acc.BodyCache)
 	}
 	if v, _ := dst.getSetting("ai_api_key"); v != "sk-test" {
 		t.Errorf("setting not restored: %q", v)

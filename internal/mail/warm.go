@@ -25,6 +25,10 @@ import (
 // buffers whole raw messages, so a chunk of N holds N × up to 25MB at once —
 // nothing is waiting on this loop, so it trades that spike for round trips.
 // Raise warmChunk only with a streaming fetch (FetchCommand.Next) behind it.
+// The total is bounded by the body-cache size (Settings → Syncing), not by the
+// synced history: the warmer fills the newest N inbox messages and the same
+// pass prunes everything below them. Other folders cache only what the user
+// opened, and nothing prunes those — human click rate is the bound there.
 const (
 	warmBatch    = 200
 	warmChunk    = 1
@@ -92,17 +96,28 @@ func (a *account) warmSession(ctx context.Context, c *imapclient.Client) error {
 	}
 }
 
-// warmPass caches every uncached inbox body it can, a batch at a time. It stops
-// when a batch caches nothing new, so messages that never resolve (expunged
-// UIDs, unparseable bodies) can't spin the loop.
+// warmPass trims the body cache to its configured size, then caches every
+// uncached body inside it, a batch at a time. It stops when a batch caches
+// nothing new, so messages that never resolve (expunged UIDs, unparseable
+// bodies) can't spin the loop. A cache size of 0 means "off": prune everything
+// and fetch bodies only when the user opens them.
 func (a *account) warmPass(ctx context.Context, c *imapclient.Client) error {
 	inbox, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox")
 	if err != nil || inbox == nil {
 		return nil // not synced yet: the first sync will signal us
 	}
+	_, _, _, cacheSize := a.syncSettings()
+	if n, err := a.m.st.PruneMessageBodies(inbox.ID, cacheSize); err != nil {
+		slog.Debug("body cache prune failed", "account", a.cfg.Name, "err", err)
+	} else if n > 0 {
+		slog.Debug("body cache pruned", "account", a.cfg.Name, "dropped", n, "keep", cacheSize)
+	}
+	if cacheSize <= 0 {
+		return nil
+	}
 	selected := false
 	for ctx.Err() == nil {
-		msgs, err := a.m.st.MessagesWithoutBody(inbox.ID, warmBatch)
+		msgs, err := a.m.st.MessagesWithoutBody(inbox.ID, cacheSize, warmBatch)
 		if err != nil || len(msgs) == 0 {
 			return nil
 		}

@@ -123,7 +123,8 @@ func accountEqual(a, b config.Account) bool {
 		len(a.Aliases) != len(b.Aliases) ||
 		!intPtrEqual(a.SyncIntervalMin, b.SyncIntervalMin) ||
 		!intPtrEqual(a.MaxPerSync, b.MaxPerSync) ||
-		!intPtrEqual(a.SyncMonths, b.SyncMonths) {
+		!intPtrEqual(a.SyncMonths, b.SyncMonths) ||
+		!intPtrEqual(a.BodyCache, b.BodyCache) {
 		return false
 	}
 	for i := range a.Aliases {
@@ -409,16 +410,16 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 }
 
 // syncSettings resolves this account's effective sync-interval/max-per-sync/
-// sync-months: its own override where set (Settings → Syncing, per-account
-// section), else the global Prefs value.
-func (a *account) syncSettings() (intervalMin, maxPerSync, syncMonths int) {
+// sync-months/body-cache: its own override where set (Settings → Syncing,
+// per-account section), else the global Prefs value.
+func (a *account) syncSettings() (intervalMin, maxPerSync, syncMonths, bodyCache int) {
 	return store.EffectiveSyncSettings(a.m.st.GetPrefs(), a.cfg)
 }
 
 // pollInterval is the effective sync cadence (Settings → "Check every N
 // minutes", account override or global), falling back to a 5-minute default.
 func (a *account) pollInterval() time.Duration {
-	if n, _, _ := a.syncSettings(); n > 0 {
+	if n, _, _, _ := a.syncSettings(); n > 0 {
 		return time.Duration(n) * time.Minute
 	}
 	return config.DefaultPollInterval

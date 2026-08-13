@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"strconv"
 	"strings"
+
+	"github.com/mattmezza/sm/internal/config"
 )
 
 // Prefs holds user-tunable app preferences. Zero-config defaults live in
@@ -22,6 +24,7 @@ type Prefs struct {
 	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
 	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
 	MaxPerSync       int               // max messages to fetch per account per poll cycle (default 500)
+	BodyCache        int               // newest inbox messages per account to keep bodies downloaded for; 0 = off (default 200)
 	AccountColors    map[string]string // account name -> hex color, e.g. "#6366f1"
 	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
 	SearchScope      string            // topbar search default scope: "all", "account", or "folder" (default "all")
@@ -162,6 +165,7 @@ func defaultPrefs() Prefs {
 		RememberMsgTheme: false,
 		SyncMonths:       0,
 		MaxPerSync:       500,
+		BodyCache:        config.DefaultBodyCache,
 		AccountColors:    map[string]string{},
 		QuickActions:     defaultQuickActions(),
 		SearchScope:      "all",
@@ -248,6 +252,11 @@ func (s *Store) GetPrefs() Prefs {
 			p.MaxPerSync = n
 		}
 	}
+	if v, ok := s.getSetting("body_cache"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			p.BodyCache = n
+		}
+	}
 	if v, ok := s.getSetting("quick_actions"); ok {
 		p.QuickActions = v
 	}
@@ -311,6 +320,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"remember_msg_theme": boolStr(p.RememberMsgTheme),
 		"sync_months":        strconv.Itoa(p.SyncMonths),
 		"max_per_sync":       strconv.Itoa(p.MaxPerSync),
+		"body_cache":         strconv.Itoa(p.BodyCache),
 		"quick_actions":      p.QuickActions,
 		"search_scope":       p.SearchScope,
 		"compose_mode":       p.ComposeMode,
