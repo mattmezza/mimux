@@ -242,6 +242,21 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
    keep their own focus rings. */
 #message-detail:focus, #message-detail:focus-visible { outline: none; }
 
+/* Header autohide while scrolling (hdrScroll in app.js), desktop included. On
+   mobile the whole pane is one scroll flow and the header needs position:sticky
+   (see the mobile media query below); on desktop the header is just a normal
+   in-flow flex child above whatever scrolls (the body iframe or the thread's
+   own message list) — a transform is all it takes to slide it away, and
+   overflow:hidden here keeps that transform from painting over content above
+   the pane while it's off-screen. */
+#message-detail { overflow: hidden; }
+#message-detail > .shrink-0:first-child {
+  transition: transform 0.2s ease, margin-bottom 0.2s ease;
+}
+#message-detail.hdr-away > .shrink-0:first-child {
+  transform: translateY(-100%);
+}
+
 /* Alpine: hide elements gated by x-show before it has initialized them. */
 [x-cloak] { display: none !important; }
 
@@ -262,6 +277,16 @@ details[open] > .qa-move-summary .qa-move-chev { transform: rotate(90deg); }
   opacity: 0;
   transform: translateX(10px);
   pointer-events: none;
+}
+
+/* New rows fetched into the list (see the ids snapshot in app.js
+   htmx:beforeSwap/afterSettle for #message-list): quick fade + slide down,
+   never on a fresh render/folder switch/search since those take no snapshot. */
+@keyframes row-enter {
+  from { opacity: 0; transform: translateY(-6px); }
+}
+.row-enter {
+  animation: row-enter 220ms ease-out;
 }
 
 /* Swipe-to-act on a list row (see the row-gesture block in app.js). The row's
@@ -430,16 +455,13 @@ html, #message-list { overscroll-behavior-x: contain; }
   }
   /* ...except the header sticks to the top of that flow and only slides out
      of view while you scroll *down*; any upward scroll snaps it right back
-     (.hdr-away toggled in app.js). Out of sight, one flick away. */
+     (.hdr-away toggled in app.js, transform/transition shared with desktop
+     above). Out of sight, one flick away. */
   #message-detail > .shrink-0:first-child {
     position: sticky;
     top: 0;
     z-index: 10;
     background-color: var(--color-zinc-900, #18181b);
-    transition: transform 0.2s ease, margin-bottom 0.2s ease;
-  }
-  #message-detail.hdr-away > .shrink-0:first-child {
-    transform: translateY(-100%);
   }
   /* Full dynamic-viewport height: once the header is scrolled away the body
      owns the whole screen, no dead dark strip at the bottom. */

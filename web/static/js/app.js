@@ -237,7 +237,7 @@ document.addEventListener("htmx:beforeSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
   const r = selectedRow();
   selBefore = e.detail?.requestConfig?.elt?.id !== "message-list" ? null
-    : { id: r?.id, i: r ? listRows().indexOf(r) : -1, scroll: e.target.scrollTop };
+    : { id: r?.id, i: r ? listRows().indexOf(r) : -1, scroll: e.target.scrollTop, ids: new Set(listRows().map((x) => x.id)) };
 });
 // afterSettle, not afterSwap: with hx-swap="outerHTML" the new section is only
 // in the DOM by then — at afterSwap the class would land on the doomed one.
@@ -246,6 +246,9 @@ document.addEventListener("htmx:afterSettle", (e) => {
   const prev = selBefore;
   selBefore = null;
   e.target.scrollTop = prev.scroll;
+  // Rows that weren't in the pre-swap snapshot just arrived at the top — a
+  // fresh render/folder switch/search takes no snapshot, so nothing animates then.
+  listRows().forEach((row) => { if (!prev.ids.has(row.id)) row.classList.add("row-enter"); });
   if (prev.i < 0) return;
   const rows = listRows();
   // Same message if it's still there; otherwise whatever took its place (same
@@ -451,15 +454,16 @@ function closeReadingPane() {
 }
 window.closeReadingPane = closeReadingPane;
 
-// Mobile: the reading pane's header slides out of the way while you scroll
-// down and comes straight back on the first upward scroll (see .hdr-away in
-// app.css) — always one flick away, never eating body height while reading.
-// Two scrollers feed it: the pane itself (thread view, where the whole
-// conversation is one flow) and each body iframe's own document (single
-// message, where the iframe is 100dvh and swallows the gesture entirely).
+// The reading pane's header slides out of the way while you scroll down and
+// comes straight back on the first upward scroll (see .hdr-away in app.css) —
+// always one flick away, never eating body height while reading. Same on
+// mobile and desktop, just different scrollers feed it: the pane itself on
+// mobile (thread view, where the whole conversation is one flow), each body
+// iframe's own document (single message, where the iframe swallows the
+// gesture entirely), and on desktop the thread's own message list (the pane
+// itself doesn't scroll there — only its children do).
 let hdrLastY = 0, hdrFrom = null;
 function hdrScroll(pane, scroller, y, reclaim) {
-  if (window.innerWidth >= 768) return; // the .hdr-away rules are mobile-only
   // A different scroller (htmx swapped the message, or the gesture moved
   // between the pane and the body iframe) means a different coordinate space:
   // re-baseline instead of reading the jump as a scroll.
@@ -478,10 +482,17 @@ function hdrScroll(pane, scroller, y, reclaim) {
   hdr.style.marginBottom = reclaim && away ? -hdr.offsetHeight + "px" : "";
 }
 // Capture phase: scroll doesn't bubble, and #message-detail is swapped in by
-// htmx. Thread view scrolls the pane itself.
+// htmx. Thread view scrolls the pane itself on mobile.
 document.addEventListener("scroll", (e) => {
   const p = e.target;
-  if (p && p.id === "message-detail") hdrScroll(p, p, p.scrollTop, false);
+  if (p && p.id === "message-detail") { hdrScroll(p, p, p.scrollTop, false); return; }
+  // Desktop thread view: the pane never scrolls itself there (see the
+  // overflow:hidden pane in app.css), only this direct child does — a sibling
+  // of the header, so reclaiming its height can't feed back into this scrollTop
+  // the way it would if the header lived inside the measured scroller.
+  if (p && p.parentElement?.id === "message-detail" && p.classList?.contains("overflow-y-auto")) {
+    hdrScroll(p.parentElement, p, p.scrollTop, true);
+  }
 }, true);
 // A single message's body iframe is 100dvh and scrolls its own document, so
 // the gesture never reaches the pane — read it from inside instead.
