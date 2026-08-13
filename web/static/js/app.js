@@ -1321,6 +1321,7 @@ document.addEventListener("dblclick", (e) => {
   let pendingRow = null, pendingTimer = null;
   let startX = 0, startY = 0, startT = 0;
   let swRow = null, axis = null, dx = 0, pane = null;
+  let mouseDown = false, suppressClick = false, lastTouchTime = 0;
 
   const swipeAction = (left) => rowGesturePref(left ? "swipeLeft" : "swipeRight", left ? "none" : "unread");
 
@@ -1356,7 +1357,26 @@ document.addEventListener("dblclick", (e) => {
     }, 260);
   }
 
+  // Shared by touchmove and mousemove: axis-lock, then paint the pane 1:1 with
+  // the pointer. Returns true once committed to the horizontal axis with an
+  // enabled action, which is touch's cue to preventDefault (stop the list
+  // scrolling under the finger) — mouse has no such scroll to fight.
+  function trackMove(x, y) {
+    const dx0 = x - startX, dy0 = y - startY;
+    if (!axis) {
+      if (Math.abs(dy0) > AXIS_LOCK && Math.abs(dy0) >= Math.abs(dx0)) { swRow = null; axis = "v"; return false; }
+      if (Math.abs(dx0) <= AXIS_LOCK) return false;
+      axis = "h";
+    }
+    const action = swipeAction(dx0 < 0);
+    if (!ROW_ACTIONS[action]) { dx = 0; return false; } // direction disabled: stay out of the way
+    dx = dx0;
+    paint(action, dx0 < 0, Math.min(Math.abs(dx0), swRow.clientWidth));
+    return true;
+  }
+
   document.addEventListener("touchstart", (e) => {
+    lastTouchTime = Date.now(); // so a synthesized mousedown right after doesn't double-fire
     const t = e.touches[0];
     if (!t) return;
     startX = t.clientX;
@@ -1371,17 +1391,7 @@ document.addEventListener("dblclick", (e) => {
   document.addEventListener("touchmove", (e) => {
     const t = e.touches[0];
     if (!swRow || !t) return;
-    const x = t.clientX - startX, y = t.clientY - startY;
-    if (!axis) {
-      if (Math.abs(y) > AXIS_LOCK && Math.abs(y) >= Math.abs(x)) { swRow = null; axis = "v"; return; }
-      if (Math.abs(x) <= AXIS_LOCK) return;
-      axis = "h";
-    }
-    const action = swipeAction(x < 0);
-    if (!ROW_ACTIONS[action]) { dx = 0; return; } // direction disabled: stay out of the way
-    e.preventDefault(); // committed to horizontal — don't let the list scroll too
-    dx = x;
-    paint(action, x < 0, Math.min(Math.abs(x), swRow.clientWidth));
+    if (trackMove(t.clientX, t.clientY)) e.preventDefault(); // committed to horizontal — don't let the list scroll too
   }, { passive: false });
 
   document.addEventListener("touchend", (e) => {
@@ -1418,6 +1428,71 @@ document.addEventListener("dblclick", (e) => {
       row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     }, DOUBLE_TAP_MS);
   });
+
+  // Desktop drag mirrors touch swipe exactly — same prefs, same thresholds,
+  // same paint/settle. Left button only; right-click keeps the context menu
+  // (contextmenu handler below) and double-click keeps dblclick above.
+  document.addEventListener("mousedown", (e) => {
+    // A touch device fires a synthesized mousedown right after touchend; touch
+    // already ran (and preventDefault'd) its own gesture, so ignore the echo.
+    if (e.button !== 0 || Date.now() - lastTouchTime < 500) return;
+    const r = e.target.closest && e.target.closest("#message-list li[data-message-row]");
+    if (!r || e.target.closest("button, a, input, label")) { swRow = null; return; }
+    startX = e.clientX;
+    startY = e.clientY;
+    startT = Date.now();
+    axis = null;
+    dx = 0;
+    swRow = r;
+    mouseDown = true;
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (!mouseDown || !swRow) return; // cheap bail — no drag in progress
+    trackMove(e.clientX, e.clientY);
+  });
+
+  function endDrag(fireAction) {
+    mouseDown = false;
+    if (axis === "h" && pane) {
+      const r = swRow, w = r.clientWidth || 1, dt = Math.max(1, Date.now() - startT);
+      const fire = fireAction && (Math.abs(dx) > w * COMMIT || (Math.abs(dx) > 40 && Math.abs(dx) / dt > FLICK));
+      const action = swipeAction(dx < 0);
+      settle();
+      swRow = null;
+      // The browser fires its synthesized click (if any) synchronously off this
+      // same mouseup, before any timeout runs — so a 0ms self-clear is a safe net
+      // for the case a drag ends over an element that never gets one at all,
+      // without risking eating a real click that comes later.
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+      if (fire) runRowAction(r, action);
+      return;
+    }
+    swRow = null;
+  }
+
+  document.addEventListener("mouseup", (e) => {
+    if (!mouseDown) return;
+    endDrag(true);
+  });
+
+  // Button released outside the window, or the pointer left the page entirely
+  // (e.g. dragged off the top edge): settle instead of leaving the row stuck.
+  document.documentElement.addEventListener("mouseleave", () => {
+    if (!mouseDown) return;
+    endDrag(false);
+  });
+
+  // Suppresses exactly the one click a committed/aborted drag would otherwise
+  // synthesize on mouseup — armed only in endDrag, consumed here, never leaks
+  // into the next plain click.
+  document.addEventListener("click", (e) => {
+    if (!suppressClick) return;
+    suppressClick = false;
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
 })();
 
 // --- right-click context menu on list rows --------------------------------
