@@ -3,7 +3,7 @@
 <div class="h-full flex items-center justify-center">
   <form method="post" action="/login" class="w-80 bg-zinc-800/60 rounded-lg shadow-lg p-6 space-y-4">
     <div class="flex items-center gap-3">
-      <img src="/static/icons/favicon.svg" alt="" class="w-8 h-8">
+      <img src="{{.IconURL}}" alt="" class="w-8 h-8">
       <h1 class="text-lg font-semibold text-zinc-100 tracking-wide">Sign in</h1>
     </div>
     {{with .Error}}<p class="text-red-500 text-xs">{{.}}</p>{{end}}

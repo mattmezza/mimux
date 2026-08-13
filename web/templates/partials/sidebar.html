@@ -7,7 +7,7 @@
      :class="{ 'translate-x-0': sidebarOpen, '-translate-x-full': !sidebarOpen, 'md:hidden': collapsed }"
      class="w-72 md:w-56 md:translate-x-0 fixed md:static inset-y-0 left-0 z-50 md:z-auto shrink-0 border-r border-zinc-800 bg-zinc-900 flex flex-col overflow-y-auto transition-transform duration-200 ease-out">
   <div class="md:hidden shrink-0 flex items-center gap-2 px-3 pt-3">
-    <img src="/static/icons/favicon.svg" alt="" class="w-7 h-7">
+    <img src="{{.IconURL}}" alt="" class="w-7 h-7">
     <span class="text-zinc-100 font-semibold flex-1">Simple Mail</span>
     <button type="button" title="Close menu" aria-label="Close menu" @click="sidebarOpen = false"
       class="p-1.5 -mr-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150">

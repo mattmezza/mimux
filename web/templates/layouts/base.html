@@ -25,8 +25,15 @@
   <meta name="htmx-config" content='{"historyCacheSize":3}'>
   <title>{{block "title" .}}SM — Simple Mail{{end}}</title>
   <link rel="stylesheet" href="/static/css/dist.css">
+  {{/* Accent override (Settings → Appearance): redefines the indigo scale
+       Tailwind compiled into every utility. Must sit after dist.css — same
+       specificity as its light-theme block, so source order decides — and in
+       <head>, so the accent is right on first paint instead of flashing. */}}
+  {{with .AccentCSS}}<style>{{.}}</style>{{end}}
   <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/static/icons/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="{{.IconURL}}" type="image/svg+xml">
+  {{/* iOS home screen only takes PNG, so it keeps the default palette. */}}
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script defer src="/static/js/htmx.min.js"></script>
   <!-- app.js must load before Alpine: it registers the smUI component on the
        alpine:init event, which Alpine fires the moment its own script runs. -->

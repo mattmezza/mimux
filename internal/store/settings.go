@@ -2,6 +2,8 @@ package store
 
 import (
 	"database/sql"
+	"hash/fnv"
+	"io"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -389,6 +391,86 @@ type AppConfig struct {
 	AILanguage     string // "auto" or a fixed language name, default auto (compose + refine + summarize)
 	AIReplyOptions int    // reply directions to generate (2-5), default 3 (options only)
 	AISummaryLevel string // default detail level for Summarize; see AllSummaryLevels
+	// Look: the UI accent and the app icon. Not secret, but they live here
+	// rather than in Prefs because the icon endpoint reads them on every page
+	// render and this is the smaller struct.
+	Accent     string // an AllAccents id, or a "#rrggbb" custom colour; default "indigo"
+	IconBG     string // icon background, "#rrggbb" or "transparent"; default "#18181b"
+	IconAccent string // icon envelope colour; blank inherits the accent's 500 step
+	IconLeaf   string // icon leaf colour; default "#4ade80"
+	IconShape  string // icon corner rounding: rounded|square|circle; default "rounded"
+}
+
+// AllAccents are the named UI accents. Each carries the Tailwind steps the
+// markup actually uses — 200/300/400/500/600/900/950, plus 700 for the light
+// theme's darkened text steps — verified against dist.css.
+// NOTE: literal hex, not a generated palette. Tailwind v4 only emits
+// variables for scales the markup references, so a computed scale would
+// silently resolve to nothing.
+var AllAccents = []struct {
+	ID, Label string
+	Steps     [8]string // 200,300,400,500,600,700,900,950
+}{
+	{"indigo", "Indigo", [8]string{"#c7d2fe", "#a5b4fc", "#818cf8", "#6366f1", "#4f46e5", "#4338ca", "#312e81", "#1e1b4b"}},
+	{"violet", "Violet", [8]string{"#ddd6fe", "#c4b5fd", "#a78bfa", "#8b5cf6", "#7c3aed", "#6d28d9", "#4c1d95", "#2e1065"}},
+	{"sky", "Sky", [8]string{"#bae6fd", "#7dd3fc", "#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#0c4a6e", "#082f49"}},
+	{"emerald", "Emerald", [8]string{"#a7f3d0", "#6ee7b7", "#34d399", "#10b981", "#059669", "#047857", "#064e3b", "#022c22"}},
+	{"amber", "Amber", [8]string{"#fde68a", "#fcd34d", "#fbbf24", "#f59e0b", "#d97706", "#b45309", "#78350f", "#451a03"}},
+	{"rose", "Rose", [8]string{"#fecdd3", "#fda4af", "#fb7185", "#f43f5e", "#e11d48", "#be123c", "#881337", "#4c0519"}},
+}
+
+// AccentSteps returns the scale for a named accent; ok=false means it is a
+// custom hex and the caller derives its own ramp.
+func AccentSteps(id string) ([8]string, bool) {
+	for _, a := range AllAccents {
+		if a.ID == id {
+			return a.Steps, true
+		}
+	}
+	return [8]string{}, false
+}
+
+// ValidHexColor returns c when it is a "#rrggbb" colour, else def. These values
+// are interpolated straight into the icon SVG and into a <style> block, so
+// nothing gets past this gate — not from the form, not from the query string.
+func ValidHexColor(c, def string) string {
+	if len(c) != 7 || c[0] != '#' {
+		return def
+	}
+	for i := 1; i < 7; i++ {
+		d := c[i]
+		if !(d >= '0' && d <= '9' || d >= 'a' && d <= 'f' || d >= 'A' && d <= 'F') {
+			return def
+		}
+	}
+	return c
+}
+
+// ValidIconBG is ValidHexColor plus the "transparent" sentinel, which some
+// launchers want (they paint their own plate behind the mark).
+func ValidIconBG(c, def string) string {
+	if c == "transparent" {
+		return c
+	}
+	return ValidHexColor(c, def)
+}
+
+// ValidAccent returns v when it names an accent or is a custom hex, else def.
+func ValidAccent(v, def string) string {
+	if _, ok := AccentSteps(v); ok {
+		return v
+	}
+	return ValidHexColor(v, def)
+}
+
+// IconVersion is a short hash of everything that changes the icon's pixels. It
+// rides the icon URL as ?v=, so a colour change mints a new URL and neither the
+// browser's favicon cache nor the service worker's runtime cache can serve the
+// old mark.
+func (c AppConfig) IconVersion() string {
+	h := fnv.New32a()
+	_, _ = io.WriteString(h, c.Accent+c.IconBG+c.IconAccent+c.IconLeaf+c.IconShape)
+	return strconv.FormatUint(uint64(h.Sum32()), 36)
 }
 
 // ModelFor resolves the model one feature runs on: its own override where set,
@@ -416,7 +498,8 @@ func (c AppConfig) ModelFor(f AIFeature) string {
 func (s *Store) GetAppConfig() AppConfig {
 	c := AppConfig{TranslateTarget: "en", AIModel: defaultAIModel,
 		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto",
-		AISummaryLevel: "brief"}
+		AISummaryLevel: "brief",
+		Accent:         "indigo", IconBG: "#18181b", IconLeaf: "#4ade80", IconShape: "rounded"}
 	if v, ok := s.getSetting("translate_api_key"); ok {
 		c.TranslateAPIKey = v
 	}
@@ -452,6 +535,23 @@ func (s *Store) GetAppConfig() AppConfig {
 	if v, ok := s.getSetting("ai_summary_level"); ok {
 		c.AISummaryLevel = ValidSummaryLevel(v, c.AISummaryLevel)
 	}
+	// Look. Re-validated on read as well as on write: these end up inside an
+	// SVG and a <style> block, and a hand-edited DB row is still untrusted.
+	if v, ok := s.getSetting("ui_accent"); ok {
+		c.Accent = ValidAccent(v, c.Accent)
+	}
+	if v, ok := s.getSetting("icon_bg"); ok {
+		c.IconBG = ValidIconBG(v, c.IconBG)
+	}
+	if v, ok := s.getSetting("icon_accent"); ok && v != "" {
+		c.IconAccent = ValidHexColor(v, "")
+	}
+	if v, ok := s.getSetting("icon_leaf"); ok {
+		c.IconLeaf = ValidHexColor(v, c.IconLeaf)
+	}
+	if v, ok := s.getSetting("icon_shape"); ok && (v == "rounded" || v == "square" || v == "circle") {
+		c.IconShape = v
+	}
 	return c
 }
 
@@ -475,6 +575,15 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		c.AILanguage = "auto"
 	}
 	c.AISummaryLevel = ValidSummaryLevel(c.AISummaryLevel, "brief")
+	c.Accent = ValidAccent(c.Accent, "indigo")
+	c.IconBG = ValidIconBG(c.IconBG, "#18181b")
+	c.IconAccent = ValidHexColor(c.IconAccent, "") // blank = inherit the accent
+	c.IconLeaf = ValidHexColor(c.IconLeaf, "#4ade80")
+	switch c.IconShape {
+	case "rounded", "square", "circle":
+	default:
+		c.IconShape = "rounded"
+	}
 	kv := map[string]string{
 		"translate_api_key": c.TranslateAPIKey,
 		"translate_target":  c.TranslateTarget,
@@ -490,6 +599,11 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		"ai_reply_options":   strconv.Itoa(c.AIReplyOptions),
 		"ai_language":        c.AILanguage,
 		"ai_summary_level":   c.AISummaryLevel,
+		"ui_accent":          c.Accent,
+		"icon_bg":            c.IconBG,
+		"icon_accent":        c.IconAccent,
+		"icon_leaf":          c.IconLeaf,
+		"icon_shape":         c.IconShape,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

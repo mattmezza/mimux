@@ -2,13 +2,17 @@
 // with the cache as an offline-only fallback. This deliberately avoids serving
 // stale JS/CSS/templates — a cache-first strategy previously pinned old assets
 // in already-open browsers and broke the app after updates.
-const CACHE = "sm-v4";
+const CACHE = "sm-v5";
+// The icon is deliberately NOT precached: it is served from /icon.svg?v=<hash>
+// of the user's colour settings, so a precached URL would be a stale mark the
+// moment they change one. The network-first fetch handler below caches it on
+// first use anyway, under the versioned URL, which the next change invalidates
+// by simply never being requested again.
 const STATIC = [
   "/static/css/dist.css",
   "/static/js/htmx.min.js",
   "/static/js/alpinejs.min.js",
   "/static/js/app.js",
-  "/static/icons/favicon.svg",
 ];
 
 self.addEventListener("install", (e) => {

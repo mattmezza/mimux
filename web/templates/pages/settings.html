@@ -87,6 +87,101 @@
                 if (s) s.value = localStorage.getItem("sm.theme") || "system";
               })();
             </script>
+
+            {{/* Accent + app icon. Unlike the theme select above these are
+                 stored server-side, so they follow the account (and ride along
+                 in Backup & restore, which exports all of app_settings). The
+                 icon preview is an <img> on the live /icon.svg endpoint with
+                 the pending choices as query overrides — the same renderer the
+                 browser tab and the manifest use, so it can't drift. */}}
+            <div class="space-y-5 pt-4 border-t border-zinc-800" x-data="{
+                   accent: '{{.AppConfig.Accent}}',
+                   bg: '{{.AppConfig.IconBG}}',
+                   mark: '{{.IconMark}}',
+                   leaf: '{{.AppConfig.IconLeaf}}',
+                   shape: '{{.AppConfig.IconShape}}',
+                   get transparent() { return this.bg === 'transparent' },
+                   get bgSwatch() { return this.bg === 'transparent' ? '#18181b' : this.bg },
+                   get iconSrc() {
+                     return '/icon.svg?bg=' + encodeURIComponent(this.bg)
+                          + '&accent=' + encodeURIComponent(this.mark)
+                          + '&leaf=' + encodeURIComponent(this.leaf)
+                          + '&shape=' + this.shape;
+                   }
+                 }">
+              <div class="space-y-2">
+                <span class="block text-sm text-zinc-200">Accent color</span>
+                <p class="text-xs text-zinc-500">Buttons, links, focus rings and active states, in both themes. Applies after saving and reloading.</p>
+                <input type="hidden" name="ui_accent" :value="accent">
+                <div class="flex flex-wrap items-center gap-2">
+                  {{range .Accents}}
+                    <button type="button" title="{{.Label}}" aria-label="{{.Label}}"
+                      @click="accent = '{{.ID}}'; mark = '{{index .Steps 3}}'"
+                      :class="accent === '{{.ID}}' ? 'ring-2 ring-zinc-100' : 'ring-1 ring-zinc-700'"
+                      style="background-color: {{index .Steps 3}}"
+                      class="w-7 h-7 rounded-full transition-shadow duration-150"></button>
+                  {{end}}
+                  <label class="flex items-center gap-2 ml-2 text-xs text-zinc-500">
+                    <input type="color" :value="accent.startsWith('#') ? accent : '#6366f1'"
+                      @input="accent = $event.target.value; mark = $event.target.value"
+                      class="h-7 w-10 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
+                    Custom
+                  </label>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <span class="block text-sm text-zinc-200">App icon</span>
+                <p class="text-xs text-zinc-500">
+                  Used for the browser tab, the sign-in page and the installed-app icon on launchers that accept SVG.
+                  iOS home screens and some Android installers only take PNG and keep the default look.
+                </p>
+                <div class="flex items-center gap-4">
+                  {{/* Two sizes on purpose: a mark that works at 64px can still
+                       be unreadable at favicon size. */}}
+                  <img :src="iconSrc" alt="Icon preview" width="64" height="64" class="w-16 h-16">
+                  <img :src="iconSrc" alt="" width="16" height="16" class="w-4 h-4">
+                  <span class="text-xs text-zinc-500">64px and 16px</span>
+                </div>
+                <div class="flex flex-wrap items-end gap-4">
+                  <label class="space-y-1">
+                    <span class="block text-xs text-zinc-400">Background</span>
+                    <input type="hidden" name="icon_bg" :value="bg">
+                    <input type="color" :value="bgSwatch" :disabled="transparent"
+                      @input="bg = $event.target.value"
+                      class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer disabled:opacity-40">
+                  </label>
+                  <label class="space-y-1">
+                    <span class="block text-xs text-zinc-400">Envelope</span>
+                    <input type="color" name="icon_accent" x-model="mark"
+                      class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
+                  </label>
+                  <label class="space-y-1">
+                    <span class="block text-xs text-zinc-400">Leaf</span>
+                    <input type="color" name="icon_leaf" x-model="leaf"
+                      class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
+                  </label>
+                  <label class="space-y-1">
+                    <span class="block text-xs text-zinc-400">Corners</span>
+                    <select name="icon_shape" x-model="shape"
+                      class="w-32 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                      {{range .IconShapes}}<option value="{{.ID}}">{{.Label}}</option>{{end}}
+                    </select>
+                  </label>
+                </div>
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" :checked="transparent"
+                    @change="bg = $event.target.checked ? 'transparent' : '#18181b'"
+                    class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="text-sm text-zinc-200">Transparent background</span>
+                </label>
+                <p class="text-xs text-zinc-500">
+                  Transparent suits launchers that draw their own plate. The Android adaptive
+                  (maskable) variant always keeps a filled background and shrinks the mark to
+                  survive the circle crop.
+                </p>
+              </div>
+            </div>
           </section>
 
           <section x-show="tab === 'reading'" x-cloak class="space-y-4">

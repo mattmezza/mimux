@@ -28,6 +28,11 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"Presets":      account.PresetNames(),
 		"QAEditor":     qaEditorRows(prefs.QuickActions),
 		"RowActions":   store.AllRowActions,
+		"Accents":      store.AllAccents,
+		"IconShapes":   iconShapes,
+		// Resolved mark colour, so the colour input always has a value even
+		// when icon_accent is blank ("inherit the app accent").
+		"IconMark":     iconMark(s.store.GetAppConfig()),
 		"Signatures":   sigs,
 		"Templates":    tpls,
 		"Identities":   s.identityLinks(),
@@ -168,6 +173,13 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		AIReplyOptions:   atoiDefault(r.PostFormValue("ai_reply_options"), 3),
 		AILanguage:       r.PostFormValue("ai_language"),
 		AISummaryLevel:   r.PostFormValue("ai_summary_level"),
+		// Look (Settings → Appearance). SaveAppConfig validates every colour;
+		// nothing unvalidated reaches the icon SVG or the accent <style>.
+		Accent:     r.PostFormValue("ui_accent"),
+		IconBG:     r.PostFormValue("icon_bg"),
+		IconAccent: r.PostFormValue("icon_accent"),
+		IconLeaf:   r.PostFormValue("icon_leaf"),
+		IconShape:  r.PostFormValue("icon_shape"),
 	}); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return
