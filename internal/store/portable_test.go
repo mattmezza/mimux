@@ -29,6 +29,15 @@ func seedConfig(t *testing.T, s *Store) {
 	if err := s.setSetting("ai_api_key", "sk-test"); err != nil {
 		t.Fatal(err)
 	}
+	// Appearance (Settings → Appearance) rides the generic app_settings dump
+	// rather than a section of its own. Saved through the real path so this
+	// still fails if the accent/icon look ever moves out of app_settings.
+	look := s.GetAppConfig()
+	look.Accent, look.IconBG, look.IconAccent = "violet", "transparent", "#ff0088"
+	look.IconLeaf, look.IconShape = "#00ddaa", "circle"
+	if err := s.SaveAppConfig(look); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SaveToken("work", StoredToken{Access: "at", Refresh: "rt",
 		Expiry: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)}); err != nil {
 		t.Fatal(err)
@@ -120,6 +129,10 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 	if v, _ := dst.getSetting("ai_api_key"); v != "sk-test" {
 		t.Errorf("setting not restored: %q", v)
+	}
+	if look := dst.GetAppConfig(); look.Accent != "violet" || look.IconBG != "transparent" ||
+		look.IconAccent != "#ff0088" || look.IconLeaf != "#00ddaa" || look.IconShape != "circle" {
+		t.Errorf("appearance not restored: %+v", look)
 	}
 	if tok, _ := dst.GetToken("work"); tok == nil || tok.Refresh != "rt" {
 		t.Errorf("token not restored: %+v", tok)
