@@ -21,7 +21,6 @@ import (
 	"github.com/mattmezza/sm/internal/filter"
 	"github.com/mattmezza/sm/internal/mail"
 	"github.com/mattmezza/sm/internal/store"
-	"github.com/mattmezza/sm/internal/translate"
 	"github.com/mattmezza/sm/web"
 )
 
@@ -213,12 +212,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/settings/export", s.handleConfigExport)
 		r.Post("/settings/import", s.handleConfigImport)
 		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
-		// Clients are built per request so translate/AI keys edited in Settings
-		// take effect without a restart.
-		r.Mount("/translate", translate.Routes(s.store, func() *translate.Client {
-			c := s.store.GetAppConfig()
-			return translate.NewClient(c.TranslateAPIKey, c.TranslateTarget)
-		}))
+		// Clients are built per request so AI keys edited in Settings take
+		// effect without a restart (translate does the same, in handleMessageBody).
 		r.Mount("/ai", ai.Routes(func() *ai.Client {
 			c := s.store.GetAppConfig()
 			cl := ai.NewClient(c.AIKey, c.AIModel)

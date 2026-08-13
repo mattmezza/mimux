@@ -3,48 +3,98 @@ package translate
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/mattmezza/sm/internal/store"
 )
 
-func TestTranslate_Disabled(t *testing.T) {
+func TestTranslateHTML_Disabled(t *testing.T) {
 	c := &Client{Target: "en"}
-	if _, _, err := c.Translate(context.Background(), "ciao"); err != ErrDisabled {
+	if _, _, err := c.TranslateHTML(context.Background(), "<p>ciao</p>"); err != ErrDisabled {
 		t.Fatalf("err = %v, want ErrDisabled", err)
 	}
 }
 
-func TestTranslate_Success(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Query().Get("key") != "test-key" {
-			t.Errorf("missing api key in query")
-		}
-		var body requestBody
-		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Q != "ciao" || body.Target != "en" {
-			t.Errorf("unexpected request body: %+v", body)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"translations":[{"translatedText":"hello","detectedSourceLanguage":"it"}]}}`))
-	}))
+func TestTranslateHTML_PreservesStructure(t *testing.T) {
+	api := &stubAPI{}
+	c, srv := stubClient(t, api)
 	defer srv.Close()
 
-	c := &Client{APIKey: "test-key", Target: "en", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
-	translated, lang, err := c.Translate(context.Background(), "ciao")
+	const doc = `<!doctype html><html><head><style>p { color: #f00 }</style></head>` +
+		`<body><table><tr><td bgcolor="#eee"><p>Ciao <b>mondo</b></p>` +
+		`<img src="data:image/gif;base64,AAA" alt="Buongiorno">` +
+		`<script>var x = "non tradurre";</script></td></tr></table>` +
+		`<pre>  riga uno  </pre></body></html>`
+
+	out, lang, err := c.TranslateHTML(context.Background(), doc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if translated != "hello" || lang != "it" {
-		t.Errorf("Translate = %q, %q", translated, lang)
+	if lang != "it" {
+		t.Errorf("detected lang = %q, want it", lang)
+	}
+
+	// Only the prose was sent — no whitespace-only nodes, no script/style bodies.
+	want := []string{"Ciao", "mondo", "riga uno"}
+	if got := api.sent(); !slices.Equal(got, want) {
+		t.Errorf("segments sent = %q, want %q", got, want)
+	}
+
+	// Markup, attributes and skipped content come back untouched.
+	for _, keep := range []string{
+		`<style>p { color: #f00 }</style>`,
+		`<script>var x = "non tradurre";</script>`,
+		`<td bgcolor="#eee">`,
+		`<img src="data:image/gif;base64,AAA" alt="Buongiorno"/>`,
+		`<b>`, `</table>`,
+		`data-sm-lang="it"`,
+	} {
+		if !strings.Contains(out, keep) {
+			t.Errorf("output lost %q:\n%s", keep, out)
+		}
+	}
+	// Text is translated in place, and the whitespace the API strips is restored.
+	if !strings.Contains(out, `<p>T:Ciao <b>T:mondo</b></p>`) {
+		t.Errorf("text not translated in place:\n%s", out)
+	}
+	if !strings.Contains(out, `<pre>  T:riga uno  </pre>`) {
+		t.Errorf("surrounding whitespace lost:\n%s", out)
 	}
 }
 
-func TestTranslate_APIError(t *testing.T) {
+func TestTranslateHTML_Batches(t *testing.T) {
+	api := &stubAPI{}
+	c, srv := stubClient(t, api)
+	defer srv.Close()
+
+	var b strings.Builder
+	b.WriteString("<html><body>")
+	const nodes = 300
+	for i := 0; i < nodes; i++ {
+		fmt.Fprintf(&b, "<p>frase %d</p>\n", i)
+	}
+	b.WriteString("</body></html>")
+
+	if _, _, err := c.TranslateHTML(context.Background(), b.String()); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := len(api.sent()), nodes; got != want {
+		t.Errorf("translated %d segments, want %d", got, want)
+	}
+	// 300 short segments must go out in ceil(300/128)=3 calls, not 300.
+	if got, want := api.calls(), 3; got != want {
+		t.Errorf("api calls = %d, want %d", got, want)
+	}
+}
+
+func TestTranslateHTML_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		_, _ = w.Write([]byte(`{"error":{"message":"invalid target"}}`))
@@ -53,7 +103,7 @@ func TestTranslate_APIError(t *testing.T) {
 
 	c := &Client{APIKey: "test-key", Target: "xx", HTTPClient: srv.Client()}
 	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
-	if _, _, err := c.Translate(context.Background(), "ciao"); err == nil {
+	if _, _, err := c.TranslateHTML(context.Background(), "<p>ciao</p>"); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -81,8 +131,58 @@ func TestTranslationCache(t *testing.T) {
 	}
 }
 
+// stubAPI answers with the Google Translate v2 shape, echoing every segment back
+// prefixed with "T:" so assertions can tell translated text from untouched
+// markup, and recording what each batch contained.
+type stubAPI struct {
+	mu      sync.Mutex
+	batches [][]string
+}
+
+func (a *stubAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	var body requestBody
+	_ = json.NewDecoder(r.Body).Decode(&body)
+	a.mu.Lock()
+	a.batches = append(a.batches, body.Q)
+	a.mu.Unlock()
+
+	var res apiResponse
+	for _, q := range body.Q {
+		res.Data.Translations = append(res.Data.Translations, struct {
+			TranslatedText     string `json:"translatedText"`
+			DetectedSourceLang string `json:"detectedSourceLanguage"`
+		}{TranslatedText: "T:" + q, DetectedSourceLang: "it"})
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(res)
+}
+
+func (a *stubAPI) sent() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	var all []string
+	for _, b := range a.batches {
+		all = append(all, b...)
+	}
+	return all
+}
+
+func (a *stubAPI) calls() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.batches)
+}
+
+func stubClient(t *testing.T, api *stubAPI) (*Client, *httptest.Server) {
+	t.Helper()
+	srv := httptest.NewServer(api)
+	c := &Client{APIKey: "test-key", Target: "en", HTTPClient: srv.Client()}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	return c, srv
+}
+
 // rewriteHostTransport redirects requests to the test server regardless of
-// the URL's host, since Client.Translate hardcodes the real API host.
+// the URL's host, since the client hardcodes the real API host.
 type rewriteHostTransport struct{ base string }
 
 func (rt rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
