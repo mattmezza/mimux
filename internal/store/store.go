@@ -93,6 +93,14 @@ func (s *Store) UserCount() (int, error) {
 	return n, err
 }
 
+// MessageCount is the total synced message count, shown next to the DB size
+// in Settings → Syncing.
+func (s *Store) MessageCount() (int, error) {
+	var n int
+	err := s.DB.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&n)
+	return n, err
+}
+
 func (s *Store) CreateUser(username, passwordHash string) error {
 	_, err := s.DB.Exec(`INSERT INTO users (username, password_hash) VALUES (?, ?)`, username, passwordHash)
 	return err

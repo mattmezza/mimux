@@ -151,3 +151,69 @@ func TestImportRejectsBadVersion(t *testing.T) {
 		t.Fatal("expected version error")
 	}
 }
+
+func TestAccountSyncOverridesRoundTrip(t *testing.T) {
+	s := open(t)
+	if err := s.UpsertAccount(config.Account{Name: "acc", Email: "a@b.c", IMAPHost: "i", SMTPHost: "s"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetAccount("acc")
+	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil {
+		t.Fatalf("expected no overrides by default: %+v", got)
+	}
+
+	interval, maxPerSync, months := 10, 50, 0
+	if err := s.SetAccountSyncOverrides("acc", &interval, &maxPerSync, &months); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetAccount("acc")
+	if got.SyncIntervalMin == nil || *got.SyncIntervalMin != 10 ||
+		got.MaxPerSync == nil || *got.MaxPerSync != 50 ||
+		got.SyncMonths == nil || *got.SyncMonths != 0 {
+		t.Fatalf("overrides not round-tripped: %+v", got)
+	}
+
+	// A plain account-form save (UpsertAccount with no override fields set)
+	// must not clobber the overrides set above.
+	if err := s.UpsertAccount(config.Account{Name: "acc", Email: "a@b.c", IMAPHost: "i", SMTPHost: "s", SenderName: "Changed"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetAccount("acc")
+	if got.SyncIntervalMin == nil || *got.SyncIntervalMin != 10 {
+		t.Fatalf("account-form save clobbered the sync override: %+v", got)
+	}
+
+	// Clearing back to nil ("inherit global").
+	if err := s.SetAccountSyncOverrides("acc", nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.GetAccount("acc")
+	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil {
+		t.Fatalf("overrides not cleared: %+v", got)
+	}
+}
+
+func TestEffectiveSyncSettings(t *testing.T) {
+	p := Prefs{SyncIntervalMin: 5, MaxPerSync: 500, SyncMonths: 6}
+
+	// No overrides: inherits every global value.
+	interval, maxPerSync, months := EffectiveSyncSettings(p, config.Account{})
+	if interval != 5 || maxPerSync != 500 || months != 6 {
+		t.Fatalf("no override: got %d/%d/%d", interval, maxPerSync, months)
+	}
+
+	// Partial override: only the set knobs change.
+	n30, n50 := 30, 50
+	interval, maxPerSync, months = EffectiveSyncSettings(p, config.Account{SyncIntervalMin: &n30, MaxPerSync: &n50})
+	if interval != 30 || maxPerSync != 50 || months != 6 {
+		t.Fatalf("partial override: got %d/%d/%d", interval, maxPerSync, months)
+	}
+
+	// An explicit 0 override ("everything") must win over a nonzero global,
+	// distinct from an unset (nil) override.
+	zero := 0
+	_, _, months = EffectiveSyncSettings(p, config.Account{SyncMonths: &zero})
+	if months != 0 {
+		t.Fatalf("explicit zero override lost: got %d", months)
+	}
+}

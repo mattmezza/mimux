@@ -289,6 +289,7 @@
 
           <section x-show="tab === 'syncing'" x-cloak class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Syncing</h2>
+            <p class="text-xs text-zinc-500">Database: {{.DBSize}} · {{.MessageCount}} messages</p>
             <label class="block space-y-1">
               <span class="text-sm text-zinc-200">Check for new mail every N minutes</span>
               <input type="number" name="sync_interval_min" min="1" value="{{.Prefs.SyncIntervalMin}}"
@@ -315,6 +316,38 @@
               </select>
               <span class="block text-xs text-zinc-500">Applies on the next first-time sync of each folder. Already-downloaded mail stays.</span>
             </label>
+
+            {{if .Accounts}}
+            <div class="space-y-3 pt-2 border-t border-zinc-800">
+              <h3 class="text-sm font-semibold text-zinc-100">Per-account overrides</h3>
+              <p class="text-xs text-zinc-500">Leave a field blank to use the global value above — some accounts get a lot more mail than others.</p>
+              {{range .Accounts}}
+              <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                <span class="block text-sm text-zinc-200">{{.Name}}</span>
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <label class="block space-y-1">
+                    <span class="text-xs text-zinc-400">Check every N minutes</span>
+                    <input type="number" name="sync_interval_min:{{.Name}}" min="1" placeholder="{{$.Prefs.SyncIntervalMin}}"
+                      {{if .SyncIntervalMin}}value="{{.SyncIntervalMin}}"{{end}}
+                      class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  </label>
+                  <label class="block space-y-1">
+                    <span class="text-xs text-zinc-400">Max messages per sync</span>
+                    <input type="number" name="max_per_sync:{{.Name}}" min="1" placeholder="{{$.Prefs.MaxPerSync}}"
+                      {{if .MaxPerSync}}value="{{.MaxPerSync}}"{{end}}
+                      class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  </label>
+                  <label class="block space-y-1">
+                    <span class="text-xs text-zinc-400">Sync history, months (0 = everything)</span>
+                    <input type="number" name="sync_months:{{.Name}}" min="0" placeholder="{{$.Prefs.SyncMonths}}"
+                      {{if .SyncMonths}}value="{{.SyncMonths}}"{{end}}
+                      class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  </label>
+                </div>
+              </div>
+              {{end}}
+            </div>
+            {{end}}
           </section>
 
           <section x-show="tab === 'search'" x-cloak class="space-y-4">
