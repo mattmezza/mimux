@@ -158,18 +158,19 @@ func TestAccountSyncOverridesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ := s.GetAccount("acc")
-	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil {
+	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil || got.BodyCache != nil {
 		t.Fatalf("expected no overrides by default: %+v", got)
 	}
 
-	interval, maxPerSync, months := 10, 50, 0
-	if err := s.SetAccountSyncOverrides("acc", &interval, &maxPerSync, &months); err != nil {
+	interval, maxPerSync, months, bodyCache := 10, 50, 0, 25
+	if err := s.SetAccountSyncOverrides("acc", &interval, &maxPerSync, &months, &bodyCache); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.GetAccount("acc")
 	if got.SyncIntervalMin == nil || *got.SyncIntervalMin != 10 ||
 		got.MaxPerSync == nil || *got.MaxPerSync != 50 ||
-		got.SyncMonths == nil || *got.SyncMonths != 0 {
+		got.SyncMonths == nil || *got.SyncMonths != 0 ||
+		got.BodyCache == nil || *got.BodyCache != 25 {
 		t.Fatalf("overrides not round-tripped: %+v", got)
 	}
 
@@ -179,41 +180,46 @@ func TestAccountSyncOverridesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, _ = s.GetAccount("acc")
-	if got.SyncIntervalMin == nil || *got.SyncIntervalMin != 10 {
+	if got.SyncIntervalMin == nil || *got.SyncIntervalMin != 10 ||
+		got.BodyCache == nil || *got.BodyCache != 25 {
 		t.Fatalf("account-form save clobbered the sync override: %+v", got)
 	}
 
 	// Clearing back to nil ("inherit global").
-	if err := s.SetAccountSyncOverrides("acc", nil, nil, nil); err != nil {
+	if err := s.SetAccountSyncOverrides("acc", nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	got, _ = s.GetAccount("acc")
-	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil {
+	if got.SyncIntervalMin != nil || got.MaxPerSync != nil || got.SyncMonths != nil || got.BodyCache != nil {
 		t.Fatalf("overrides not cleared: %+v", got)
 	}
 }
 
 func TestEffectiveSyncSettings(t *testing.T) {
-	p := Prefs{SyncIntervalMin: 5, MaxPerSync: 500, SyncMonths: 6}
+	p := Prefs{SyncIntervalMin: 5, MaxPerSync: 500, SyncMonths: 6, BodyCache: 200}
 
 	// No overrides: inherits every global value.
-	interval, maxPerSync, months := EffectiveSyncSettings(p, config.Account{})
-	if interval != 5 || maxPerSync != 500 || months != 6 {
-		t.Fatalf("no override: got %d/%d/%d", interval, maxPerSync, months)
+	interval, maxPerSync, months, bodyCache := EffectiveSyncSettings(p, config.Account{})
+	if interval != 5 || maxPerSync != 500 || months != 6 || bodyCache != 200 {
+		t.Fatalf("no override: got %d/%d/%d/%d", interval, maxPerSync, months, bodyCache)
 	}
 
 	// Partial override: only the set knobs change.
 	n30, n50 := 30, 50
-	interval, maxPerSync, months = EffectiveSyncSettings(p, config.Account{SyncIntervalMin: &n30, MaxPerSync: &n50})
-	if interval != 30 || maxPerSync != 50 || months != 6 {
-		t.Fatalf("partial override: got %d/%d/%d", interval, maxPerSync, months)
+	interval, maxPerSync, months, bodyCache = EffectiveSyncSettings(p, config.Account{SyncIntervalMin: &n30, MaxPerSync: &n50})
+	if interval != 30 || maxPerSync != 50 || months != 6 || bodyCache != 200 {
+		t.Fatalf("partial override: got %d/%d/%d/%d", interval, maxPerSync, months, bodyCache)
 	}
 
-	// An explicit 0 override ("everything") must win over a nonzero global,
-	// distinct from an unset (nil) override.
+	// An explicit 0 override must win over a nonzero global, distinct from an
+	// unset (nil) override — for sync months ("everything") and for the body
+	// cache ("off"), which read opposite ways from the same 0.
 	zero := 0
-	_, _, months = EffectiveSyncSettings(p, config.Account{SyncMonths: &zero})
+	_, _, months, _ = EffectiveSyncSettings(p, config.Account{SyncMonths: &zero})
 	if months != 0 {
 		t.Fatalf("explicit zero override lost: got %d", months)
+	}
+	if _, _, _, bodyCache = EffectiveSyncSettings(p, config.Account{BodyCache: &zero}); bodyCache != 0 {
+		t.Fatalf("explicit zero body-cache override lost: got %d", bodyCache)
 	}
 }

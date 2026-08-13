@@ -12,17 +12,17 @@ import (
 const accountCols = `name, sender_name, provider, email, auth, password,
 	oauth2_client_id, oauth2_client_secret, imap_host, imap_port,
 	smtp_host, smtp_port, aliases, position,
-	sync_interval_min, max_per_sync, sync_months`
+	sync_interval_min, max_per_sync, sync_months, body_cache`
 
 func scanAccount(sc interface{ Scan(...any) error }) (config.Account, int, error) {
 	var a config.Account
 	var aliasesJSON string
 	var pos int
-	var syncInterval, maxPerSync, syncMonths sql.NullInt64
+	var syncInterval, maxPerSync, syncMonths, bodyCache sql.NullInt64
 	err := sc.Scan(&a.Name, &a.SenderName, &a.Provider, &a.Email, &a.Auth, &a.Password,
 		&a.OAuth2ClientID, &a.OAuth2ClientSecret, &a.IMAPHost, &a.IMAPPort,
 		&a.SMTPHost, &a.SMTPPort, &aliasesJSON, &pos,
-		&syncInterval, &maxPerSync, &syncMonths)
+		&syncInterval, &maxPerSync, &syncMonths, &bodyCache)
 	if err != nil {
 		return a, 0, err
 	}
@@ -32,6 +32,7 @@ func scanAccount(sc interface{ Scan(...any) error }) (config.Account, int, error
 	a.SyncIntervalMin = nullIntPtr(syncInterval)
 	a.MaxPerSync = nullIntPtr(maxPerSync)
 	a.SyncMonths = nullIntPtr(syncMonths)
+	a.BodyCache = nullIntPtr(bodyCache)
 	return a, pos, nil
 }
 
@@ -107,12 +108,13 @@ func (s *Store) UpsertAccount(a config.Account) error {
 	if err != nil {
 		return err
 	}
-	// sync_interval_min/max_per_sync/sync_months are deliberately absent from the
-	// ON CONFLICT SET list (like position): they're edited separately from
-	// Settings → Syncing, so a plain account-form save must not clobber them.
+	// sync_interval_min/max_per_sync/sync_months/body_cache are deliberately
+	// absent from the ON CONFLICT SET list (like position): they're edited
+	// separately from Settings → Syncing, so a plain account-form save must not
+	// clobber them.
 	_, err = s.DB.Exec(`
 		INSERT INTO accounts (`+accountCols+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)), ?, ?, ?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)), ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
 			sender_name = excluded.sender_name,
 			provider = excluded.provider,
@@ -129,26 +131,27 @@ func (s *Store) UpsertAccount(a config.Account) error {
 		a.Name, a.SenderName, a.Provider, a.Email, a.Auth, a.Password,
 		a.OAuth2ClientID, a.OAuth2ClientSecret, a.IMAPHost, a.IMAPPort,
 		a.SMTPHost, a.SMTPPort, string(b), a.Name,
-		intOrNull(a.SyncIntervalMin), intOrNull(a.MaxPerSync), intOrNull(a.SyncMonths))
+		intOrNull(a.SyncIntervalMin), intOrNull(a.MaxPerSync), intOrNull(a.SyncMonths),
+		intOrNull(a.BodyCache))
 	return err
 }
 
-// SetAccountSyncOverrides updates only the three per-account sync-override
-// columns (nil clears an override back to "inherit global"). Kept separate
-// from UpsertAccount, which never touches these, so Settings → Syncing can't
+// SetAccountSyncOverrides updates only the per-account sync-override columns
+// (nil clears an override back to "inherit global"). Kept separate from
+// UpsertAccount, which never touches these, so Settings → Syncing can't
 // clobber the rest of the account and vice versa.
-func (s *Store) SetAccountSyncOverrides(name string, intervalMin, maxPerSync, syncMonths *int) error {
-	_, err := s.DB.Exec(`UPDATE accounts SET sync_interval_min = ?, max_per_sync = ?, sync_months = ? WHERE name = ?`,
-		intOrNull(intervalMin), intOrNull(maxPerSync), intOrNull(syncMonths), name)
+func (s *Store) SetAccountSyncOverrides(name string, intervalMin, maxPerSync, syncMonths, bodyCache *int) error {
+	_, err := s.DB.Exec(`UPDATE accounts SET sync_interval_min = ?, max_per_sync = ?, sync_months = ?, body_cache = ? WHERE name = ?`,
+		intOrNull(intervalMin), intOrNull(maxPerSync), intOrNull(syncMonths), intOrNull(bodyCache), name)
 	return err
 }
 
-// EffectiveSyncSettings resolves the sync-interval/max-per-sync/sync-months
-// knobs for one account: its own override where set, else the global
+// EffectiveSyncSettings resolves the sync-interval/max-per-sync/sync-months/
+// body-cache knobs for one account: its own override where set, else the global
 // Settings → Syncing value. A pure function of Prefs + Account so it's cheap
 // to unit test without a live DB.
-func EffectiveSyncSettings(p Prefs, a config.Account) (intervalMin, maxPerSync, syncMonths int) {
-	intervalMin, maxPerSync, syncMonths = p.SyncIntervalMin, p.MaxPerSync, p.SyncMonths
+func EffectiveSyncSettings(p Prefs, a config.Account) (intervalMin, maxPerSync, syncMonths, bodyCache int) {
+	intervalMin, maxPerSync, syncMonths, bodyCache = p.SyncIntervalMin, p.MaxPerSync, p.SyncMonths, p.BodyCache
 	if a.SyncIntervalMin != nil {
 		intervalMin = *a.SyncIntervalMin
 	}
@@ -157,6 +160,9 @@ func EffectiveSyncSettings(p Prefs, a config.Account) (intervalMin, maxPerSync, 
 	}
 	if a.SyncMonths != nil {
 		syncMonths = *a.SyncMonths
+	}
+	if a.BodyCache != nil {
+		bodyCache = *a.BodyCache
 	}
 	return
 }

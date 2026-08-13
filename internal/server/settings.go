@@ -9,6 +9,7 @@ import (
 
 	"github.com/mattmezza/sm/internal/account"
 	"github.com/mattmezza/sm/internal/auth"
+	"github.com/mattmezza/sm/internal/config"
 	"github.com/mattmezza/sm/internal/store"
 	"github.com/mattmezza/sm/internal/translate"
 )
@@ -74,6 +75,7 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
 		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),
 		MaxPerSync:       atoiDefault(r.PostFormValue("max_per_sync"), 500),
+		BodyCache:        atoiDefault(r.PostFormValue("body_cache"), config.DefaultBodyCache),
 		AccountColors:    map[string]string{},
 		QuickActions:     store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions"))),
 		SearchScope:      r.PostFormValue("search_scope"),
@@ -133,6 +135,9 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	if p.MaxPerSync < 1 {
 		p.MaxPerSync = 500
 	}
+	if p.BodyCache < 0 {
+		p.BodyCache = 0 // 0 = off: no prefetching, no bodies kept on disk
+	}
 	for _, a := range s.accounts() {
 		if c := r.PostFormValue("color:" + a.Name); c != "" {
 			p.AccountColors[a.Name] = c
@@ -173,7 +178,8 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		interval := parseOverride(r.PostFormValue("sync_interval_min:"+a.Name), 1)
 		maxPerSync := parseOverride(r.PostFormValue("max_per_sync:"+a.Name), 1)
 		syncMonths := parseOverride(r.PostFormValue("sync_months:"+a.Name), 0)
-		if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths); err != nil {
+		bodyCache := parseOverride(r.PostFormValue("body_cache:"+a.Name), 0)
+		if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths, bodyCache); err != nil {
 			http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 			return
 		}

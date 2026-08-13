@@ -237,7 +237,7 @@ func (s *Store) Import(e ConfigExport) (ImportSummary, error) {
 		// UpsertAccount deliberately never writes the sync overrides, so a
 		// restore onto an existing account has to set them itself (nil included:
 		// the dump records "inherit global" too).
-		if err := s.SetAccountSyncOverrides(a.Name, a.SyncIntervalMin, a.MaxPerSync, a.SyncMonths); err != nil {
+		if err := s.SetAccountSyncOverrides(a.Name, a.SyncIntervalMin, a.MaxPerSync, a.SyncMonths, a.BodyCache); err != nil {
 			return sum, err
 		}
 		sum.Accounts++

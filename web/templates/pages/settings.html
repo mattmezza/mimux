@@ -317,6 +317,13 @@
               <span class="block text-xs text-zinc-500">Applies on the next first-time sync of each folder. Already-downloaded mail stays.</span>
             </label>
 
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">Keep bodies downloaded for the newest N inbox messages</span>
+              <input type="number" name="body_cache" min="0" value="{{.Prefs.BodyCache}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <span class="block text-xs text-zinc-500">Those open instantly; anything older is fetched when you open it. 0 turns prefetching off and clears the cached bodies (unlike sync history, where 0 means everything).</span>
+            </label>
+
             {{if .Accounts}}
             <div class="space-y-3 pt-2 border-t border-zinc-800">
               <h3 class="text-sm font-semibold text-zinc-100">Per-account overrides</h3>
@@ -324,7 +331,7 @@
               {{range .Accounts}}
               <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
                 <span class="block text-sm text-zinc-200">{{.Name}}</span>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <label class="block space-y-1">
                     <span class="text-xs text-zinc-400">Check every N minutes</span>
                     <input type="number" name="sync_interval_min:{{.Name}}" min="1" placeholder="{{$.Prefs.SyncIntervalMin}}"
@@ -341,6 +348,12 @@
                     <span class="text-xs text-zinc-400">Sync history, months (0 = everything)</span>
                     <input type="number" name="sync_months:{{.Name}}" min="0" placeholder="{{$.Prefs.SyncMonths}}"
                       {{if .SyncMonths}}value="{{.SyncMonths}}"{{end}}
+                      class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  </label>
+                  <label class="block space-y-1">
+                    <span class="text-xs text-zinc-400">Bodies kept downloaded (0 = off)</span>
+                    <input type="number" name="body_cache:{{.Name}}" min="0" placeholder="{{$.Prefs.BodyCache}}"
+                      {{if .BodyCache}}value="{{.BodyCache}}"{{end}}
                       class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                   </label>
                 </div>

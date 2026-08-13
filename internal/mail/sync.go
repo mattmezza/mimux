@@ -148,7 +148,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// "Sync history" setting (Settings → how far back to download): when set,
 		// the date window is authoritative — SEARCH SINCE gives the oldest UID to
 		// keep. Otherwise fall back to the message-count cap.
-		if _, _, months := a.syncSettings(); months > 0 {
+		if _, _, months, _ := a.syncSettings(); months > 0 {
 			since := time.Now().AddDate(0, -months, 0)
 			if data, err := c.UIDSearch(&imap.SearchCriteria{Since: since}, nil).Wait(); err == nil {
 				if uids := data.AllUIDs(); len(uids) > 0 {
@@ -224,7 +224,7 @@ func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store
 // larger than the message count, and UIDNext-N would skip older messages still
 // present (e.g. old unread inbox mail).
 func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UID {
-	_, maxPerSync, _ := a.syncSettings()
+	_, maxPerSync, _, _ := a.syncSettings()
 	limit := uint32(maxPerSync) // #nosec G115 -- small positive admin-config value
 	if limit == 0 {
 		limit = 500
@@ -251,7 +251,7 @@ func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UI
 // on the server that aren't stored yet, healing gaps left by an older/narrower
 // window without a manual re-sync. Cheap once caught up (a SEARCH + empty diff).
 func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *store.Folder) (int, error) {
-	_, maxPerSync, months := a.syncSettings()
+	_, maxPerSync, months, _ := a.syncSettings()
 	limit := uint32(maxPerSync) // #nosec G115 -- small positive admin-config value
 	if limit == 0 {
 		limit = 500

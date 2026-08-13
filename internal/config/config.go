@@ -74,6 +74,7 @@ type Account struct {
 	SyncIntervalMin *int
 	MaxPerSync      *int
 	SyncMonths      *int
+	BodyCache       *int
 }
 
 // Alias is an extra send/receive identity on an account, with its own sender
@@ -191,4 +192,9 @@ func ensureSecret(cfg *Config) error {
 const (
 	DefaultPollInterval = 5 * time.Minute
 	DefaultMaxPerSync   = 500
+	// DefaultBodyCache is how many of the newest inbox messages per account the
+	// warmer prefetches bodies for and the body cache keeps — one full message
+	// list page (server.listLimit), i.e. what the user can actually see and
+	// plausibly click next. Anything older is fetched on open and cached then.
+	DefaultBodyCache = 200
 )

@@ -28,11 +28,16 @@ func (s *Store) SaveMessageBody(id int64, blob []byte) error {
 }
 
 // MessagesWithoutBody returns a folder's messages that have no cached body yet,
-// newest first — the background warmer's work queue.
-func (s *Store) MessagesWithoutBody(folderID int64, limit int) ([]Message, error) {
+// newest first — the background warmer's work queue. window bounds the search
+// to the folder's newest N messages (the body-cache size), so the warmer can
+// never work back through the whole synced history; limit is one batch of that
+// window. The window is the same set PruneMessageBodies keeps, so the two can't
+// fight over a message.
+func (s *Store) MessagesWithoutBody(folderID int64, window, limit int) ([]Message, error) {
 	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
 		WHERE folder_id = ? AND id NOT IN (SELECT message_id FROM message_bodies)
-		ORDER BY date DESC LIMIT ?`, folderID, limit)
+		AND id IN (SELECT id FROM messages WHERE folder_id = ? ORDER BY date DESC LIMIT ?)
+		ORDER BY date DESC LIMIT ?`, folderID, folderID, window, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -46,6 +51,21 @@ func (s *Store) MessagesWithoutBody(folderID int64, limit int) ([]Message, error
 		out = append(out, *m)
 	}
 	return out, rows.Err()
+}
+
+// PruneMessageBodies drops cached bodies for everything outside a folder's
+// newest keep messages, returning how many rows went. keep = 0 clears the
+// folder's cache entirely ("off"). Dropping a body is cheap: opening the
+// message re-fetches and re-caches it.
+func (s *Store) PruneMessageBodies(folderID int64, keep int) (int64, error) {
+	res, err := s.DB.Exec(`DELETE FROM message_bodies WHERE message_id IN (
+		SELECT id FROM messages WHERE folder_id = ?
+		AND id NOT IN (SELECT id FROM messages WHERE folder_id = ? ORDER BY date DESC LIMIT ?))`,
+		folderID, folderID, keep)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
 }
 
 // DeleteMessageBody drops a message's cached body.
