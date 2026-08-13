@@ -439,7 +439,7 @@ func ValidHexColor(c, def string) string {
 	}
 	for i := 1; i < 7; i++ {
 		d := c[i]
-		if !(d >= '0' && d <= '9' || d >= 'a' && d <= 'f' || d >= 'A' && d <= 'F') {
+		if (d < '0' || d > '9') && (d < 'a' || d > 'f') && (d < 'A' || d > 'F') {
 			return def
 		}
 	}
