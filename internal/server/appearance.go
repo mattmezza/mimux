@@ -163,6 +163,8 @@ func accentCSS(accent string) template.CSS {
 	// The light theme darkens the 300/400 steps because they're used as text on
 	// white (see app.css); mirror that with this accent's own 700/600 so links
 	// and active tabs stay readable there too.
+	//nolint:gosec // G203: accent passed through ValidAccent above, so it is
+	// either a preset id or a "#rrggbb" literal — never caller-controlled text.
 	return template.CSS(fmt.Sprintf(
 		`:root{--color-indigo-200:%s;--color-indigo-300:%s;--color-indigo-400:%s;`+
 			`--color-indigo-500:%s;--color-indigo-600:%s;--color-indigo-900:%s;--color-indigo-950:%s}`+

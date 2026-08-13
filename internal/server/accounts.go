@@ -222,9 +222,9 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	// Zeros are shown on purpose: "0 labelled message(s)" is how the user learns
 	// labels found no synced mail to re-attach to yet (see store.Import).
-	_, _ = w.Write([]byte(fmt.Sprintf(
+	_, _ = fmt.Fprintf(w,
 		"Imported %d account(s), %d setting(s), %d token(s), %d filter(s), %d signature(s), "+
 			"%d template(s), %d saved search(es), %d trusted sender(s), %d labelled message(s).",
 		sum.Accounts, sum.Settings, sum.Tokens, sum.Filters, sum.Signatures,
-		sum.Templates, sum.Searches, sum.Senders, sum.Labels)))
+		sum.Templates, sum.Searches, sum.Senders, sum.Labels)
 }
