@@ -5,9 +5,14 @@
   <div class="sticky top-0 z-10 bg-zinc-900/95 backdrop-blur px-3 py-2 border-b border-zinc-800 text-zinc-100 font-medium shrink-0 flex items-center gap-2">
     <span>{{if .Unified}}All inboxes{{else}}{{folderLabel .Folder}}{{end}}</span>
     {{/* Mobile has no statusbar (hidden md:flex) to show sync state, so surface
-         it here instead — self-replacing, refetches on every sm:sync SSE event
-         and re-fires on "load" since #message-list itself gets swapped wholesale. */}}
-    <span id="list-syncing" hx-get="/syncing" hx-trigger="load, sm:sync from:body" hx-swap="outerHTML"></span>
+         it here instead — self-replacing, refetches on every sm:sync SSE event,
+         re-fires on "load" since #message-list itself gets swapped wholesale,
+         and polls every 60s as a guard against a missed/dropped SSE event
+         leaving it stuck (same fallback the statusbar and sidebar health use).
+         htmx-indicator also shows it for free while #message-list itself is
+         mid-refresh, for any reason — see app.css for why that matters. */}}
+    <span id="list-syncing" hx-get="/syncing" hx-trigger="load, sm:sync from:body, every 60s" hx-swap="outerHTML"
+      class="htmx-indicator flex items-center gap-1.5 text-[11px] font-normal text-zinc-500"></span>
   </div>
   {{if .HasMessages}}
   <ul id="message-list-items">
@@ -33,10 +38,14 @@
 </section>
 {{end}}
 
+{{/* Markup is always rendered (never empty) so the CSS-only .htmx-indicator
+     fade-in — triggered by #message-list's own in-flight request, a signal
+     this template has no way to know about — has something to reveal. Real,
+     server-confirmed syncing (.is-syncing) forces it visible outright. */}}
 {{define "syncing"}}
-<span id="list-syncing" hx-get="/syncing" hx-trigger="load, sm:sync from:body" hx-swap="outerHTML"
-  {{if .Syncing}}class="flex items-center gap-1.5 text-[11px] font-normal text-zinc-500"{{else}}class="empty:hidden"{{end}}>
-  {{- if .Syncing}}<svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg><span>Syncing…</span>{{end -}}
+<span id="list-syncing" hx-get="/syncing" hx-trigger="load, sm:sync from:body, every 60s" hx-swap="outerHTML"
+  class="htmx-indicator flex items-center gap-1.5 text-[11px] font-normal text-zinc-500{{if .Syncing}} is-syncing{{end}}">
+  <svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg><span>Syncing…</span>
 </span>
 {{end}}
 

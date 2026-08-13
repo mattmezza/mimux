@@ -165,14 +165,23 @@ document.addEventListener("click", (e) => {
 (function () {
   if (!window.EventSource) return;
   const es = new EventSource("/events");
-  // The stream drops on any network change (wifi/VPN switch, laptop sleep).
-  // EventSource reconnects on its own, but events sent while it was down are
-  // gone — nothing replays them — so the list would sit stale until the next
-  // poll. Refresh once on every reconnect. Skipped on the first open, where
-  // the page has just loaded its own fresh data.
+  // The stream drops on any network change (wifi/VPN switch, laptop sleep, a
+  // backgrounded mobile/PWA tab getting suspended). EventSource reconnects on
+  // its own, but events sent while it was down are gone — nothing replays
+  // them — including a whole sync that started AND finished while
+  // disconnected, so the accounts are already back to "ok" by the time we're
+  // listening again and there's no sync-status event left to show. Refresh
+  // once on every reconnect, and re-check sync state too (sm:sync) so the
+  // statusbar/sidebar/list-syncing pill at least reflect current truth
+  // immediately rather than waiting for their own 60s poll. Skipped on the
+  // first open, where the page has just loaded its own fresh data.
   let opened = false;
   es.addEventListener("open", () => {
-    if (opened) { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); }
+    if (opened) {
+      document.body.dispatchEvent(new Event("sm:refresh"));
+      document.body.dispatchEvent(new Event("sm:sync"));
+      refreshUnreadTitle();
+    }
     opened = true;
   });
   es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
@@ -462,13 +471,21 @@ window.closeReadingPane = closeReadingPane;
 // iframe's own document (single message, where the iframe swallows the
 // gesture entirely), and on desktop the thread's own message list (the pane
 // itself doesn't scroll there — only its children do).
-let hdrLastY = 0, hdrFrom = null;
+let hdrLastY = 0, hdrFrom = null, hdrGuardUntil = 0;
 function hdrScroll(pane, scroller, y, reclaim) {
   // A different scroller (htmx swapped the message, or the gesture moved
   // between the pane and the body iframe) means a different coordinate space:
   // re-baseline instead of reading the jump as a scroll.
   if (scroller !== hdrFrom) { hdrFrom = scroller; hdrLastY = y; return; }
   if (Math.abs(y - hdrLastY) < 8) return; // ignore jitter and rubber-banding
+  // reclaim mode grows the scroller by the header's own height (below), which
+  // browsers apply by clamping scrollTop to the new, smaller max — a real
+  // "scrollTop changed" event that reads exactly like the user flicking back
+  // up. Ignore scroll events for the duration of that resize (matches the
+  // margin-bottom transition in app.css) so the clamp can't flip us back.
+  // NOTE: 240ms = the 200ms CSS transition + a frame of slack, tune if
+  // the transition duration in app.css ever changes.
+  if (reclaim && performance.now() < hdrGuardUntil) { hdrLastY = y; return; }
   const away = y > hdrLastY && y > 64;
   hdrLastY = y;
   const hdr = pane.firstElementChild;
@@ -480,6 +497,7 @@ function hdrScroll(pane, scroller, y, reclaim) {
   // scrollHeight this function measures, and the clamped scrollTop reads back
   // as an upward scroll, flip-flopping the header forever.
   hdr.style.marginBottom = reclaim && away ? -hdr.offsetHeight + "px" : "";
+  if (reclaim) hdrGuardUntil = performance.now() + 240;
 }
 // Capture phase: scroll doesn't bubble, and #message-detail is swapped in by
 // htmx. Thread view scrolls the pane itself on mobile.
@@ -632,32 +650,6 @@ window.toggleThreadMessage = toggleThreadMessage;
     dist = 0;
   });
 })();
-
-// --- translate: pull the rendered text out of a message-body iframe and POST
-// it to /translate, dropping the result into resultEl. Same-origin iframe, so
-// reading its text is allowed. ---
-window.translateFrame = function (frame, resultEl) {
-  if (!frame || !resultEl || !window.htmx) return;
-  // Already translated once this open: toggle the cached panel — no re-fetch,
-  // no repeat API/network call. "Show original" inside the panel hides it too.
-  if (resultEl.dataset.translated === "1") {
-    resultEl.classList.toggle("hidden");
-    return;
-  }
-  let text = "";
-  try { text = frame.contentDocument?.body?.innerText || ""; } catch (_) {}
-  if (!text.trim()) {
-    resultEl.innerHTML = '<p class="text-xs text-zinc-500 px-4 py-2">Let the message finish loading, then translate.</p>';
-    return;
-  }
-  resultEl.innerHTML = '<p class="text-xs text-zinc-500 px-4 py-2">Translating…</p>';
-  htmx.ajax("POST", "/translate", { values: { text: text.slice(0, 5000) }, target: resultEl, swap: "innerHTML" })
-    .then(() => {
-      // Only mark cached on a real translation (not the error partial), so a
-      // failed attempt still retries instead of toggling a stale error.
-      if (resultEl.querySelector("[data-translated-ok]")) resultEl.dataset.translated = "1";
-    });
-};
 
 // --- attachments: inline preview (image/pdf/text) without downloading. The
 // attachment endpoint is same-origin and served under a locked-down CSP, so
