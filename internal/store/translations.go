@@ -6,9 +6,12 @@ import (
 	"encoding/hex"
 )
 
-// TranslationCacheKey hashes source text + target language into a stable key.
-func TranslationCacheKey(text, target string) string {
-	sum := sha256.Sum256([]byte(target + "\x00" + text))
+// TranslationCacheKey hashes the document plus the language pair it was
+// translated with into a stable key. Source ("" = auto-detect) is part of the
+// key: without it, re-translating the same body from a different source
+// language would hand back the previous translation.
+func TranslationCacheKey(text, source, target string) string {
+	sum := sha256.Sum256([]byte(source + "\x00" + target + "\x00" + text))
 	return hex.EncodeToString(sum[:])
 }
 

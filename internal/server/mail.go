@@ -44,6 +44,7 @@ var templateFuncs = template.FuncMap{
 	"shortURL":       shortURL,
 	"composeHTML":    composeHTML,
 	"toJSON":         toJSON,
+	"translateLangs": func() []translate.Language { return translate.Languages },
 }
 
 // toJSON marshals a value to a compact JSON string for embedding in a data-*
@@ -556,7 +557,8 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("tr") == "1" {
-		body = s.translatedBody(r.Context(), body)
+		// sl/tl are the bar's two pickers; blank sl means auto-detect.
+		body = s.translatedBody(r.Context(), body, r.URL.Query().Get("sl"), r.URL.Query().Get("tl"))
 	}
 	// #nosec G705 -- body is sanitized by the two-pass sanitizer and served under a strict CSP inside a sandboxed iframe.
 	_, _ = w.Write([]byte(body))
@@ -564,19 +566,34 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 
 // translatedBody returns the same sanitized document with its human-readable
 // text nodes translated — same markup, images and styling, so the reading pane
-// keeps the real HTML email instead of a plain-text dump. Results are cached by
-// (document, target language) in the existing translations table. Any failure
+// keeps the real HTML email instead of a plain-text dump. source ("" =
+// auto-detect) and target come from the bar's pickers; results are cached by
+// (document, language pair) in the existing translations table. Any failure
 // falls back to the original, marked so the pane can show why.
-func (s *Server) translatedBody(ctx context.Context, body string) string {
+func (s *Server) translatedBody(ctx context.Context, body, source, target string) string {
 	cfg := s.store.GetAppConfig()
 	if cfg.TranslateAPIKey == "" {
 		return markBody(body, "data-sm-error")
 	}
-	key := store.TranslationCacheKey(body, cfg.TranslateTarget)
+	// Both codes go out in an API request, so anything that isn't a language we
+	// know falls back rather than being forwarded. The configured target gets
+	// the same check — it predates the picker and may be hand-typed junk.
+	if !translate.Supported(source) {
+		source = ""
+	}
+	if !translate.Supported(target) {
+		target = cfg.TranslateTarget
+	}
+	if !translate.Supported(target) {
+		target = "en"
+	}
+	key := store.TranslationCacheKey(body, source, target)
 	if out, _, ok, err := s.store.TranslationCached(key); err == nil && ok {
 		return out
 	}
-	out, lang, err := translate.NewClient(cfg.TranslateAPIKey, cfg.TranslateTarget).TranslateHTML(ctx, body)
+	cl := translate.NewClient(cfg.TranslateAPIKey, target)
+	cl.Source = source
+	out, lang, err := cl.TranslateHTML(ctx, body)
 	if err != nil {
 		slog.Error("translate body", "err", err)
 		return markBody(body, "data-sm-error")
