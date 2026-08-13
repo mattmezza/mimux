@@ -1,10 +1,12 @@
 {{/* Translation UI. There is no separate rendering path: the body iframe is
      simply re-pointed at /messages/{id}/body?tr=1, which serves the SAME
      sanitized HTML with only its text nodes translated — layout, images and
-     styling survive. Dropping the param again shows the original.
+     styling survive. Dropping the param again shows the original. The two
+     language pickers ride along in the same URL as sl=/tl=, so the chosen pair
+     is state in exactly one place, like tr= already was.
 
      translate_bar is the slim strip above the iframe; it stays empty (and
-     hidden) until a translation loads. translate_js holds the two helpers,
+     hidden) until a translation loads. translate_js holds the helpers,
      included once per reading pane. */}}
 
 {{define "translate_bar"}}<div data-translate-bar class="shrink-0 empty:hidden"></div>{{end}}
@@ -12,13 +14,24 @@
 {{define "translate_js"}}
 <script>
 if (!window.smTranslate) {
+  // Google Translate's supported languages, sorted by name (see
+  // internal/translate/languages.go).
+  window.smTranslateLangs = {{translateLangs}};
+
   // Toggle a message body between original and translated, then repaint the bar
   // once the iframe has loaded. State lives in the iframe URL, nowhere else.
   window.smTranslate = function (frame, bar) {
     if (!frame || !bar || !frame.src) return;
     var u = new URL(frame.src, location.href);
     var on = u.searchParams.get("tr") !== "1";
+    // sl/tl are left in place when switching off, so toggling back translates
+    // with the pair the user last picked.
     if (on) { u.searchParams.set("tr", "1"); } else { u.searchParams.delete("tr"); }
+    smTranslateLoad(frame, bar, u, on);
+  };
+
+  // Point the frame at u, show "Translating…" and repaint once it lands.
+  window.smTranslateLoad = function (frame, bar, u, on) {
     frame.addEventListener("load", function done() {
       frame.removeEventListener("load", done);
       smTranslateBar(frame, bar);
@@ -28,28 +41,64 @@ if (!window.smTranslate) {
     frame.src = u.pathname + u.search;
   };
 
-  // The body handler tags <html> with data-sm-lang (translated) or
-  // data-sm-error (translation unavailable — the original is being shown).
+  function smLangName(code) {
+    var l = smTranslateLangs.find(function (x) { return x.Code === code; });
+    return l ? l.Name : code;
+  }
+
+  // One picker. autoLabel is the "" option (source only — the target is always
+  // a concrete language); changing it re-requests the body with the new pair.
+  function smLangSelect(frame, bar, param, value, label, autoLabel) {
+    var sel = document.createElement("select");
+    sel.className = "rounded bg-zinc-800 border border-zinc-700 px-1 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500";
+    sel.setAttribute("aria-label", label);
+    sel.title = label;
+    if (autoLabel) sel.appendChild(new Option(autoLabel, "", false, value === ""));
+    smTranslateLangs.forEach(function (l) {
+      sel.appendChild(new Option(l.Name, l.Code, false, l.Code === value));
+    });
+    sel.onchange = function () {
+      var u = new URL(frame.src, location.href);
+      u.searchParams.set("tr", "1");
+      if (sel.value) { u.searchParams.set(param, sel.value); } else { u.searchParams.delete(param); }
+      smTranslateLoad(frame, bar, u, true);
+    };
+    return sel;
+  }
+
+  // The body handler tags <html> with the pair it used (data-sm-target, plus
+  // data-sm-source when the source was picked and data-sm-lang when it was
+  // detected) or with data-sm-error (translation unavailable — the original is
+  // being shown).
   window.smTranslateBar = function (frame, bar) {
     var root = null;
     try { root = frame.contentDocument.documentElement; } catch (e) { /* cross-origin: nothing to show */ }
     var lang = root && root.dataset.smLang;
+    var target = root && root.dataset.smTarget;
     var failed = root && root.dataset.smError !== undefined;
     bar.textContent = "";
-    if (!lang && !failed) { bar.className = "shrink-0 empty:hidden"; return; }
+    if (!lang && !target && !failed) { bar.className = "shrink-0 empty:hidden"; return; }
     bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b " +
       (failed ? "bg-red-500/10 border-red-500/20 text-red-300"
               : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300");
     var msg = document.createElement("span");
     msg.textContent = failed
       ? "Translation unavailable. Check your Translate API key in Settings."
-      : "Translated from " + lang;
+      : (lang ? "Translated from " + smLangName(lang) : "Translated");
+    bar.appendChild(msg);
+    // No pickers in the error state — another language can't fix a missing key.
+    if (!failed) {
+      bar.appendChild(smLangSelect(frame, bar, "sl", root.dataset.smSource || "", "Source language", "Detect language"));
+      var arrow = document.createElement("span");
+      arrow.textContent = "→";
+      bar.appendChild(arrow);
+      bar.appendChild(smLangSelect(frame, bar, "tl", target, "Target language", ""));
+    }
     var btn = document.createElement("button");
     btn.type = "button";
     btn.className = "underline hover:opacity-80";
     btn.textContent = failed ? "Dismiss" : "Show original";
     btn.onclick = function () { smTranslate(frame, bar); };
-    bar.appendChild(msg);
     bar.appendChild(btn);
   };
 }

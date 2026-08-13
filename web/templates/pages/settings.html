@@ -491,8 +491,10 @@
               </label>
               <label class="block space-y-1">
                 <span class="text-sm text-zinc-200">Target language</span>
-                <input type="text" name="translate_target" value="{{.AppConfig.TranslateTarget}}" placeholder="en"
-                  class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                <select name="translate_target"
+                  class="w-56 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  {{range translateLangs}}<option value="{{.Code}}"{{if eq .Code $.AppConfig.TranslateTarget}} selected{{end}}>{{.Name}}</option>{{end}}
+                </select>
               </label>
             </div>
 

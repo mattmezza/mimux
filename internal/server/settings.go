@@ -9,6 +9,7 @@ import (
 	"github.com/mattmezza/sm/internal/account"
 	"github.com/mattmezza/sm/internal/auth"
 	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/sm/internal/translate"
 )
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
@@ -140,9 +141,15 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return
 	}
+	// The form is a <select> of known languages; a posted code that isn't one
+	// falls back to English rather than being stored and later sent to Google.
+	target := r.PostFormValue("translate_target")
+	if !translate.Supported(target) {
+		target = "en"
+	}
 	if err := s.store.SaveAppConfig(store.AppConfig{
 		TranslateAPIKey: r.PostFormValue("translate_api_key"),
-		TranslateTarget: r.PostFormValue("translate_target"),
+		TranslateTarget: target,
 		AIKey:           r.PostFormValue("ai_openrouter_key"),
 		AIModel:         r.PostFormValue("ai_model"),
 		AITone:          r.PostFormValue("ai_tone"),

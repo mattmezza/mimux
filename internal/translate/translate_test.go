@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -94,6 +95,39 @@ func TestTranslateHTML_Batches(t *testing.T) {
 	}
 }
 
+func TestTranslateHTML_Source(t *testing.T) {
+	// Auto-detect (the default): nothing goes out as source, and the language
+	// the API detected is reported back for the bar to show.
+	api := &stubAPI{}
+	c, srv := stubClient(t, api)
+	defer srv.Close()
+	if _, lang, err := c.TranslateHTML(context.Background(), "<p>ciao</p>"); err != nil || lang != "it" {
+		t.Fatalf("lang = %q, err = %v", lang, err)
+	}
+	if body := api.rawBodies()[0]; strings.Contains(body, `"source"`) {
+		t.Errorf("auto-detect sent a source param: %s", body)
+	}
+
+	// A picked source is forwarded, and the pair used gets tagged onto the
+	// document so the reading pane's pickers can show it.
+	api2 := &stubAPI{}
+	c2, srv2 := stubClient(t, api2)
+	defer srv2.Close()
+	c2.Source = "fr"
+	out, _, err := c2.TranslateHTML(context.Background(), "<p>bonjour</p>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := api2.rawBodies()[0]; !strings.Contains(body, `"source":"fr"`) {
+		t.Errorf("source not sent: %s", body)
+	}
+	for _, want := range []string{`data-sm-source="fr"`, `data-sm-target="en"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestTranslateHTML_APIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
@@ -115,7 +149,7 @@ func TestTranslationCache(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	key := store.TranslationCacheKey("ciao", "en")
+	key := store.TranslationCacheKey("ciao", "", "en")
 	if _, _, ok, err := s.TranslationCached(key); err != nil || ok {
 		t.Fatalf("expected cache miss, got ok=%v err=%v", ok, err)
 	}
@@ -129,6 +163,14 @@ func TestTranslationCache(t *testing.T) {
 	if translated != "hello" || lang != "it" {
 		t.Errorf("cached = %q, %q", translated, lang)
 	}
+	// Same document and target, different source: a different translation, so
+	// it must miss rather than hand back the auto-detected one.
+	if _, _, ok, err := s.TranslationCached(store.TranslationCacheKey("ciao", "fr", "en")); err != nil || ok {
+		t.Fatalf("source is not part of the cache key: ok=%v err=%v", ok, err)
+	}
+	if _, _, ok, err := s.TranslationCached(store.TranslationCacheKey("ciao", "", "de")); err != nil || ok {
+		t.Fatalf("target is not part of the cache key: ok=%v err=%v", ok, err)
+	}
 }
 
 // stubAPI answers with the Google Translate v2 shape, echoing every segment back
@@ -137,13 +179,16 @@ func TestTranslationCache(t *testing.T) {
 type stubAPI struct {
 	mu      sync.Mutex
 	batches [][]string
+	raw     []string // request bodies verbatim, so a test can assert what was NOT sent
 }
 
 func (a *stubAPI) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	sent, _ := io.ReadAll(r.Body)
 	var body requestBody
-	_ = json.NewDecoder(r.Body).Decode(&body)
+	_ = json.Unmarshal(sent, &body)
 	a.mu.Lock()
 	a.batches = append(a.batches, body.Q)
+	a.raw = append(a.raw, string(sent))
 	a.mu.Unlock()
 
 	var res apiResponse
@@ -165,6 +210,12 @@ func (a *stubAPI) sent() []string {
 		all = append(all, b...)
 	}
 	return all
+}
+
+func (a *stubAPI) rawBodies() []string {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.raw
 }
 
 func (a *stubAPI) calls() int {

@@ -41,6 +41,7 @@ var skipTags = map[string]bool{"script": true, "style": true, "head": true, "nos
 type Client struct {
 	APIKey     string
 	Target     string
+	Source     string // empty = let the API auto-detect (and report what it found)
 	HTTPClient *http.Client
 }
 
@@ -56,6 +57,7 @@ func NewClient(apiKey, target string) *Client {
 type requestBody struct {
 	Q      []string `json:"q"`
 	Target string   `json:"target"`
+	Source string   `json:"source,omitempty"` // omitted = auto-detect
 	Format string   `json:"format"`
 }
 
@@ -81,8 +83,10 @@ type textSeg struct {
 
 // TranslateHTML translates the human-readable text of an HTML document and
 // returns the re-serialized document — same markup, styling, images and
-// layout, only the words change. The <html> element is tagged with
-// data-sm-lang=<detected source language> so the reading pane can label it.
+// layout, only the words change. The <html> element is tagged with the pair
+// that was used — data-sm-target, data-sm-source when the caller picked one,
+// and data-sm-lang=<detected source language> when it did not — so the reading
+// pane can label it.
 func (c *Client) TranslateHTML(ctx context.Context, doc string) (out, detectedLang string, err error) {
 	if c == nil || c.APIKey == "" {
 		return "", "", ErrDisabled
@@ -122,10 +126,16 @@ func (c *Client) TranslateHTML(ctx context.Context, doc string) (out, detectedLa
 		i = j
 	}
 
-	if detectedLang != "" {
-		if el := findElement(root, "html"); el != nil {
+	// The reading pane's bar paints itself from these: which pair was used
+	// (so the two pickers show it) and, when auto-detecting, what came back.
+	if el := findElement(root, "html"); el != nil {
+		if detectedLang != "" {
 			el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-lang", Val: detectedLang})
 		}
+		if c.Source != "" {
+			el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-source", Val: c.Source})
+		}
+		el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-target", Val: c.Target})
 	}
 	var buf bytes.Buffer
 	if err := html.Render(&buf, root); err != nil {
@@ -181,7 +191,7 @@ func (c *Client) translateBatch(ctx context.Context, q []string) (out []string, 
 	if c == nil || c.APIKey == "" {
 		return nil, "", ErrDisabled
 	}
-	body, err := json.Marshal(requestBody{Q: q, Target: c.Target, Format: "text"})
+	body, err := json.Marshal(requestBody{Q: q, Target: c.Target, Source: c.Source, Format: "text"})
 	if err != nil {
 		return nil, "", err
 	}
