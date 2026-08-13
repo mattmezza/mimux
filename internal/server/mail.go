@@ -631,7 +631,7 @@ func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "summary_view", view)
 		return
 	}
-	sum, truncated, err := s.aiClient().Summarize(r.Context(), level, body)
+	sum, truncated, err := s.aiClient(store.AISummarize).Summarize(r.Context(), level, body)
 	if err != nil {
 		slog.Error("ai summarize", "err", err)
 		view["Err"] = ai.ErrMessage(err)
@@ -645,11 +645,13 @@ func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "summary_view", view)
 }
 
-// aiClient builds an OpenRouter client from the stored settings. Built per call
-// so a key/model/prefs change in Settings takes effect without a restart.
-func (s *Server) aiClient() *ai.Client {
+// aiClient builds an OpenRouter client for one AI feature from the stored
+// settings — the feature's own model where it has one, else the default model.
+// Built per call so a key/model/prefs change in Settings takes effect without a
+// restart.
+func (s *Server) aiClient(f store.AIFeature) *ai.Client {
 	c := s.store.GetAppConfig()
-	cl := ai.NewClient(c.AIKey, c.AIModel)
+	cl := ai.NewClient(c.AIKey, c.ModelFor(f))
 	cl.Prefs = ai.Prefs{
 		Tone:         c.AITone,
 		Brevity:      c.AIBrevity,
