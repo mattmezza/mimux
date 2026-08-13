@@ -9,9 +9,11 @@
   {{if .Thread}}
   {{range .QAMenu}}{{template "qa_btn_t" (dict "ID" . "D" $ "Menu" true)}}{{end}}
   {{template "qa_move" (dict "M" .Latest "Row" .Row "Folders" .Folders "Cur" .CurrentFolder)}}
+  {{template "label_menu" (dict "M" .Latest "Known" .Known)}}
   {{else}}
   {{range .QAMenu}}{{template "qa_btn" (dict "ID" . "D" $ "Menu" true)}}{{end}}
   {{template "qa_move" (dict "M" .Msg "Row" .Row "Folders" .Folders "Cur" .CurrentFolder)}}
+  {{template "label_menu" (dict "M" .Msg "Known" .Known)}}
   {{end}}
 </div>
 {{end}}

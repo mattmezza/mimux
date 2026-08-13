@@ -97,6 +97,66 @@ func TestRefine_UnknownAction(t *testing.T) {
 	}
 }
 
+func TestSummarize_LevelAndTruncation(t *testing.T) {
+	long := strings.Repeat("a", maxSummaryChars+500)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		prompt := req.Messages[1].Content
+		if !strings.Contains(prompt, "single sentence of at most 25 words") {
+			t.Errorf("prompt missing level instruction: %q", prompt)
+		}
+		if !strings.Contains(prompt, "cut off here") {
+			t.Errorf("prompt missing truncation note: %q", prompt)
+		}
+		if !strings.Contains(prompt, "in Italian") {
+			t.Errorf("prompt missing language: %q", prompt)
+		}
+		if n := strings.Count(prompt, "a"); n > maxSummaryChars+200 {
+			t.Errorf("body not truncated: %d body chars in prompt", n)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"  The invoice is due Friday.  "}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{Language: "Italian"}}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	sum, truncated, err := c.Summarize(context.Background(), "oneline", long)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum != "The invoice is due Friday." || !truncated {
+		t.Errorf("Summarize = %q, truncated=%v", sum, truncated)
+	}
+}
+
+func TestSummarize_ShortBodyAndUnknownLevel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if !strings.Contains(req.Messages[1].Content, "bullet points") {
+			t.Errorf("prompt missing brief instruction: %q", req.Messages[1].Content)
+		}
+		if strings.Contains(req.Messages[1].Content, "cut off here") {
+			t.Errorf("short body should not be marked truncated: %q", req.Messages[1].Content)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"- one\n- two"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
+	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	sum, truncated, err := c.Summarize(context.Background(), "brief", "Please pay the invoice.")
+	if err != nil || truncated || sum != "- one\n- two" {
+		t.Fatalf("Summarize = %q, truncated=%v, err=%v", sum, truncated, err)
+	}
+	if _, _, err := c.Summarize(context.Background(), "bogus", "hi"); err == nil {
+		t.Fatal("expected error for unknown summary level")
+	}
+}
+
 func TestSplitSubject(t *testing.T) {
 	subj, body := splitSubject("Subject: Hello there\n\nThe body.")
 	if subj != "Hello there" || body != "The body." {

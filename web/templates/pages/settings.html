@@ -545,6 +545,15 @@
                   </select>
                 </label>
                 <label class="block space-y-1">
+                  <span class="text-sm text-zinc-200">Summary detail</span>
+                  <select name="ai_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    {{$s := .AppConfig.AISummaryLevel}}
+                    <option value="oneline" {{if eq $s "oneline"}}selected{{end}}>One line</option>
+                    <option value="brief" {{if eq $s "brief"}}selected{{end}}>Brief (bullets)</option>
+                    <option value="detailed" {{if eq $s "detailed"}}selected{{end}}>Detailed</option>
+                  </select>
+                </label>
+                <label class="block space-y-1">
                   <span class="text-sm text-zinc-200">Reply language</span>
                   <select name="ai_language" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
                     {{$l := .AppConfig.AILanguage}}
@@ -554,7 +563,7 @@
                   </select>
                 </label>
               </div>
-              <p class="text-xs text-zinc-500">Tone, length and language shape every AI draft. Keys and settings are saved with the Save button below.</p>
+              <p class="text-xs text-zinc-500">Tone, length and language shape every AI draft. Summary detail is only the starting level — each summary can be switched from its own strip. Keys and settings are saved with the Save button below.</p>
             </div>
           </section>
 

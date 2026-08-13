@@ -47,3 +47,12 @@ func draftPrompt(threadContext, direction string, wantSubject bool) (string, err
 func refinePrompt(text, action string) (string, error) {
 	return exec("refine.tmpl", map[string]string{"Text": text, "Action": action})
 }
+
+func summarizePrompt(body, level, language string, truncated bool) (string, error) {
+	return exec("summarize.tmpl", map[string]any{
+		"Body":      body,
+		"Level":     level,
+		"Language":  language,
+		"Truncated": truncated,
+	})
+}

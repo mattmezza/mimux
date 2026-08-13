@@ -145,6 +145,37 @@ func (c *Client) Refine(ctx context.Context, format, text, action string) (strin
 	return c.chat(ctx, systemPrompt(c.Prefs.withDefaults(), format), prompt)
 }
 
+var summaryLevels = map[string]string{
+	"oneline":  "a single sentence of at most 25 words",
+	"brief":    `3 to 5 short bullet points, one line each, every line starting with "- "`,
+	"detailed": `one short paragraph of context, then "- " bullets covering every key fact, date, number and action item`,
+}
+
+// maxSummaryChars is the body budget sent to the model — long enough for any
+// real email, short enough to keep one summary cheap. Longer bodies are cut and
+// the caller is told so it can say as much in the UI.
+// NOTE: characters, not tokens — no tokenizer dependency for a rough cap.
+const maxSummaryChars = 12000
+
+// Summarize condenses a message's plain-text body at the given detail level
+// (oneline|brief|detailed). truncated reports whether the body was cut to
+// maxSummaryChars before being sent.
+func (c *Client) Summarize(ctx context.Context, level, body string) (summary string, truncated bool, err error) {
+	instr, ok := summaryLevels[level]
+	if !ok {
+		return "", false, fmt.Errorf("ai: unknown summary level %q", level)
+	}
+	if r := []rune(body); len(r) > maxSummaryChars {
+		body, truncated = strings.TrimSpace(string(r[:maxSummaryChars])), true
+	}
+	prompt, err := summarizePrompt(body, instr, c.Prefs.withDefaults().Language, truncated)
+	if err != nil {
+		return "", truncated, err
+	}
+	out, err := c.chat(ctx, "You summarize emails for a busy reader. Output only the summary, as plain text.", prompt)
+	return out, truncated, err
+}
+
 // parseOptions extracts a JSON array of options from a model reply, tolerating
 // code fences or stray prose around it.
 func parseOptions(s string) ([]Option, error) {

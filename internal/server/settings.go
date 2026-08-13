@@ -149,6 +149,7 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		AIBrevity:       r.PostFormValue("ai_brevity"),
 		AIReplyOptions:  atoiDefault(r.PostFormValue("ai_reply_options"), 3),
 		AILanguage:      r.PostFormValue("ai_language"),
+		AISummaryLevel:  r.PostFormValue("ai_summary_level"),
 	}); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return

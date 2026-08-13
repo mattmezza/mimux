@@ -2,6 +2,7 @@ package mail
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/gob"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset" // register non-UTF-8 charsets
 	"golang.org/x/net/html"
+
+	"github.com/mattmezza/sm/internal/store"
 )
 
 // messageBody is a parsed, decoded email body ready for on-demand rendering.
@@ -95,6 +98,25 @@ func (b *messageBody) render(allowExternal bool) (out string, blockedExternal bo
 		return renderBodyDocument(safe, false), blocked
 	}
 	return renderBodyDocument(b.textContent, true), false
+}
+
+// PlainText returns the message's readable text, for feeding to something that
+// can't read markup (the AI summary). It comes off the same cached parsed body
+// as the reading pane (LRU → SQLite → IMAP), preferring the text/plain part and
+// falling back to the visible text of the HTML one.
+func (m *Manager) PlainText(ctx context.Context, msg *store.Message) (string, error) {
+	b, err := m.parsedBody(ctx, msg, false)
+	if err != nil {
+		return "", err
+	}
+	if t := strings.TrimSpace(b.textContent); t != "" && !looksHTML(t) {
+		return t, nil
+	}
+	src := b.htmlContent
+	if strings.TrimSpace(src) == "" {
+		src = b.textContent
+	}
+	return collapseWS(stripHTML(src)), nil
 }
 
 // parseBody parses a full RFC 822 message into its text/HTML parts and inline

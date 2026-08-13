@@ -173,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/messages/{id}/ext-banner", s.handleExtBanner)
 		r.Get("/messages/{id}/attachment/{part}", s.handleAttachment)
 		r.Get("/messages/{id}/invite", s.handleInvite)
+		r.Get("/messages/{id}/summary", s.handleMessageSummary)
 		r.Post("/messages/{id}/rsvp", s.handleRSVP)
 		r.Post("/messages/{id}/read", s.handleMarkRead(true))
 		r.Post("/messages/{id}/unread", s.handleMarkRead(false))
@@ -183,6 +184,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/messages/{id}/spam", s.handleMove("spam"))
 		r.Post("/messages/{id}/move", s.handleMoveToFolder)
 		r.Post("/messages/{id}/undo-move", s.handleUndoMove)
+		r.Post("/messages/{id}/label", s.handleLabel)
 		r.Post("/messages/{id}/allow-sender", s.handleAllowSender)
 		r.Post("/messages/{id}/unsubscribe", s.handleUnsubscribe)
 		r.Get("/compose", s.handleComposeNew)
@@ -214,17 +216,7 @@ func (s *Server) Handler() http.Handler {
 		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
 		// Clients are built per request so AI keys edited in Settings take
 		// effect without a restart (translate does the same, in handleMessageBody).
-		r.Mount("/ai", ai.Routes(func() *ai.Client {
-			c := s.store.GetAppConfig()
-			cl := ai.NewClient(c.AIKey, c.AIModel)
-			cl.Prefs = ai.Prefs{
-				Tone:         c.AITone,
-				Brevity:      c.AIBrevity,
-				ReplyOptions: c.AIReplyOptions,
-				Language:     c.AILanguage,
-			}
-			return cl
-		}))
+		r.Mount("/ai", ai.Routes(s.aiClient))
 	})
 	return r
 }

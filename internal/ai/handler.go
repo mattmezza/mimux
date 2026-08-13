@@ -28,7 +28,7 @@ func Routes(newClient func() *Client) chi.Router {
 		opts, err := newClient().Options(r.Context(), ctx)
 		if err != nil {
 			slog.Error("ai options", "err", err)
-			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
+			httpErr(w, http.StatusBadGateway, ErrMessage(err))
 			return
 		}
 		writeJSON(w, map[string]any{"options": opts})
@@ -47,7 +47,7 @@ func Routes(newClient func() *Client) chi.Router {
 		res, err := newClient().Draft(r.Context(), mode, r.PostFormValue("context"), direction, wantSubject)
 		if err != nil {
 			slog.Error("ai draft", "err", err)
-			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
+			httpErr(w, http.StatusBadGateway, ErrMessage(err))
 			return
 		}
 		draft := res.Draft
@@ -68,7 +68,7 @@ func Routes(newClient func() *Client) chi.Router {
 		draft, err := newClient().Refine(r.Context(), mode, text, r.PostFormValue("action"))
 		if err != nil {
 			slog.Error("ai refine", "err", err)
-			httpErr(w, http.StatusBadGateway, aiErrMsg(err))
+			httpErr(w, http.StatusBadGateway, ErrMessage(err))
 			return
 		}
 		if mode == "html" {
@@ -89,7 +89,9 @@ func normalizeMode(m string) string {
 	}
 }
 
-func aiErrMsg(err error) string {
+// ErrMessage turns an AI failure into the user-facing sentence every AI feature
+// shows (exported for the summary strip, which renders server-side).
+func ErrMessage(err error) string {
 	if err == ErrDisabled {
 		return "AI is off — add an OpenRouter key in Settings → AI."
 	}
