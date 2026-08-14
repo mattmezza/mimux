@@ -2,7 +2,7 @@
 // with the cache as an offline-only fallback. This deliberately avoids serving
 // stale JS/CSS/templates — a cache-first strategy previously pinned old assets
 // in already-open browsers and broke the app after updates.
-const CACHE = "sm-v6";
+const CACHE = "sm-v7";
 // The icon is deliberately NOT precached: it is served from /icon.svg?v=<hash>
 // of the user's colour settings, so a precached URL would be a stale mark the
 // moment they change one. The network-first fetch handler below caches it on
@@ -69,7 +69,15 @@ self.addEventListener("push", (e) => {
         renotify: !visible,
         silent: visible,
         icon: "/static/icons/icon-192.png",
-        badge: "/static/icons/icon-192.png",
+        // NOT the icon: Android renders the badge as a silhouette of the alpha
+        // channel, and the app icon is an opaque plate — its silhouette is a
+        // blank rounded square. /icon.svg?p=badge is the same mark in opaque
+        // white on nothing, which is what that derivation needs.
+        // NOTE: the icon stays the stock-palette PNG rather than the
+        // themed /icon.svg — that URL is cached immutable and unversioned here,
+        // so it would go stale on a colour change. Wire the version in if the
+        // notification icon ever needs to follow the user's colours.
+        badge: "/icon.svg?p=badge",
       });
     })()
   );

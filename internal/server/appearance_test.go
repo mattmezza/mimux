@@ -77,6 +77,17 @@ func TestIconEndpoint(t *testing.T) {
 		t.Errorf("maskable variant must be full-bleed and shrink the mark; body:\n%s", mask)
 	}
 
+	// The notification badge is a white-on-nothing silhouette: Android derives
+	// it from the alpha channel, so a background plate or a coloured mark would
+	// come out as a blank blob (see sw.js).
+	_, badge := get(t, h, "/icon.svg?p=badge")
+	wellFormedXML(t, badge)
+	if strings.Contains(badge, "<rect") || strings.Contains(badge, "#101010") ||
+		strings.Contains(badge, "#ff0000") || strings.Contains(badge, "#00ff00") ||
+		strings.Count(badge, `fill="#fff"`) != 2 {
+		t.Errorf("badge must be the bare mark in opaque white; body:\n%s", badge)
+	}
+
 	// Query overrides drive the Settings preview, through the same gate.
 	_, prev := get(t, h, "/icon.svg?accent=%23123456&bg=transparent&shape=square")
 	if !strings.Contains(prev, "#123456") || strings.Contains(prev, "<rect") {

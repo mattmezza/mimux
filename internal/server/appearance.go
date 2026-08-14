@@ -76,7 +76,8 @@ func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
 	if v.BG == "transparent" {
 		v.BG = ""
 	}
-	if q.Get("p") == "maskable" {
+	switch q.Get("p") {
+	case "maskable":
 		// Launchers crop to their own circle/squircle and paint the edge
 		// themselves, so this variant is full-bleed and shrinks the mark inside
 		// the 40%-radius safe zone (the mark's corners sit ~17 units from
@@ -85,6 +86,15 @@ func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
 		if v.BG == "" {
 			v.BG = "#18181b"
 		}
+	case "badge":
+		// The notification badge (Android's status-bar icon). Android throws the
+		// colours away and derives the mark from the *alpha channel* alone, so
+		// anything sitting on a background plate — like the app icon — arrives as
+		// a featureless rounded blob. Same mark, opaque white, nothing behind it:
+		// the flap stays a hole and the leaf stays a notch, so it survives.
+		// Colour-independent by construction, so the immutable cache below is
+		// still honest without a ?v= on the URL.
+		v.BG, v.Accent, v.Leaf = "", "#fff", "#fff"
 	}
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
