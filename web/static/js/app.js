@@ -285,6 +285,10 @@ function updateOfflineBanner() {
 window.addEventListener("online", updateOfflineBanner);
 window.addEventListener("offline", updateOfflineBanner);
 document.addEventListener("DOMContentLoaded", updateOfflineBanner);
+// The banner is prepended to <body>, which is htmx's history element, so one
+// offline moment gets baked into the snapshot and comes back on Back/Forward
+// while online. Re-check against navigator.onLine after every restore.
+document.body.addEventListener("htmx:historyRestore", updateOfflineBanner);
 
 // --- toasts ---
 // opts.onUndo, when given, adds an "Undo" action and extends the auto-dismiss
