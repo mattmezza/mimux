@@ -31,6 +31,60 @@ func postMarkRead(t *testing.T, r http.Handler, id int64, path string, thread bo
 	return rec
 }
 
+// TestMarkReadSurvivesSyncWhenIMAPPushFails pins the regression behind "I marked
+// it read, then a re-sync showed it unread again": the handler writes is_read
+// locally and pushes \Seen to IMAP in the background. When that push doesn't land
+// (it errors, it hits submit's timeout while the worker reconnects, or the
+// process restarts first — here: no account worker at all, so mail.SetRead fails)
+// the local write must outrank the server's stale flags until the push is
+// retried, not be quietly overwritten by the next sync.
+func TestMarkReadSurvivesSyncWhenIMAPPushFails(t *testing.T) {
+	var inbox int64
+	s := serverWith(t, []config.Account{{Name: "A"}}, func(st *store.Store) {
+		inbox, _ = st.UpsertFolder("A", "INBOX", "inbox", 0)
+		_ = st.UpsertMessage(&store.Message{
+			Account: "A", FolderID: inbox, UID: 7, MessageID: "solo@x",
+			Subject: "Deploy", FromName: "solo@x",
+			Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), IsRead: false,
+		})
+	})
+	msgs, _ := s.store.ListMessages(inbox, 10)
+	if len(msgs) != 1 {
+		t.Fatalf("seed: got %d messages, want 1", len(msgs))
+	}
+	id := msgs[0].ID
+
+	if rec := postMarkRead(t, readRouter(s), id, "read", false); rec.Code != http.StatusOK {
+		t.Fatalf("mark read status = %d", rec.Code)
+	}
+	if m, _ := s.store.MessageByID(id); m == nil || !m.IsRead {
+		t.Fatalf("mark read: message not read locally")
+	}
+
+	// Sync pulls the server's flags, which still say unread because the \Seen
+	// push never landed. Both write paths must leave the pending row alone.
+	_ = s.store.SetReadFromServer(id, false)
+	if m, _ := s.store.MessageByID(id); m == nil || !m.IsRead {
+		t.Errorf("flag sync reverted a mark-read whose \\Seen push is still owed")
+	}
+	_ = s.store.UpsertMessage(&store.Message{
+		Account: "A", FolderID: inbox, UID: 7, MessageID: "solo@x",
+		Subject: "Deploy", FromName: "solo@x",
+		Date: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), IsRead: false,
+	})
+	if m, _ := s.store.MessageByID(id); m == nil || !m.IsRead {
+		t.Errorf("re-fetch reverted a mark-read whose \\Seen push is still owed")
+	}
+
+	// Once the retry lands the flag, the server is authoritative again — so a
+	// genuine "marked unread elsewhere" still propagates.
+	_ = s.store.ClearSeenDirty(id, true)
+	_ = s.store.SetReadFromServer(id, false)
+	if m, _ := s.store.MessageByID(id); m == nil || m.IsRead {
+		t.Errorf("after the push landed, the server's unread must win")
+	}
+}
+
 // TestThreadReadUnread verifies the thread-level read/unread endpoint marks
 // EVERY message in the thread (not just the row's latest), while a request
 // without the X-SM-Thread header keeps single-message (per-message toggle)

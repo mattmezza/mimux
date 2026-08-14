@@ -304,7 +304,9 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 	if err != nil {
 		return 0, err
 	}
-	existed, err := a.m.st.FolderUIDs(f.ID)
+	// uid -> current stored labels; a UID absent is a message not yet stored.
+	// Doubles as the "already have it" check FolderUIDs used to serve here.
+	existed, err := a.m.st.FolderLabels(f.ID)
 	if err != nil {
 		return 0, err
 	}
@@ -313,11 +315,12 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		if buf.Envelope == nil {
 			continue
 		}
-		isNew := !existed[uint32(buf.UID)]
+		prevLabels, isOld := existed[uint32(buf.UID)]
+		isNew := !isOld
 		if isNew {
 			n++
 		}
-		if err := a.m.st.UpsertMessage(messageFromBuffer(a.cfg.Name, f.ID, buf)); err != nil {
+		if err := a.m.st.UpsertMessage(messageFromBuffer(a.cfg.Name, f.ID, buf, prevLabels)); err != nil {
 			return n, err
 		}
 		if isNew {
@@ -327,9 +330,10 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 	return n, nil
 }
 
-// fetchFlagChanges pulls \Seen/\Flagged changes since the stored modseq and
-// reports whether the server returned any changed messages (a proxy for "the
-// list's read/star state changed", used to trigger a browser refresh).
+// fetchFlagChanges pulls \Seen/\Flagged/keyword changes since the stored
+// modseq and reports whether the server returned any changed messages (a
+// proxy for "the list's read/star/label state changed", used to trigger a
+// browser refresh).
 func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool, error) {
 	set := imap.UIDSet{{Start: 1, Stop: 0}}
 	msgs, err := c.Fetch(set, &imap.FetchOptions{
@@ -341,12 +345,20 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 		return false, err
 	}
 	for _, buf := range msgs {
-		id, err := a.messageID(f.ID, uint32(buf.UID))
-		if err != nil || id == 0 {
+		// MessageByFolderUID rather than the bare id lookup: merging keyword
+		// flags into labels (below) needs the row's current stored value too.
+		m, err := a.m.st.MessageByFolderUID(f.ID, uint32(buf.UID))
+		if err != nil || m == nil {
 			continue
 		}
-		_ = a.m.st.SetRead(id, hasFlag(buf.Flags, imap.FlagSeen))
-		_ = a.m.st.SetStarred(id, hasFlag(buf.Flags, imap.FlagFlagged))
+		// SetReadFromServer, not SetRead: a local mark-read whose \Seen push hasn't
+		// landed yet must not be reverted to the server's stale "unread" here —
+		// pushSeenDirty is still retrying it.
+		_ = a.m.st.SetReadFromServer(m.ID, hasFlag(buf.Flags, imap.FlagSeen))
+		_ = a.m.st.SetStarred(m.ID, hasFlag(buf.Flags, imap.FlagFlagged))
+		if merged := MergeLabels(m.Labels, flagStrings(buf.Flags)); merged != m.Labels {
+			_ = a.m.st.SetLabels(m.ID, merged)
+		}
 	}
 	return len(msgs) > 0, nil
 }
@@ -409,7 +421,7 @@ func parseRefsHeader(raw []byte) string {
 	return strings.Join(splitMsgIDs(s), " ")
 }
 
-func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMessageBuffer) *store.Message {
+func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMessageBuffer, prevLabels string) *store.Message {
 	env := buf.Envelope
 	m := &store.Message{
 		Account:       account,
@@ -426,6 +438,11 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		IsRead:        hasFlag(buf.Flags, imap.FlagSeen),
 		IsStarred:     hasFlag(buf.Flags, imap.FlagFlagged),
 		HasAttachment: hasAttachment(buf.BodyStructure),
+		// Keyword flags (e.g. Triaged) merged onto whatever's already stored —
+		// user-added labels included, since the server has no way to echo those
+		// back (see Manager.SetLabel). Plain \Seen/\Answered/… flags are dropped
+		// by MergeLabels' isNoiseLabel check, same predicate the label pills use.
+		Labels: MergeLabels(prevLabels, flagStrings(buf.Flags)),
 	}
 	if m.Date.IsZero() {
 		// Missing/unparseable Date: header — fall back to the server's
@@ -509,6 +526,17 @@ func hasFlag(flags []imap.Flag, want imap.Flag) bool {
 		}
 	}
 	return false
+}
+
+// flagStrings converts a FETCH response's flags to plain strings for
+// MergeLabels — imap.Flag is already the raw wire form (e.g. "\Seen",
+// "Triaged"), just typed.
+func flagStrings(flags []imap.Flag) []string {
+	out := make([]string, len(flags))
+	for i, fl := range flags {
+		out[i] = string(fl)
+	}
+	return out
 }
 
 func joinAddrs(addrs []imap.Address) string {

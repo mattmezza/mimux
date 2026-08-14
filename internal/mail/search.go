@@ -127,7 +127,9 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 					if buf.Envelope == nil {
 						continue
 					}
-					_ = m.st.UpsertMessage(messageFromBuffer(account, folder.ID, buf))
+					// "" prevLabels: this loop only runs for UIDs MessageByFolderUID
+					// already confirmed aren't stored yet, so there is nothing to merge.
+					_ = m.st.UpsertMessage(messageFromBuffer(account, folder.ID, buf, ""))
 				}
 				return nil
 			})
@@ -174,4 +176,3 @@ func (m *Manager) SearchFolders(account string, q *search.SearchQuery) []store.F
 	}
 	return out
 }
-

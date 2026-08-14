@@ -6,6 +6,21 @@ function activeFilter() {
   return document.querySelector("[data-filter]")?.dataset.filter || "";
 }
 
+// Google's favicon endpoint (see internal/mail avatarURL) has no real 404 an
+// <img onerror> can catch: a missing favicon still decodes as a valid 16x16
+// generic-globe placeholder PNG, so the image "loads" successfully. Real
+// favicons we request come back at 32x32 or larger, so a naturalWidth at or
+// below that placeholder's size is the tell. Swap it for the initials div,
+// same fallback onerror already uses for genuine load failures.
+function avatarFallback(img) {
+  if (img.naturalWidth && img.naturalWidth > 16) return;
+  var a = document.createElement("div");
+  a.className = "absolute inset-0 w-full h-full flex items-center justify-center";
+  a.textContent = img.dataset.init;
+  img.replaceWith(a);
+}
+window.avatarFallback = avatarFallback;
+
 // Send the CSRF token on every htmx mutation.
 document.addEventListener("htmx:configRequest", (e) => {
   const meta = document.querySelector('meta[name="csrf-token"]');
@@ -135,12 +150,16 @@ function toast(msg, opts) {
 
 // Success toast with an Undo action for a just-moved message (archive/delete/
 // spam). id/folderId are the message id and its folder *before* the move.
+// Undo posts via postAction (see postMarkRead below for why not htmx.ajax):
+// swap:"none" fire-and-forget requests sit on document.body's request lock,
+// where a burst of them drops all but the first/last and reports success
+// regardless.
 function toastUndo(label, id, folderId) {
   toast(label, {
     onUndo: () => {
-      if (!window.htmx) return;
-      htmx.ajax("POST", `/messages/${id}/undo-move`, { values: { folder: folderId }, swap: "none" })
-        .then(() => document.body.dispatchEvent(new Event("sm:refresh")));
+      postAction(`/messages/${id}/undo-move`, { body: { folder: folderId } })
+        .then(() => document.body.dispatchEvent(new Event("sm:refresh")))
+        .catch(() => toast("Couldn't undo — try again."));
     },
   });
 }
@@ -190,6 +209,63 @@ document.addEventListener("click", (e) => {
   es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
   es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
   es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
+})();
+
+// --- sync visibility + sync on app open ---
+// The "Syncing…" pill and the statusbar both render server state, but that
+// state only turns true once the server has flipped an account to "syncing" —
+// after our request lands. A sync the user just asked for would therefore show
+// nothing for a beat, and a short one could finish having shown nothing at all.
+// So mark the body the instant a sync is requested and let the server's own
+// /syncing answer take over from there (.sm-syncing in app.css).
+(function initSync() {
+  // A /syncing answer of "nobody is syncing" this soon after a request is not
+  // yet trustworthy — the server may not have flipped the accounts. Bridge it.
+  const GRACE = 6000;
+  let requestedAt = 0;
+  // Arm the optimistic spinner. Exposed because the manual-sync gestures
+  // (pull-to-refresh, wheel overscroll) post via fetch, not htmx, so there is
+  // no htmx:beforeRequest to catch for them — they call this directly.
+  window.smSyncRequested = function () {
+    requestedAt = Date.now();
+    document.body.classList.add("sm-syncing");
+  };
+  document.body.addEventListener("htmx:beforeRequest", (e) => {
+    if (e.detail.requestConfig?.path === "/refresh") window.smSyncRequested();
+  });
+  document.body.addEventListener("htmx:afterRequest", (e) => {
+    // The accounts are flipped by the time /refresh answers: pull that truth
+    // into the pill, statusbar and health rows now rather than up to 60s later.
+    if (e.detail.requestConfig?.path === "/refresh") document.body.dispatchEvent(new Event("sm:sync"));
+  });
+  document.body.addEventListener("htmx:afterSwap", (e) => {
+    if (e.detail.requestConfig?.path !== "/syncing") return;
+    // The swapped-in pill carries .is-syncing when the server says a sync is
+    // running: hand the optimistic class over to it, or drop it once the grace
+    // window has passed with the server still reporting nothing syncing.
+    const live = document.getElementById("list-syncing")?.classList.contains("is-syncing");
+    if (live || Date.now() - requestedAt > GRACE) document.body.classList.remove("sm-syncing");
+  });
+
+  // Opening the app — a cold load, or a backgrounded tab/PWA coming back —
+  // syncs the accounts that are due. The server decides which, per account,
+  // from its last sync and that account's sync interval; we just poke it.
+  // Rate-limited so flicking between tabs doesn't hammer it.
+  const OPEN_GAP = 60000;
+  let lastOpen = 0;
+  function syncOnOpen() {
+    if (document.visibilityState !== "visible" || Date.now() - lastOpen < OPEN_GAP) return;
+    lastOpen = Date.now();
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    // Plain fetch, not htmx.ajax: this check often wakes nothing, so it must
+    // not raise the optimistic spinner above. The sm:sync afterwards shows the
+    // real state if it did start a sync.
+    fetch("/refresh?stale=1", { method: "POST", headers: { "X-CSRF-Token": meta ? meta.content : "" } })
+      .then(() => document.body.dispatchEvent(new Event("sm:sync")))
+      .catch(() => {});
+  }
+  document.addEventListener("visibilitychange", syncOnOpen);
+  syncOnOpen();
 })();
 
 // --- unread count in tab title ---
@@ -427,24 +503,31 @@ function flagSelected(path) {
     // EVERY message in the thread. Swap nothing and flip the row in place —
     // swapping the single-message fragment in would clobber a multi-message
     // thread row.
-    const makeRead = path === "read";
-    htmx.ajax("POST", `/messages/${id}/${path}`, { headers: sub ? {} : { "X-SM-Thread": "1" }, swap: "none" })
-      .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
+    markRead(id, path === "read", !sub);
     return true;
   }
-  htmx.ajax("POST", `/messages/${id}/${path}${sub ? "?sub=1" : ""}`, { target: row || `#msg-${id}`, swap: "outerHTML" });
+  // Star/unstar: a real fragment swap, so keep htmx.ajax, but give it a
+  // source — without one it defaults to document.body and can sit on body's
+  // shared request lock behind another in-flight body-scoped request.
+  htmx.ajax("POST", `/messages/${id}/${path}${sub ? "?sub=1" : ""}`, {
+    source: row || `#msg-${id}`, target: row || `#msg-${id}`, swap: "outerHTML",
+  });
   return true;
 }
 function moveSelected(path, label) {
   const id = currentId();
   const row = selectedRow(); // the element, so a sub-row animates out, not its thread row
   const folderId = row?.dataset.folder;
-  if (!id || !window.htmx) return true;
-  htmx.ajax("POST", `/messages/${id}/${path}`, { swap: "none" }).then(() => {
-    closeReadingPane();
-    removeRowAnimated(row);
-    if (folderId) toastUndo(label, id, folderId);
-  });
+  if (!id) return true;
+  // postAction, not htmx.ajax: swap:"none" fire-and-forget on document.body's
+  // shared lock (see postMarkRead below) — the same bug that hit mark-read.
+  postAction(`/messages/${id}/${path}`)
+    .then(() => {
+      closeReadingPane();
+      removeRowAnimated(row);
+      if (folderId) toastUndo(label, id, folderId);
+    })
+    .catch(() => toast("Couldn't move that message — try again."));
   return true;
 }
 
@@ -616,10 +699,13 @@ window.toggleThreadMessage = toggleThreadMessage;
 
 // --- pull-to-refresh (mobile): drag the message list down while it's already
 // scrolled to the top to trigger a full re-sync (same as the Refresh button).
-// Listeners live on document so they survive htmx list swaps.
+// Desktop gets the same gesture from the wheel/trackpad — keep scrolling up
+// with the list already at the top. Both paths share one indicator, one
+// threshold and one trigger. Listeners live on document so they survive htmx
+// list swaps.
 (function initPullToRefresh() {
   const THRESHOLD = 70;
-  let startY = 0, pulling = false, dist = 0;
+  let startY = 0, pulling = false, dist = 0, busy = false;
   function indicator() {
     let el = document.getElementById("ptr-indicator");
     if (!el) {
@@ -630,6 +716,39 @@ window.toggleThreadMessage = toggleThreadMessage;
     }
     return el;
   }
+  // Progressive reveal: the chip fades and slides in proportionally to how far
+  // past the top the list has been pulled, and goes solid once past THRESHOLD
+  // — the armed, "let go and it syncs" state.
+  function show(d) {
+    const el = indicator();
+    if (d <= 0) { el.style.opacity = "0"; el.classList.remove("ready"); return; }
+    el.style.opacity = String(Math.min(1, d / THRESHOLD));
+    el.style.transform = `translate(-50%, ${Math.round(Math.min(d, THRESHOLD + 30) * 0.4)}px)`;
+    el.classList.toggle("ready", d > THRESHOLD);
+  }
+  function hide() {
+    const el = indicator();
+    el.classList.remove("spinning", "ready");
+    el.style.opacity = "0";
+    el.style.transform = "";
+  }
+  function trigger() {
+    if (busy) { hide(); return; }
+    busy = true; // one sync at a time: a second gesture mid-sync does nothing
+    indicator().classList.add("spinning");
+    toast("Syncing all accounts…");
+    // postAction, not htmx.ajax: swap:"none" body-scoped request (see
+    // postMarkRead below) — a star/move firing at the same time could drop
+    // this on body's shared queue and resolve it as if it had synced.
+    window.smSyncRequested(); // fetch fires no htmx event to arm it with
+    postAction("/refresh")
+      .then(() => {
+        document.body.dispatchEvent(new Event("sm:refresh"));
+        document.body.dispatchEvent(new Event("sm:sync")); // pull real sync state into the pill
+      })
+      .catch(() => {})
+      .then(() => { busy = false; hide(); });
+  }
   document.addEventListener("touchstart", (e) => {
     const list = e.target.closest && e.target.closest("#message-list");
     pulling = !!list && list.scrollTop <= 0;
@@ -638,32 +757,45 @@ window.toggleThreadMessage = toggleThreadMessage;
   document.addEventListener("touchmove", (e) => {
     if (!pulling) return;
     dist = e.touches[0].clientY - startY;
-    const el = indicator();
-    if (dist <= 0) { el.style.opacity = "0"; return; }
-    el.style.opacity = String(Math.min(1, dist / THRESHOLD));
-    el.style.transform = `translate(-50%, ${Math.round(Math.min(dist, THRESHOLD + 30) * 0.4)}px)`;
-    el.classList.toggle("ready", dist > THRESHOLD);
+    show(dist);
   }, { passive: true });
   document.addEventListener("touchend", () => {
     if (!pulling) return;
     pulling = false;
-    const el = indicator();
-    if (dist > THRESHOLD && window.htmx) {
-      el.classList.add("spinning");
-      htmx.ajax("POST", "/refresh", { swap: "none" }).then(() => {
-        document.body.dispatchEvent(new Event("sm:refresh"));
-        el.classList.remove("spinning", "ready");
-        el.style.opacity = "0";
-        el.style.transform = "";
-      });
-      toast("Syncing all accounts…");
-    } else {
-      el.classList.remove("ready");
-      el.style.opacity = "0";
-      el.style.transform = "";
-    }
+    if (dist > THRESHOLD) trigger(); else hide();
     dist = 0;
   });
+
+  // Wheel/trackpad equivalent. There is no touchend to release, so the gesture
+  // ends when the deltas stop: IDLE ms of quiet fires it (past the threshold)
+  // or drops the accumulator, so trackpad momentum can never add up into a sync
+  // long after the fling. A gesture only counts if the list was ALREADY at the
+  // top when it started — flinging up from halfway down lands at the top with
+  // momentum to spare, exactly the case touch avoids by requiring the pull to
+  // begin at the top. Needs more travel than a finger pull: one mouse notch is
+  // ~100px, so ~2 notches keeps an idle flick at the top from syncing.
+  const IDLE = 250, WHEEL_THRESHOLD = 180;
+  let wheelDist = 0, wheelAt = 0, wheelTimer = 0, startedAtTop = false;
+  document.addEventListener("wheel", (e) => {
+    const list = e.target.closest && e.target.closest("#message-list");
+    if (!list || pulling || busy) return; // touchscreen laptop: touch path wins
+    const now = Date.now();
+    if (now - wheelAt > IDLE) { startedAtTop = list.scrollTop <= 0; wheelDist = 0; }
+    wheelAt = now;
+    // deltaMode 0 = pixels, 1 = lines, 2 = pages.
+    const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? list.clientHeight : 1);
+    if (!startedAtTop || dy >= 0 || list.scrollTop > 0) { // normal scrolling
+      if (wheelDist) { wheelDist = 0; hide(); }
+      return;
+    }
+    wheelDist = Math.min(wheelDist - dy, WHEEL_THRESHOLD + 40);
+    show(wheelDist * THRESHOLD / WHEEL_THRESHOLD); // same reveal curve, longer pull
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => {
+      if (wheelDist >= WHEEL_THRESHOLD) trigger(); else hide();
+      wheelDist = 0;
+    }, IDLE);
+  }, { passive: true });
 })();
 
 // --- attachments: inline preview (image/pdf/text) without downloading. The
@@ -809,7 +941,9 @@ let preComposeFocus = null;
 function openCompose(query) {
   if (!window.htmx) return true;
   preComposeFocus = document.activeElement;
-  htmx.ajax("GET", `/compose${query}`, { target: "#compose-root", swap: "innerHTML" });
+  // source, not just target: without one this defaults to document.body and
+  // can sit behind another in-flight body-scoped request on htmx's shared lock.
+  htmx.ajax("GET", `/compose${query}`, { source: "#compose-root", target: "#compose-root", swap: "innerHTML" });
   return true;
 }
 function replyCompose(mode) {
@@ -981,7 +1115,8 @@ function onComposeResponse(event) {
     toast("Sending…", {
       onUndo: () => {
         if (!window.htmx) return;
-        htmx.ajax("POST", `/outbox/${outboxId}/undo`, { target: "#compose-root", swap: "innerHTML" });
+        // source, not just target: see openCompose above for why.
+        htmx.ajax("POST", `/outbox/${outboxId}/undo`, { source: "#compose-root", target: "#compose-root", swap: "innerHTML" });
       },
     });
   } else if (scheduled) {
@@ -1118,6 +1253,51 @@ document.addEventListener("click", (e) => {
   });
 });
 
+// --- mark read/unread -----------------------------------------------------
+// postAction persists one fire-and-forget mutation. Deliberately NOT htmx.ajax:
+// htmx.ajax called without a `source` element runs the request through
+// document.body's request lock (issueAjaxRequest defaults elt to the body), so a
+// POST issued while any other body-scoped request is still in flight is never
+// sent — it goes onto body's queue with the "last" strategy, which DUMPS
+// whatever was already queued — and its promise resolves immediately anyway. On
+// a high-latency link (mobile) marking several messages in quick succession
+// therefore flipped every row to read while only the first and the last POST
+// ever reached the server; the rest were silently dropped and came back unread
+// on the next refresh. htmx also resolves on any HTTP status (xhr.onload), so a
+// 403 (stale CSRF) or a redirect to /login read as success too.
+// fetch() has no shared lock and reports the real status; redirect:"manual"
+// keeps an auth redirect from being followed and mistaken for a 200.
+// Shared by every swap:"none" mutation that used to hit this bug: mark-read,
+// undo-move, archive/delete/spam/move, pull-to-refresh.
+function postAction(path, opts) {
+  const meta = document.querySelector('meta[name="csrf-token"]');
+  const headers = Object.assign({ "X-CSRF-Token": meta ? meta.content : "" }, opts && opts.headers);
+  const init = { method: "POST", headers, credentials: "same-origin", redirect: "manual" };
+  if (opts && opts.body) {
+    headers["Content-Type"] = "application/x-www-form-urlencoded";
+    init.body = new URLSearchParams(opts.body).toString();
+  }
+  return fetch(path, init).then((res) => {
+    if (!res.ok) throw new Error(path + " failed: " + res.status);
+    return res;
+  });
+}
+
+function postMarkRead(id, read, thread) {
+  return postAction(`/messages/${id}/${read ? "read" : "unread"}`, thread ? { headers: { "X-SM-Thread": "1" } } : undefined);
+}
+
+// markRead flips the row right away (a slow link shouldn't make the UI feel
+// stuck) and undoes the flip with a toast when the server never took it, so the
+// list can never silently disagree with what the next sync will show.
+function markRead(id, read, thread) {
+  if (read) markRowRead(id); else markRowUnread(id);
+  return postMarkRead(id, read, thread).catch(() => {
+    if (read) markRowUnread(id); else markRowRead(id);
+    toast(`Couldn't mark ${read ? "read" : "unread"} — still ${read ? "unread" : "read"}.`);
+  });
+}
+
 // Flip a list row from unread to read in place: drop the dot, un-bold the text,
 // and clear data-unread. Adds .just-read so the row stays visible even under an
 // active "Unread" quick filter (per requirement — a just-read message shouldn't
@@ -1204,9 +1384,7 @@ function markThreadRead(read, btn) {
   // row gestures do) and flip the row.
   const ctx = btn && btn.closest("#row-ctx-menu");
   if (ctx) {
-    const id = ctx.dataset.mid;
-    htmx.ajax("POST", `/messages/${id}/${read ? "read" : "unread"}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
-      .then(() => (read ? markRowRead(id) : markRowUnread(id)));
+    markRead(ctx.dataset.mid, read, true);
     return;
   }
   const pane = document.getElementById("message-detail");
@@ -1214,8 +1392,15 @@ function markThreadRead(read, btn) {
   pane.querySelectorAll("[data-thread-msg]").forEach((block) => {
     if (read === !block.hasAttribute("data-unread")) return; // already in desired state
     const id = block.dataset.msgId;
+    if (!id) return;
     setThreadMsgRead(block, read);
-    if (id) htmx.ajax("POST", `/messages/${id}/${read ? "read" : "unread"}`, { swap: "none" });
+    // These fire in a burst, one per message: exactly the case htmx.ajax used to
+    // swallow on document.body's shared queue (see postMarkRead).
+    postMarkRead(id, read, false).catch(() => {
+      setThreadMsgRead(block, !read);
+      syncThreadRow(pane);
+      toast("Couldn't mark that message — try again.");
+    });
   });
   syncThreadRow(pane);
 }
@@ -1240,8 +1425,7 @@ function toggleRowRead(row) {
   // X-SM-Thread tells the server this is a thread-level toggle: EVERY message in
   // the thread gets marked, not just the row's latest (the row id is the thread
   // root). Otherwise a refresh leaves the thread partially unread.
-  htmx.ajax("POST", `/messages/${id}/${makeRead ? "read" : "unread"}`, { headers: { "X-SM-Thread": "1" }, swap: "none" })
-    .then(() => { if (makeRead) markRowRead(id); else markRowUnread(id); });
+  markRead(id, makeRead, true);
 }
 
 // --- row gestures (double-click/tap + swipe) ------------------------------
@@ -1554,7 +1738,8 @@ document.addEventListener("contextmenu", (e) => {
     }
     ev.stopPropagation(); // an open menu owns the keyboard — no j/k under it
   });
-  htmx.ajax("GET", `/rowmenu/${id}${q}`, { target: d, swap: "innerHTML" }).then(() => {
+  // source: d, not just target — see openCompose above for why.
+  htmx.ajax("GET", `/rowmenu/${id}${q}`, { source: d, target: d, swap: "innerHTML" }).then(() => {
     const m = d.firstElementChild;
     if (!m) return closeRowMenu();
     // Clamp into the viewport (the menu is height-capped in CSS, so this always
@@ -1581,7 +1766,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const t = p.get("t");
   if (!t || !window.htmx) return;
   const src = p.get("src") || "u";
-  htmx.ajax("GET", `/t/${t}?src=${encodeURIComponent(src)}`, { target: "#reading-pane", swap: "innerHTML" });
+  // source, not just target — see openCompose above for why.
+  htmx.ajax("GET", `/t/${t}?src=${encodeURIComponent(src)}`, { source: "#reading-pane", target: "#reading-pane", swap: "innerHTML" });
   document.getElementById(`msg-${t}`)?.classList.add("bg-zinc-800");
 });
 
@@ -1603,7 +1789,7 @@ function scheduleMarkRead(detail) {
     // switched to the Unread filter mid-read (which turns off auto-read).
     const cur = document.querySelector("#message-detail");
     if (cur && cur.dataset.messageId === id && activeFilter() !== "unread") {
-      htmx.ajax("POST", `/messages/${id}/read`, { swap: "none" }).then(() => markRowRead(id));
+      markRead(id, true, false);
     }
   }, delay * 1000);
 }

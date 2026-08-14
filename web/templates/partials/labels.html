@@ -55,7 +55,7 @@
   {{range .Known}}
   <button type="button" title="Add label {{.}}"
     hx-post="/messages/{{$m.ID}}/label?label={{labelToken . | urlquery}}" hx-swap="none"
-    hx-on::after-request="toast('Label added');document.body.dispatchEvent(new Event('sm:refresh'))"
+    hx-on::after-request="if(event.detail.successful){toast('Label added');document.body.dispatchEvent(new Event('sm:refresh'))}else{toast()}"
     class="qa-menu-item w-full flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-zinc-300 hover:bg-zinc-700/60 transition-colors duration-150 text-left whitespace-nowrap">
     <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6 6h.008v.008H6V6Z"/></svg>
     <span class="truncate">{{.}}</span>
@@ -63,7 +63,7 @@
   {{end}}
 </div>
 <form class="flex gap-1 px-2.5 py-1.5" hx-post="/messages/{{$m.ID}}/label" hx-swap="none"
-  hx-on::after-request="toast('Label added');document.body.dispatchEvent(new Event('sm:refresh'))">
+  hx-on::after-request="if(event.detail.successful){toast('Label added');document.body.dispatchEvent(new Event('sm:refresh'))}else{toast()}">
   <input name="label" autocomplete="off" placeholder="New label…" required
     class="w-32 rounded bg-zinc-900 px-1.5 py-1 text-[12px] text-zinc-200 placeholder-zinc-600 focus:outline-none focus:ring-1 focus:ring-indigo-500">
   <button type="submit" class="rounded bg-indigo-600 px-2 text-[12px] text-white hover:bg-indigo-500">Add</button>

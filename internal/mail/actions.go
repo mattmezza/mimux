@@ -84,9 +84,53 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 	return raw, err
 }
 
-// SetRead adds or removes the \Seen flag on the server.
+// SetRead adds or removes the \Seen flag on the server and, once it lands,
+// clears the store's "push still owed" marker that store.SetRead set. If the
+// push fails the marker stays and pushSeenDirty retries it every sync cycle —
+// callers fire this in the background, so a dropped error used to mean the flag
+// silently never reached the server.
 func (m *Manager) SetRead(ctx context.Context, msg *store.Message, read bool) error {
-	return m.storeFlag(ctx, msg, imap.FlagSeen, read)
+	if err := m.storeFlag(ctx, msg, imap.FlagSeen, read); err != nil {
+		return err
+	}
+	return m.st.ClearSeenDirty(msg.ID, read)
+}
+
+// pushSeenDirty re-pushes every \Seen flag this account flipped locally but
+// never confirmed on the server: a push that errored, one that hit submit's
+// 30s budget while the worker was reconnecting, or one still queued when the
+// process restarted. It runs on the worker's own connection at the top of each
+// sync cycle, before the flag sync reads the server's truth back.
+//
+// NOTE: one SELECT per row and no batching — the set is empty in the steady
+// state and a handful otherwise. Group by folder if a wedged account ever makes
+// this show up. Reusing store.Outbox was the other option and doesn't fit: its
+// columns are a compose payload and the scheduler drains it into Manager.Send.
+func (a *account) pushSeenDirty(c *imapclient.Client) {
+	msgs, err := a.m.st.DirtySeen(a.cfg.Name, 200)
+	if err != nil || len(msgs) == 0 {
+		return
+	}
+	for i := range msgs {
+		msg := &msgs[i]
+		f, err := a.m.st.FolderByID(msg.FolderID)
+		if err != nil || f == nil {
+			continue
+		}
+		if _, err := c.Select(f.Name, nil).Wait(); err != nil {
+			return // connection is unhappy: leave the rest owed, next cycle retries
+		}
+		op := imap.StoreFlagsAdd
+		if !msg.IsRead {
+			op = imap.StoreFlagsDel
+		}
+		set := imap.UIDSet{}
+		set.AddNum(imap.UID(msg.UID))
+		if err := c.Store(set, &imap.StoreFlags{Op: op, Silent: true, Flags: []imap.Flag{imap.FlagSeen}}, nil).Close(); err != nil {
+			return
+		}
+		_ = a.m.st.ClearSeenDirty(msg.ID, msg.IsRead)
+	}
 }
 
 // SetStarred adds or removes the \Flagged flag on the server.

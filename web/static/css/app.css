@@ -399,6 +399,15 @@ html, #message-list { overscroll-behavior-x: contain; }
    to make rows silently appear/disappear with no feedback at all. */
 #list-syncing.is-syncing { opacity: 1; }
 
+/* Optimistic twin of .is-syncing, set by app.js the moment a sync is requested
+   and dropped as soon as a /syncing response can be trusted (see initSync).
+   Without it the pill only appears on the next poll, so a sync the user just
+   asked for — pull/overscroll-to-refresh, the Refresh button — would show
+   nothing for a beat, or nothing at all if it finished quickly. The pill is in
+   the list header, which desktop shows too, so both layouts get the same
+   guarantee: something spins for the whole sync. */
+body.sm-syncing #list-syncing { opacity: 1; }
+
 /* Settings Save button: dim + swap label to "Saving…" while the htmx POST is in
    flight (the class lands on the enclosing form). */
 .htmx-request #settings-save { opacity: .65; pointer-events: none; }
