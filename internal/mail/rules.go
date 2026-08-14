@@ -105,7 +105,7 @@ func (m *Manager) notifyForRule(msg *store.Message) error {
 	}
 	// Fire and forget: applyAction runs inside the sync loop, and a push service
 	// that takes ten seconds to answer must not hold up the mailbox.
-	go m.notify(msg.Account, from, msg.Subject)
+	go m.notify(msg.Account, from, msg.Subject, messageLink(m.cfg.Server.BaseURL, msg.FolderID, msg.ID))
 	return nil
 }
 
