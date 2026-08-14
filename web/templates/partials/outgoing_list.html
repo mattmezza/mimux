@@ -78,7 +78,7 @@
         <span class="text-red-400 font-medium">Failed</span>
         {{with $o.Error}}<span class="text-zinc-500"> · {{.}}</span>{{end}}
       {{else if eq $kind "sent"}}
-        <span class="text-emerald-500/90">Sent {{relTime $o.SendAt}}</span>
+        <span class="text-emerald-500/90" title="{{absTime $o.SendAt}}">Sent {{relTime $o.SendAt}}</span>
       {{end}}
     </div>
   </div>

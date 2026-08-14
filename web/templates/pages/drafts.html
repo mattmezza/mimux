@@ -24,7 +24,7 @@
           <div class="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2">
             <a href="#" hx-get="/compose?draft={{.ID}}" hx-target="#compose-root" hx-swap="innerHTML" class="min-w-0 flex-1">
               <div class="truncate text-zinc-100 font-medium">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</div>
-              <div class="truncate text-zinc-500 text-xs">{{if .To}}To: {{.To}}{{else}}No recipients yet{{end}} — {{relTime .UpdatedAt}}</div>
+              <div class="truncate text-zinc-500 text-xs">{{if .To}}To: {{.To}}{{else}}No recipients yet{{end}} — <span title="{{absTime .UpdatedAt}}">{{relTime .UpdatedAt}}</span></div>
             </a>
             <form method="post" action="/drafts/{{.ID}}/delete">
               <input type="hidden" name="csrf_token" value="{{$.CSRF}}">

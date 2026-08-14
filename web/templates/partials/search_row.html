@@ -11,7 +11,7 @@
     <div class="flex items-center gap-2">
       {{if not $m.IsRead}}<span class="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
       <span class="truncate {{if $m.IsRead}}text-zinc-400{{else}}text-zinc-100 font-semibold{{end}}">{{if $m.FromName}}{{highlight $m.FromName .Terms}}{{else}}{{highlight $m.FromAddress .Terms}}{{end}}</span>
-      <span class="ml-auto shrink-0 text-[11px] text-zinc-500">{{relTime $m.Date}}</span>
+      <span class="ml-auto shrink-0 text-[11px] text-zinc-500" title="{{absTime $m.Date}}">{{relTime $m.Date}}</span>
     </div>
     <div class="truncate {{if $m.IsRead}}text-zinc-400{{else}}text-zinc-100 font-medium{{end}}">
       {{if $m.HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if $m.Subject}}{{highlight $m.Subject .Terms}}{{else}}(no subject){{end}}

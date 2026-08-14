@@ -51,7 +51,7 @@
             {{if not .IsRead}}<span class="thread-unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
             <span class="thread-sender truncate {{if not .IsRead}}text-zinc-100 font-semibold{{else}}text-zinc-300{{end}}">{{if .FromName}}{{.FromName}}{{else}}{{.FromAddress}}{{end}}</span>
             {{if .IsStarred}}<span class="text-amber-400 shrink-0">★</span>{{end}}
-            <span class="ml-auto shrink-0 text-[11px] text-zinc-500">{{.Date.Format "Jan 2, 15:04"}}</span>
+            <span class="ml-auto shrink-0 text-[11px] text-zinc-500" title="{{absTime .Date}}">{{.Date.Local.Format "Jan 2, 15:04"}}</span>
           </span>
           <span class="thread-snippet block truncate text-zinc-500 text-xs">{{.Snippet}}</span>
         </span>
