@@ -32,7 +32,25 @@ func (h *hub) broadcast(e Event) {
 	for ch := range h.subs {
 		select {
 		case ch <- e:
-		default: // drop for slow consumers
+		default:
+			// Full: a subscriber has fallen behind (a frozen background tab
+			// stops draining its socket). Drop the OLDEST rather than this one —
+			// these events are "something changed, re-read it", so the newest is
+			// the only one that has to arrive. Dropping the newest, as this used
+			// to, is indistinguishable from nothing having happened, and there is
+			// no reconnect to recover from it: the tab just stays stale.
+			// NOTE: still lossy in the middle. Replaying the gap needs a per
+			// subscriber cursor and a retained log — not worth it while every
+			// event is idempotent and the client also refreshes on becoming
+			// visible.
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- e:
+			default:
+			}
 		}
 	}
 }

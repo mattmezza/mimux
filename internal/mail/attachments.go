@@ -40,7 +40,7 @@ func (m *Manager) Attachments(ctx context.Context, msg *store.Message) ([]Attach
 		return nil, fmt.Errorf("folder not found")
 	}
 	var out []Attachment
-	err = a.submit(ctx, func(c *imapclient.Client) error {
+	err = a.submitRO(ctx, func(c *imapclient.Client) error {
 		if _, err := c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 			return err
 		}
@@ -89,7 +89,7 @@ func (m *Manager) Attachment(ctx context.Context, msg *store.Message, part []int
 		return nil, "", "", fmt.Errorf("folder not found")
 	}
 	sec := &imap.FetchItemBodySection{Part: part, Peek: true}
-	err = a.submit(ctx, func(c *imapclient.Client) error {
+	err = a.submitRO(ctx, func(c *imapclient.Client) error {
 		if _, e := c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); e != nil {
 			return e
 		}

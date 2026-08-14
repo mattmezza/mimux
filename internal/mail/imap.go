@@ -102,6 +102,7 @@ func (m *Manager) Reload() {
 			m:      m,
 			cmds:   make(chan cmd, 64),
 			wake:   make(chan struct{}, 1),
+			nudge:  make(chan struct{}, 1),
 			warm:   make(chan struct{}, 1),
 			cancel: cancel,
 			status: AccountStatus{Account: ac.Name, State: "syncing"},
@@ -196,6 +197,13 @@ func (m *Manager) Wake(accountName string) {
 // is the workers' own job (IDLE + poll interval), so nothing else asks. It
 // flips each account to "syncing" immediately so the status bar and health
 // panel reflect the refresh right away; the worker sets "ok" when done.
+//
+// An account already in "error" is left alone: its worker is in connect-backoff
+// (or parked on "authorize needed"), so painting it "syncing" would throw away
+// the one diagnostic the health panel has and show motion that isn't happening.
+// The wake still goes out and sleepOrWake cuts the backoff short, so an explicit
+// refresh does retry a broken account now — it just keeps saying "error" until
+// the retry has something new to report.
 func (m *Manager) RefreshAll() {
 	m.mu.Lock()
 	workers := make([]*account, 0, len(m.accounts))
@@ -204,7 +212,9 @@ func (m *Manager) RefreshAll() {
 	}
 	m.mu.Unlock()
 	for _, a := range workers {
-		a.setStatus("syncing", "")
+		if a.getStatus().State != "error" {
+			a.setStatus("syncing", "")
+		}
 		a.signalWake()
 	}
 }
@@ -217,10 +227,16 @@ type cmd struct {
 }
 
 type account struct {
-	cfg    config.Account
-	m      *Manager
-	cmds   chan cmd
+	cfg  config.Account
+	m    *Manager
+	cmds chan cmd
+	// wake means "sync now": new data announced during IDLE, an explicit
+	// refresh, or a queued command that changes mailbox state. nudge only means
+	// "a read-only command is queued" — it breaks IDLE so the command runs, and
+	// nothing else. Two channels, because the loop has to tell the two apart and
+	// the wake token must survive being woken for a read-only command.
 	wake   chan struct{}
+	nudge  chan struct{}
 	warm   chan struct{}      // nudges the background body warmer (see warm.go)
 	cancel context.CancelFunc // stops this worker + its warmer (Reload/remove)
 
@@ -265,6 +281,13 @@ func (a *account) signalWake() {
 	}
 }
 
+func (a *account) signalNudge() {
+	select {
+	case a.nudge <- struct{}{}:
+	default:
+	}
+}
+
 // run is the connect/backoff supervisor. It never returns until ctx is done and
 // never propagates a provider error to a crash — errors become status updates.
 func (a *account) run(ctx context.Context) {
@@ -283,7 +306,7 @@ func (a *account) run(ctx context.Context) {
 				continue
 			}
 			a.setStatus("error", "connect: "+err.Error())
-			if sleep(ctx, backoff) {
+			if a.sleepOrWake(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
@@ -302,7 +325,7 @@ func (a *account) run(ctx context.Context) {
 		} else {
 			a.setStatus("error", "disconnected")
 		}
-		if sleep(ctx, backoff) {
+		if a.sleepOrWake(ctx, backoff) {
 			return
 		}
 		backoff = nextBackoff(backoff)
@@ -390,42 +413,47 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 
 func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store.Folder, caps imap.CapSet) error {
 	idleOK := caps.Has(imap.CapIdle)
+	// The first trip syncs unconditionally, as it always did: session() has just
+	// finished the full sweep and this re-reads the inbox before settling in.
+	sync := true
 	for {
 		if err := a.drain(c); err != nil {
 			return err
 		}
-		// Every trip round this loop IS a sync (IDLE woke us, the poll elapsed,
-		// or someone asked): say so before doing the work, not just "ok" after.
-		// Without this the steady state — i.e. nearly every background sync —
-		// went ok -> ok and broadcast a single event, which is why the spinner
-		// could only ever blink.
-		a.setStatus("syncing", "")
-		// Retry any \Seen flip that never reached the server before syncing flags
-		// back from it — otherwise the sync reads a stale "unread" and the local
-		// mark-read is lost.
-		a.pushSeenDirty(c)
-		changed, err := a.syncFolder(ctx, c, inbox, caps)
-		if err != nil {
-			return err
+		// A trip round this loop is a sync only when something asked for one:
+		// IDLE announced data, the poll elapsed, someone hit refresh, or a queued
+		// command changed mailbox state. Say so before doing the work, not just
+		// "ok" after — without this the steady state (i.e. nearly every
+		// background sync) went ok -> ok and broadcast a single event, which is
+		// why the spinner could only ever blink. Read-only commands skip the
+		// whole block: they can't change the mailbox, so there is nothing to sync
+		// back, and a body open or a server-side search has no business flipping
+		// the account to "syncing" or dragging a full inbox sync in behind it.
+		if sync {
+			a.setStatus("syncing", "")
+			// Retry any \Seen flip that never reached the server before syncing
+			// flags back from it — otherwise the sync reads a stale "unread" and
+			// the local mark-read is lost.
+			a.pushSeenDirty(c)
+			changed, err := a.syncFolder(ctx, c, inbox, caps)
+			if err != nil {
+				return err
+			}
+			if changed {
+				a.signalListChanged()
+			}
+			a.setStatus("ok", "")
 		}
-		if changed {
-			a.signalListChanged()
-		}
-		a.setStatus("ok", "")
 		// Re-read the poll interval each cycle so the "Check every N minutes"
 		// setting takes effect without a restart.
 		poll := a.pollInterval()
 		if idleOK {
-			if err := a.waitIdle(ctx, c, poll); err != nil {
+			var err error
+			if sync, err = a.waitIdle(ctx, c, poll); err != nil {
 				return err
 			}
 		} else {
-			select {
-			case <-ctx.Done():
-				return nil
-			case <-a.wake:
-			case <-time.After(poll):
-			}
+			sync = a.waitWork(ctx, poll)
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -451,24 +479,40 @@ func (a *account) pollInterval() time.Duration {
 
 // waitIdle blocks in IMAP IDLE until new data arrives, a command is queued, the
 // context ends, or the poll interval elapses (capped at the ~29-minute server
-// limit) so the "Check every N minutes" setting still applies under IDLE.
-func (a *account) waitIdle(ctx context.Context, c *imapclient.Client, poll time.Duration) error {
+// limit) so the "Check every N minutes" setting still applies under IDLE. It
+// reports whether the wake-up calls for a sync; a read-only command doesn't, and
+// leaves any pending wake token in place so a sync that was also due still runs
+// on the next trip.
+func (a *account) waitIdle(ctx context.Context, c *imapclient.Client, poll time.Duration) (sync bool, err error) {
 	idleCmd, err := c.Idle()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if poll <= 0 || poll > 28*time.Minute {
 		poll = 28 * time.Minute
 	}
+	sync = a.waitWork(ctx, poll)
+	if err := idleCmd.Close(); err != nil {
+		return sync, err
+	}
+	return sync, idleCmd.Wait()
+}
+
+// waitWork blocks until the worker has something to do, and reports whether it
+// calls for a sync. This is the whole of requirement (1): everything wakes the
+// loop, but only new data, the elapsed poll, an explicit refresh or a queued
+// state-changing command asks it to sync. A read-only command arrives on nudge
+// and gets the connection without a sync or a "syncing" status.
+func (a *account) waitWork(ctx context.Context, poll time.Duration) (sync bool) {
 	select {
 	case <-ctx.Done():
+	case <-a.nudge:
 	case <-a.wake:
+		sync = true
 	case <-time.After(poll):
+		sync = true
 	}
-	if err := idleCmd.Close(); err != nil {
-		return err
-	}
-	return idleCmd.Wait()
+	return sync
 }
 
 // drain runs every queued command against the connection, reporting each
@@ -484,19 +528,41 @@ func (a *account) drain(c *imapclient.Client) error {
 	}
 }
 
-// submit queues a command for the worker and waits for its result. Bounded by
+// submit queues a state-changing command (STORE, MOVE, APPEND) for the worker
+// and waits for its result. It asks for a sync too: the command just changed the
+// mailbox, so the loop should read the change back and announce it.
+func (a *account) submit(ctx context.Context, fn func(*imapclient.Client) error) error {
+	return a.enqueue(ctx, fn, true)
+}
+
+// submitRO queues a read-only command — SEARCH or FETCH under a read-only
+// SELECT (search.go, attachments.go, fetchRaw). It breaks IDLE so the command
+// runs now and nothing more: a command that cannot change the mailbox has
+// nothing to sync back, so it must not flip the account to "syncing" nor drag a
+// full inbox sync in behind it. Opening one uncached body used to do both, on
+// every account. Keeping "mutates" the default of the shorter name means a
+// future caller that never thinks about this gets the safe, old behaviour.
+func (a *account) submitRO(ctx context.Context, fn func(*imapclient.Client) error) error {
+	return a.enqueue(ctx, fn, false)
+}
+
+// enqueue queues a command for the worker and waits for its result. Bounded by
 // submitTimeout so a wedged/unreachable server (worker stuck in connect/backoff,
 // never draining a.cmds) fails the caller instead of hanging on ctx forever —
 // same budget as background()'s post-request IMAP timeout in server/mail.go.
 // cm.done is buffered, so if the worker completes after we've given up, its
 // send doesn't block and the goroutine still exits.
-func (a *account) submit(ctx context.Context, fn func(*imapclient.Client) error) error {
+func (a *account) enqueue(ctx context.Context, fn func(*imapclient.Client) error, mutates bool) error {
 	ctx, cancel := context.WithTimeout(ctx, submitTimeout)
 	defer cancel()
 	cm := cmd{fn: fn, done: make(chan error, 1)}
 	select {
 	case a.cmds <- cm:
-		a.signalWake()
+		if mutates {
+			a.signalWake()
+		} else {
+			a.signalNudge()
+		}
 	case <-ctx.Done():
 		return ctx.Err()
 	}
@@ -510,6 +576,22 @@ func (a *account) submit(ctx context.Context, fn func(*imapclient.Client) error)
 
 // submitTimeout bounds a queued IMAP command end-to-end (enqueue + execution).
 const submitTimeout = 30 * time.Second
+
+// sleepOrWake waits out the connect backoff, but cuts it short when someone asks
+// for a refresh, so an explicit refresh of a broken account retries now instead
+// of sitting out up to two minutes. It also consumes the wake token that
+// RefreshAll queued — a worker parked in a plain sleep() never did, so the token
+// survived into the next session and bought one off-cadence sync.
+func (a *account) sleepOrWake(ctx context.Context, d time.Duration) (cancelled bool) {
+	select {
+	case <-ctx.Done():
+		return true
+	case <-a.wake:
+		return false
+	case <-time.After(d):
+		return false
+	}
+}
 
 func sleep(ctx context.Context, d time.Duration) (cancelled bool) {
 	select {

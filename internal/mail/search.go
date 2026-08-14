@@ -76,7 +76,7 @@ func (m *Manager) SearchFolder(ctx context.Context, account string, folder *stor
 		return nil, nil
 	}
 	var uids []uint32
-	err := a.submit(ctx, func(c *imapclient.Client) error {
+	err := a.submitRO(ctx, func(c *imapclient.Client) error {
 		if _, err := c.Select(folder.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 			return err
 		}
@@ -106,7 +106,7 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 	if len(missing) > 0 {
 		a := m.accounts[account]
 		if a != nil {
-			_ = a.submit(ctx, func(c *imapclient.Client) error {
+			_ = a.submitRO(ctx, func(c *imapclient.Client) error {
 				if _, err := c.Select(folder.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 					return err
 				}
