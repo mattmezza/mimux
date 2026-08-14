@@ -79,6 +79,44 @@ func WrapHTMLEmail(fragment string) string {
 	return emailDocHead + fragment + emailDocTail
 }
 
+// ConvertBody rewrites a compose body when the user switches the per-message
+// format (plain / markdown / html). from and to are the compose modes; an
+// unknown mode behaves like "plain", matching bodyParts.
+//
+// NOTE: html -> markdown is just html -> text — there is no HTML-to-markdown
+// translator in here and one file of regexes would be worse than the flattening
+// htmlToText already does well. Text survives, markup doesn't. plain <-> markdown
+// is a no-op because markdown source already reads as plain text (it is exactly
+// what bodyParts ships as the text/plain part). Add a real converter only if
+// round-tripping formatting turns out to matter.
+func ConvertBody(body, from, to string) string {
+	if from == to || strings.TrimSpace(body) == "" {
+		return body
+	}
+	switch {
+	case from == "html":
+		return htmlToText(SanitizeComposeHTML(body))
+	case to == "html":
+		if from == "markdown" {
+			return RenderMarkdown(body)
+		}
+		return textToHTML(body)
+	}
+	return body
+}
+
+// textToHTML paragraph-izes plain text for the WYSIWYG editor: a blank line
+// starts a new <p>, a single newline becomes a <br>.
+func textToHTML(s string) string {
+	var b strings.Builder
+	for _, para := range strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n\n") {
+		b.WriteString("<p>")
+		b.WriteString(strings.ReplaceAll(html.EscapeString(strings.TrimSpace(para)), "\n", "<br>"))
+		b.WriteString("</p>")
+	}
+	return b.String()
+}
+
 // blockBreakTags close a visual block, so their end tag becomes a newline when
 // flattening HTML to text.
 var blockBreakTags = map[string]bool{

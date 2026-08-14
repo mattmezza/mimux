@@ -438,3 +438,37 @@ func ctypeOf(t *testing.T, raw []byte) string {
 	ct, _, _ := r.Header.ContentType()
 	return ct
 }
+
+// ConvertBody backs the per-message format switcher in compose: every switch
+// has to keep the words, and the two real conversions (markdown->html,
+// html->text) have to actually run.
+func TestConvertBody(t *testing.T) {
+	cases := []struct {
+		from, to, in string
+		want         []string // substrings the result must contain
+		notWant      []string
+	}{
+		{"plain", "markdown", "hi there", []string{"hi there"}, nil},
+		{"markdown", "plain", "**bold** text", []string{"**bold** text"}, nil},
+		{"markdown", "html", "**bold** text", []string{"<strong>bold</strong>"}, nil},
+		{"plain", "html", "one\ntwo\n\nthree", []string{"<p>one<br>two</p>", "<p>three</p>"}, nil},
+		{"plain", "html", "a & <b>", []string{"&amp;", "&lt;b&gt;"}, nil},
+		{"html", "plain", "<p>hello <b>world</b></p><p>again</p>", []string{"hello world", "again"}, []string{"<b>", "<p>"}},
+		{"html", "markdown", "<p>hello <b>world</b></p>", []string{"hello world"}, []string{"<b>"}},
+		{"html", "html", "<p>untouched</p>", []string{"<p>untouched</p>"}, nil},
+		{"html", "plain", "", []string{""}, nil},
+	}
+	for _, c := range cases {
+		got := ConvertBody(c.in, c.from, c.to)
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("ConvertBody(%q, %s->%s) = %q, want it to contain %q", c.in, c.from, c.to, got, w)
+			}
+		}
+		for _, n := range c.notWant {
+			if strings.Contains(got, n) {
+				t.Errorf("ConvertBody(%q, %s->%s) = %q, should not contain %q", c.in, c.from, c.to, got, n)
+			}
+		}
+	}
+}

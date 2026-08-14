@@ -612,6 +612,41 @@ body.sm-syncing #list-syncing { display: flex; }
   flex-shrink: 0;
 }
 
+/* Compose toolbar controls: Attach (a <label>), Format and Template (<select>s)
+   and Draft with AI (a <button>). One class so all four render at the same
+   height, padding, radius and text size — they used to drift apart because a
+   select brings its own metrics. */
+.compose-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: 2rem;
+  padding: 0 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.375rem;
+  background: var(--color-zinc-800, #27272a);
+  color: var(--color-zinc-200, #e4e4e7);
+  font-size: 0.875rem;
+  line-height: 1;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background-color 150ms, border-color 150ms;
+}
+.compose-tool:hover { background: var(--color-zinc-700, #3f3f46); }
+.compose-tool:focus-visible,
+.compose-tool:focus { outline: none; border-color: var(--color-indigo-500, #6366f1); }
+select.compose-tool { padding-right: 0.5rem; }
+
+/* Inline-editable attachment filename. field-sizing shrink-wraps the input to
+   its text natively; the size="" attribute on the element is the fallback for
+   browsers that don't have it yet (it over-reserves a little, no worse than
+   before). */
+.attach-name {
+  field-sizing: content;
+  min-width: 4rem;
+  max-width: 16rem;
+}
+
 /* Markdown Write/Preview tabs. */
 .md-tab {
   color: var(--color-zinc-400, #a1a1aa);

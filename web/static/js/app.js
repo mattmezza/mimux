@@ -1486,6 +1486,14 @@ document.addEventListener("htmx:afterSwap", (e) => {
     snapshotComposeBaseline();
     focusComposeBody(e.target);
   }
+  // Format switch: only the editor block was replaced, so re-wire it and tell
+  // the signature code which variant applies from now on.
+  if (e.target && e.target.id === "compose-body-wrap") {
+    initComposeEditor();
+    const sig = document.getElementById("compose-sig-data");
+    if (sig) sig.dataset.mode = document.getElementById("compose-mode")?.value || "plain";
+    focusComposeBody(e.target);
+  }
   if (e.target && e.target.id === "reading-pane") {
     const detail = e.target.querySelector("#message-detail");
     detail?.focus({ preventScroll: true });
@@ -2085,7 +2093,9 @@ function insertComposeText(content, isHTML) {
 document.addEventListener("alpine:init", () => {
   Alpine.data("aiAssist", (init) => ({
     kind: init.kind,
-    mode: init.mode,
+    // Read live: the format selector can change mid-compose, and the AI draft
+    // has to come back in whatever format the editor is in right now.
+    get mode() { return document.getElementById("compose-mode")?.value || "plain"; },
     isReply: init.kind === "reply" || init.kind === "reply_all",
     starters: ["Follow up", "Introduction", "Thank you"],
     open: false,
@@ -2163,7 +2173,79 @@ document.addEventListener("alpine:init", () => {
       this.open = false; this.stage = "menu"; this.freeInput = ""; this.showFree = false;
     },
   }));
+
+  // attachBox owns the compose attachment selection. A native FileList is
+  // immutable and can't be renamed, so the truth lives in `items` and
+  // input.files is rebuilt from it through a DataTransfer on every change —
+  // what the multipart form uploads is therefore exactly what the chips show.
+  // Renaming builds a fresh File around the same blob, so the MIME filename is
+  // the typed one with no server-side plumbing.
+  Alpine.data("attachBox", () => ({
+    items: [], // {id, f: File, name: string}
+    seq: 0,
+    over: false,
+
+    add(files) {
+      for (const f of files || []) this.items.push({ id: ++this.seq, f, name: f.name });
+      this.sync();
+    },
+    remove(i) { this.items.splice(i, 1); this.sync(); },
+    // Looked up from the document, not via x-ref or $el: the file input sits
+    // inside the nested aiAssist x-data (where an x-ref would register), and
+    // $el is whichever element the calling expression lives on, not the root.
+    // There is only ever one compose form open — see openCompose.
+    input() { return document.querySelector('#compose-form input[type=file][name="attachments"]'); },
+    sync() {
+      const dt = new DataTransfer();
+      for (const it of this.items) {
+        const name = (it.name || "").trim() || it.f.name;
+        it.name = name;
+        dt.items.add(name === it.f.name ? it.f : new File([it.f], name, { type: it.f.type }));
+      }
+      const el = this.input();
+      if (el) el.files = dt.files;
+    },
+    fmtSize(n) {
+      const u = ["B", "KB", "MB", "GB"];
+      let i = 0;
+      while (n >= 1024 && i < u.length - 1) { n /= 1024; i++; }
+      return (i ? n.toFixed(1) : n) + " " + u[i];
+    },
+
+    // Only file drags are ours. A text drag (dragging a selection around inside
+    // the body editor) carries text/* instead, and is left to the browser so
+    // rich-text drag-move keeps working.
+    isFiles(e) { return [...(e.dataTransfer?.types || [])].includes("Files"); },
+    onDragOver(e) { if (this.isFiles(e)) { e.preventDefault(); this.over = true; } },
+    // relatedTarget still inside the form = just crossing a child, not leaving.
+    onDragLeave(e) { if (!document.getElementById("compose-form")?.contains(e.relatedTarget)) this.over = false; },
+    onDrop(e) {
+      if (!this.isFiles(e)) return;
+      e.preventDefault();
+      this.over = false;
+      this.add(e.dataTransfer.files);
+    },
+  }));
 });
+
+// onComposeFormatChange runs on the format selector before htmx's own change
+// listener (inline handlers are bound at parse time, htmx's later), so
+// stopImmediatePropagation here cancels the swap. Leaving Rich text is the one
+// lossy direction — markup is flattened to its text — so confirm it, but only
+// when there is markup to lose.
+function onComposeFormatChange(e, sel) {
+  syncComposeEditor();
+  const prev = document.getElementById("compose-mode-from")?.value || "";
+  const editor = document.getElementById("compose-wysiwyg");
+  const hasMarkup = editor && editor.querySelector("b,strong,i,em,u,s,a,img,table,ul,ol,blockquote,font,h1,h2,h3,[style]");
+  if (prev === "html" && sel.value !== "html" && hasMarkup) {
+    if (!confirm("Switching away from Rich text keeps the words but drops the formatting. Continue?")) {
+      sel.value = prev;
+      e.stopImmediatePropagation();
+    }
+  }
+}
+window.onComposeFormatChange = onComposeFormatChange;
 
 function escapeHTML(s) {
   const d = document.createElement("div");
