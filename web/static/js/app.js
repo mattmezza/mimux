@@ -21,6 +21,29 @@ function avatarFallback(img) {
 }
 window.avatarFallback = avatarFallback;
 
+// Favicon fetches are tiny and often finish (and would fire an inline
+// onload/onerror) before this deferred script has even run, throwing
+// "avatarFallback is not defined" and leaving the globe stuck — same trap on
+// bfcache/htmx-restored markup, whose <img> is already complete by the time
+// we see it. So thread_row's avatar <img> carries no inline handler; instead
+// every avatar is swept here, where img.complete lets us judge it right away
+// and real listeners catch the rest. data-avatar-checked keeps repeat sweeps
+// (initial load, htmx swaps, pageshow) a no-op for images already settled.
+function sweepAvatars() {
+  document.querySelectorAll(".sender-avatar img:not([data-avatar-checked])").forEach((img) => {
+    img.dataset.avatarChecked = "1";
+    if (img.complete) {
+      avatarFallback(img);
+    } else {
+      img.addEventListener("load", () => avatarFallback(img));
+      img.addEventListener("error", () => avatarFallback(img));
+    }
+  });
+}
+sweepAvatars();
+document.body.addEventListener("htmx:afterSwap", sweepAvatars);
+window.addEventListener("pageshow", sweepAvatars);
+
 // Send the CSRF token on every htmx mutation.
 document.addEventListener("htmx:configRequest", (e) => {
   const meta = document.querySelector('meta[name="csrf-token"]');
@@ -245,24 +268,11 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
   es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
 })();
 
-// --- sync on app open ---
-// Opening the app — a cold load, or a backgrounded tab/PWA coming back — syncs
-// the accounts that are due. The server decides which, per account, from its
-// last sync and that account's sync interval; we just poke it. Rate-limited so
-// flicking between tabs doesn't hammer it. Whether that woke anything shows up
-// on its own, over SSE.
-(function initSync() {
-  const OPEN_GAP = 60000;
-  let lastOpen = 0;
-  function syncOnOpen() {
-    if (document.visibilityState !== "visible" || Date.now() - lastOpen < OPEN_GAP) return;
-    lastOpen = Date.now();
-    const meta = document.querySelector('meta[name="csrf-token"]');
-    fetch("/refresh?stale=1", { method: "POST", headers: { "X-CSRF-Token": meta ? meta.content : "" } }).catch(() => {});
-  }
-  document.addEventListener("visibilitychange", syncOnOpen);
-  syncOnOpen();
-})();
+// NOTE: no sync-on-open here. The server holds the IMAP connections and
+// syncs on its own (IDLE + the per-account interval) whether or not a browser
+// is open, and pushes new-mail/sync-status over SSE; a poke on focus only
+// bought an off-cadence sync and a spinner. Sync is triggered by the server, or
+// by the user (Refresh button / pull-to-refresh) — nothing else.
 
 // --- unread count in tab title ---
 async function refreshUnreadTitle() {
@@ -717,6 +727,12 @@ window.toggleThreadMessage = toggleThreadMessage;
   // — the armed, "let go and it syncs" state.
   function show(d) {
     const el = indicator();
+    // The sidebar is user-resizable, so #message-list's screen offset isn't
+    // known at author time — read it fresh on every reveal instead of
+    // hardcoding a breakpoint. No #message-list (shouldn't happen): fall back
+    // to CSS's viewport-centered left: 50%.
+    const list = document.getElementById("message-list");
+    el.style.left = list ? `${list.getBoundingClientRect().left + list.offsetWidth / 2}px` : "";
     if (d <= 0) { el.style.opacity = "0"; el.classList.remove("ready"); return; }
     el.style.opacity = String(Math.min(1, d / THRESHOLD));
     el.style.transform = `translate(-50%, ${Math.round(Math.min(d, THRESHOLD + 30) * 0.4)}px)`;
@@ -727,6 +743,7 @@ window.toggleThreadMessage = toggleThreadMessage;
     el.classList.remove("spinning", "ready");
     el.style.opacity = "0";
     el.style.transform = "";
+    el.style.left = ""; // don't leak this gesture's offset into the next one
   }
   function trigger() {
     if (busy) { hide(); return; }

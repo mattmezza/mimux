@@ -22,7 +22,7 @@
   </button>
   {{end}}
   <div class="sender-avatar relative shrink-0 w-8 h-8 rounded-full overflow-hidden flex items-center justify-center text-xs font-semibold text-white select-none"
-       style="background-color:{{avatarColor $m.FromAddress}}">{{$init := avatarInitials $m.FromName $m.FromAddress}}{{if .ShowFavicon}}{{with faviconURL $m.FromAddress}}<img src="{{.}}" alt="" loading="lazy" data-init="{{$init}}" class="absolute inset-0 w-full h-full object-cover bg-white" onload="avatarFallback(this)" onerror="avatarFallback(this)">{{else}}{{$init}}{{end}}{{else}}{{$init}}{{end}}</div>
+       style="background-color:{{avatarColor $m.FromAddress}}">{{$init := avatarInitials $m.FromName $m.FromAddress}}{{if .ShowFavicon}}{{with faviconURL $m.FromAddress}}<img src="{{.}}" alt="" loading="lazy" data-init="{{$init}}" class="absolute inset-0 w-full h-full object-cover bg-white">{{else}}{{$init}}{{end}}{{else}}{{$init}}{{end}}</div>
   <div class="min-w-0 flex-1">
     <div class="flex items-center gap-2">
       {{if $t.Unread}}<span class="unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}

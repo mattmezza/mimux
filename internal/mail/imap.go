@@ -191,45 +191,22 @@ func (m *Manager) Wake(accountName string) {
 	}
 }
 
-// RefreshAll nudges every account worker to sync now (the "Refresh now"
-// button). It flips each account to "syncing" immediately so the status bar and
-// health panel reflect the refresh right away; the worker sets "ok" when done.
-func (m *Manager) RefreshAll() { m.refresh(false) }
-
-// RefreshStale is the app-open path (the PWA being launched or a backgrounded
-// tab coming back): it wakes only the accounts whose last sync is older than
-// their own effective interval, so opening the app repeatedly doesn't force a
-// full re-sync every time. The staleness call lives here, not in the browser,
-// because the server already owns both LastSync and the interval settings.
-func (m *Manager) RefreshStale() { m.refresh(true) }
-
-func (m *Manager) refresh(dueOnly bool) {
+// RefreshAll nudges every account worker to sync now — the only client-driven
+// sync trigger there is ("Refresh now", pull-to-refresh). Background freshness
+// is the workers' own job (IDLE + poll interval), so nothing else asks. It
+// flips each account to "syncing" immediately so the status bar and health
+// panel reflect the refresh right away; the worker sets "ok" when done.
+func (m *Manager) RefreshAll() {
 	m.mu.Lock()
 	workers := make([]*account, 0, len(m.accounts))
 	for _, a := range m.accounts {
 		workers = append(workers, a)
 	}
 	m.mu.Unlock()
-	now := time.Now()
 	for _, a := range workers {
-		// pollInterval is the same per-account-override-else-global resolution
-		// the worker's own steady loop uses — one rule, one place.
-		if dueOnly && !dueForSync(a.getStatus(), a.pollInterval(), now) {
-			continue
-		}
 		a.setStatus("syncing", "")
 		a.signalWake()
 	}
-}
-
-// dueForSync reports whether an account wants a sync now: never synced yet
-// (zero LastSync) or its last successful sync is older than its interval. An
-// account already syncing is never due — the sync it needs is already running.
-func dueForSync(st AccountStatus, interval time.Duration, now time.Time) bool {
-	if st.State == "syncing" {
-		return false
-	}
-	return now.Sub(st.LastSync) >= interval
 }
 
 // --- account worker ---
