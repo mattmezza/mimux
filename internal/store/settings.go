@@ -20,8 +20,10 @@ type Prefs struct {
 	ShowAvatar       bool              // show sender avatar (default true)
 	ShowAccountBadge bool              // show account-name badge on list rows (default true)
 	ShowAttachMarker bool              // show attachment marker on list rows (default true)
+	ShowListLabels   bool              // show labels on message-list rows (default false)
 	ShowFavicon      bool              // use sender-domain favicon as avatar (default false)
 	HideAvatarMobile bool              // hide sender avatar/favicon on mobile only (default false)
+	AvatarShape      string            // sender-avatar corner style: circle|rounded|square (default circle)
 	DarkMessages     bool              // open message bodies in dark mode by default (default false)
 	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
 	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
@@ -161,8 +163,10 @@ func defaultPrefs() Prefs {
 		ShowAvatar:       true,
 		ShowAccountBadge: true,
 		ShowAttachMarker: true,
+		ShowListLabels:   false,
 		ShowFavicon:      false,
 		HideAvatarMobile: false,
+		AvatarShape:      "circle",
 		DarkMessages:     false,
 		RememberMsgTheme: false,
 		SyncMonths:       0,
@@ -232,11 +236,17 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("show_attach_marker"); ok {
 		p.ShowAttachMarker = v == "1"
 	}
+	if v, ok := s.getSetting("show_list_labels"); ok {
+		p.ShowListLabels = v == "1"
+	}
 	if v, ok := s.getSetting("show_favicon"); ok {
 		p.ShowFavicon = v == "1"
 	}
 	if v, ok := s.getSetting("hide_avatar_mobile"); ok {
 		p.HideAvatarMobile = v == "1"
+	}
+	if v, ok := s.getSetting("avatar_shape"); ok && (v == "circle" || v == "rounded" || v == "square") {
+		p.AvatarShape = v
 	}
 	if v, ok := s.getSetting("dark_messages"); ok {
 		p.DarkMessages = v == "1"
@@ -316,8 +326,10 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"show_avatar":        boolStr(p.ShowAvatar),
 		"show_account_badge": boolStr(p.ShowAccountBadge),
 		"show_attach_marker": boolStr(p.ShowAttachMarker),
+		"show_list_labels":   boolStr(p.ShowListLabels),
 		"show_favicon":       boolStr(p.ShowFavicon),
 		"hide_avatar_mobile": boolStr(p.HideAvatarMobile),
+		"avatar_shape":       p.AvatarShape,
 		"dark_messages":      boolStr(p.DarkMessages),
 		"remember_msg_theme": boolStr(p.RememberMsgTheme),
 		"sync_months":        strconv.Itoa(p.SyncMonths),

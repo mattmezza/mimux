@@ -220,24 +220,45 @@
                 class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
             </label>
 
-            <label class="flex items-center gap-2">
-              <input type="checkbox" name="show_avatar" value="1" {{if .Prefs.ShowAvatar}}checked{{end}}
-                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-              <span class="text-sm text-zinc-200">Show sender avatar</span>
-            </label>
+            {{/* Avatar: the master toggle plus its dependents, grouped under one
+                 sub-heading and visually nested. A disabled checkbox/select
+                 doesn't get submitted with the form, so handleSettingsSave
+                 preserves show_favicon/hide_avatar_mobile/avatar_shape when
+                 show_avatar posts off, instead of wiping them to zero values. */}}
+            <fieldset class="space-y-2" x-data="{ avatarsOn: {{if .Prefs.ShowAvatar}}true{{else}}false{{end}} }">
+              <legend class="text-sm text-zinc-200 font-medium">Avatar</legend>
 
-            <label class="flex items-center gap-2">
-              <input type="checkbox" name="show_favicon" value="1" {{if .Prefs.ShowFavicon}}checked{{end}}
-                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-              <span class="text-sm text-zinc-200">Use sender's website icon as avatar</span>
-              <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
-            </label>
+              <label class="flex items-center gap-2">
+                <input type="checkbox" name="show_avatar" value="1" x-model="avatarsOn"
+                  class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                <span class="text-sm text-zinc-200">Show sender avatar</span>
+              </label>
 
-            <label class="flex items-center gap-2">
-              <input type="checkbox" name="hide_avatar_mobile" value="1" {{if .Prefs.HideAvatarMobile}}checked{{end}}
-                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-              <span class="text-sm text-zinc-200">Hide avatars on mobile</span>
-            </label>
+              <div class="ml-6 space-y-2 border-l border-zinc-800 pl-3">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="show_favicon" value="1" {{if .Prefs.ShowFavicon}}checked{{end}}
+                    :disabled="!avatarsOn"
+                    class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500 disabled:opacity-40">
+                  <span class="text-sm" :class="avatarsOn ? 'text-zinc-200' : 'text-zinc-500'">Use sender's website icon as avatar</span>
+                  <span class="text-xs text-zinc-500">(fetches favicons from Google)</span>
+                </label>
+
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="hide_avatar_mobile" value="1" {{if .Prefs.HideAvatarMobile}}checked{{end}}
+                    :disabled="!avatarsOn"
+                    class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500 disabled:opacity-40">
+                  <span class="text-sm" :class="avatarsOn ? 'text-zinc-200' : 'text-zinc-500'">Hide avatars on mobile</span>
+                </label>
+
+                <label class="block space-y-1">
+                  <span class="text-sm" :class="avatarsOn ? 'text-zinc-200' : 'text-zinc-500'">Shape</span>
+                  <select name="avatar_shape" :disabled="!avatarsOn"
+                    class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150 disabled:opacity-40">
+                    {{range .AvatarShapes}}<option value="{{.ID}}" {{if eq $.Prefs.AvatarShape .ID}}selected{{end}}>{{.Label}}</option>{{end}}
+                  </select>
+                </label>
+              </div>
+            </fieldset>
 
             <label class="flex items-center gap-2">
               <input type="checkbox" name="show_account_badge" value="1" {{if .Prefs.ShowAccountBadge}}checked{{end}}
@@ -249,6 +270,13 @@
               <input type="checkbox" name="show_attach_marker" value="1" {{if .Prefs.ShowAttachMarker}}checked{{end}}
                 class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
               <span class="text-sm text-zinc-200">Show attachment marker in message list</span>
+            </label>
+
+            <label class="flex items-center gap-2">
+              <input type="checkbox" name="show_list_labels" value="1" {{if .Prefs.ShowListLabels}}checked{{end}}
+                class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span class="text-sm text-zinc-200">Show labels in message list</span>
+              <span class="text-xs text-zinc-500">(labels always show when reading a message)</span>
             </label>
 
             <label class="flex items-center gap-2">

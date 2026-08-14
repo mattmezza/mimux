@@ -30,6 +30,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"RowActions":   store.AllRowActions,
 		"Accents":      store.AllAccents,
 		"IconShapes":   iconShapes,
+		"AvatarShapes": avatarShapes,
 		// Resolved mark colour, so the colour input always has a value even
 		// when icon_accent is blank ("inherit the app accent").
 		"IconMark":     iconMark(s.store.GetAppConfig()),
@@ -53,6 +54,13 @@ func (s *Server) dbSizeHuman() string {
 	return humanBytes(total)
 }
 
+// avatarShapes are the sender-avatar corner choices, for the Settings select.
+var avatarShapes = []struct{ ID, Label string }{
+	{"circle", "Circle"},
+	{"rounded", "Rounded square"},
+	{"square", "Square"},
+}
+
 func humanBytes(n int64) string {
 	switch {
 	case n >= 1<<30:
@@ -74,8 +82,10 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		ShowAvatar:       r.PostFormValue("show_avatar") != "",
 		ShowAccountBadge: r.PostFormValue("show_account_badge") != "",
 		ShowAttachMarker: r.PostFormValue("show_attach_marker") != "",
+		ShowListLabels:   r.PostFormValue("show_list_labels") != "",
 		ShowFavicon:      r.PostFormValue("show_favicon") != "",
 		HideAvatarMobile: r.PostFormValue("hide_avatar_mobile") != "",
+		AvatarShape:      r.PostFormValue("avatar_shape"),
 		DarkMessages:     r.PostFormValue("dark_messages") != "",
 		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
 		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),
@@ -122,6 +132,21 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	case "fullscreen", "popup", "modal":
 	default:
 		p.ReplyLayout = "popup"
+	}
+	switch p.AvatarShape {
+	case "circle", "rounded", "square":
+	default:
+		p.AvatarShape = "circle"
+	}
+	// The avatar dependents (favicon/shape/hide-on-mobile) are disabled in the
+	// UI when show_avatar is off, and a disabled control isn't submitted at
+	// all — so an absent field here doesn't mean "off"/"circle", it means
+	// "the browser didn't send it". Keep whatever was already stored instead
+	// of overwriting it with the form's zero values, or turning avatars back
+	// on later would come back to reset favicon/shape/mobile choices.
+	if !p.ShowAvatar {
+		prev := s.store.GetPrefs()
+		p.ShowFavicon, p.HideAvatarMobile, p.AvatarShape = prev.ShowFavicon, prev.HideAvatarMobile, prev.AvatarShape
 	}
 	if p.SyncMonths < 0 {
 		p.SyncMonths = 0

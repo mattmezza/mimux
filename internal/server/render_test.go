@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -130,5 +131,25 @@ func TestRenderHealthRows(t *testing.T) {
 	}
 	if strings.Contains(body, "now ago") {
 		t.Errorf("a just-synced account must not read \"now ago\"; body:\n%s", body)
+	}
+}
+
+// TestEventsOpensWithSyncState pins the SSE contract the spinner rides on: the
+// stream states the aggregate sync flag the moment it opens, so a browser that
+// just reconnected (holding a page rendered who-knows-when) is corrected
+// without a second endpoint to ask.
+func TestEventsOpensWithSyncState(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // handler writes its preamble, then sees a dead client and returns
+	w := httptest.NewRecorder()
+	s.handleEvents(w, httptest.NewRequest(http.MethodGet, "/events", nil).WithContext(ctx))
+
+	// No accounts running, so nothing is syncing.
+	if got := w.Body.String(); !strings.Contains(got, "event: sync-status\ndata: 0\n\n") {
+		t.Fatalf("stream preamble = %q, want a sync-status of 0 in it", got)
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
+		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
 	}
 }
