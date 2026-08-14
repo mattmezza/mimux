@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2/imapclient"
+
+	"github.com/mattmezza/sm/internal/config"
 )
 
 // TestSubmitTimesOut simulates a wedged worker (nothing ever drains a.cmds)
@@ -71,6 +73,52 @@ func TestDueForSync(t *testing.T) {
 	for _, c := range cases {
 		if got := dueForSync(c.st, interval, now); got != c.want {
 			t.Errorf("%s: dueForSync = %v, want %v", c.name, got, c.want)
+		}
+	}
+}
+
+// TestAnySyncing walks the overlap the "Syncing…" spinner exists for: two
+// accounts, one finishing while the other is still going. The aggregate must
+// stay true until the last one is done — and every transition must reach SSE
+// subscribers, since the spinner is only ever told, never asks.
+func TestAnySyncing(t *testing.T) {
+	m := NewManager(&config.Config{}, nil)
+	mk := func(name string) *account {
+		a := &account{cfg: config.Account{Name: name}, m: m, status: AccountStatus{Account: name, State: "ok"}}
+		m.accounts[name] = a
+		return a
+	}
+	a, b := mk("A"), mk("B")
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+
+	steps := []struct {
+		name string
+		do   func()
+		want bool
+	}{
+		{"idle", func() {}, false},
+		{"A starts", func() { a.setStatus("syncing", "") }, true},
+		{"B starts", func() { b.setStatus("syncing", "") }, true},
+		{"A finishes, B still going", func() { a.setStatus("ok", "") }, true},
+		{"B finishes", func() { b.setStatus("ok", "") }, false},
+		{"an error is not a sync", func() { a.setStatus("error", "nope") }, false},
+	}
+	for _, s := range steps {
+		s.do()
+		if got := m.AnySyncing(); got != s.want {
+			t.Errorf("%s: AnySyncing = %v, want %v", s.name, got, s.want)
+		}
+	}
+	// One sync-status per setStatus above (the no-op first step aside).
+	for i := 0; i < 5; i++ {
+		select {
+		case e := <-events:
+			if e.Type != "sync-status" {
+				t.Fatalf("event %d: type %q, want sync-status", i, e.Type)
+			}
+		default:
+			t.Fatalf("only %d sync-status events broadcast, want 5: a transition nobody hears about can never reach the spinner", i)
 		}
 	}
 }

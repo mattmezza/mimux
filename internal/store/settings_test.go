@@ -11,6 +11,12 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	if p.MarkReadDelay != 0 || p.SyncIntervalMin != 5 || p.PreviewLines != 1 || !p.ShowAvatar {
 		t.Fatalf("unexpected defaults: %+v", p)
 	}
+	if p.ShowListLabels {
+		t.Fatalf("ShowListLabels should default off: %+v", p)
+	}
+	if p.AvatarShape != "circle" {
+		t.Fatalf("AvatarShape should default to circle: %+v", p)
+	}
 	if len(p.AccountColors) != 0 {
 		t.Fatalf("expected no account colors, got %v", p.AccountColors)
 	}
@@ -26,6 +32,8 @@ func TestPrefsRoundTrip(t *testing.T) {
 		SyncIntervalMin: 10,
 		PreviewLines:    2,
 		ShowAvatar:      false,
+		ShowListLabels:  true,
+		AvatarShape:     "square",
 		AccountColors:   map[string]string{"work": "#6366f1", "personal": "#22c55e"},
 	}
 	if err := s.SavePrefs(want); err != nil {
@@ -33,7 +41,8 @@ func TestPrefsRoundTrip(t *testing.T) {
 	}
 	got := s.GetPrefs()
 	if got.MarkReadDelay != want.MarkReadDelay || got.SyncIntervalMin != want.SyncIntervalMin ||
-		got.PreviewLines != want.PreviewLines || got.ShowAvatar != want.ShowAvatar {
+		got.PreviewLines != want.PreviewLines || got.ShowAvatar != want.ShowAvatar ||
+		got.ShowListLabels != want.ShowListLabels || got.AvatarShape != want.AvatarShape {
 		t.Fatalf("scalars mismatch: got %+v want %+v", got, want)
 	}
 	if got.AccountColors["work"] != "#6366f1" || got.AccountColors["personal"] != "#22c55e" {

@@ -41,7 +41,10 @@
   <script defer src="/static/js/alpinejs.min.js"></script>
   {{with .CSRF}}<meta name="csrf-token" content="{{.}}">{{end}}
 </head>
-<body class="h-screen bg-zinc-900 text-zinc-300 antialiased overflow-hidden text-sm">
+{{/* sm-syncing is the one and only switch for the "Syncing…" spinner: server
+     truth on first paint, then toggled by app.js from the sync-status SSE
+     event. On <body> so it survives every htmx swap underneath it. */}}
+<body class="h-screen bg-zinc-900 text-zinc-300 antialiased overflow-hidden text-sm{{if .Syncing}} sm-syncing{{end}}">
 <a href="#main-content" class="skip-link">Skip to content</a>
 {{block "content" .}}{{end}}
 <div id="compose-root"></div>

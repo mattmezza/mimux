@@ -114,6 +114,9 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 		data = make(map[string]any)
 	}
 	data["Version"] = s.version
+	// The spinner's starting state, so a cold load paints it right on first
+	// paint instead of waiting for the first SSE event.
+	data["Syncing"] = s.mail.AnySyncing()
 	s.appearanceData(data)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := t.ExecuteTemplate(w, "base", data); err != nil {
@@ -163,7 +166,6 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/oauth/{name}/start", s.handleOAuthStart)
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
-		r.Get("/syncing", s.handleSyncing)
 		r.Get("/health", s.handleHealth)
 		r.Get("/unread", s.handleUnread)
 		r.Post("/refresh", s.handleRefresh)
@@ -362,6 +364,11 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 
 // handleEvents is the SSE stream: it relays sync-status, new-mail and toast
 // events from the mail manager to the browser.
+//
+// sync-status carries the aggregate "is any account syncing" ("1"/"0") rather
+// than the account name nobody read, recomputed at send time so it is current
+// truth and not a snapshot of when the event was queued. The browser draws its
+// spinner straight from it and never asks the server anything.
 func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	f, ok := w.(http.Flusher)
 	if !ok {
@@ -373,6 +380,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	events, unsubscribe := s.mail.Subscribe()
 	defer unsubscribe()
 	_, _ = fmt.Fprint(w, "event: hello\ndata: {}\n\n")
+	// Current sync state up front, so a reconnecting browser holding a stale
+	// page is corrected immediately without a separate endpoint to ask.
+	sync := syncFlag(s.mail.AnySyncing())
+	_, _ = fmt.Fprintf(w, "event: sync-status\ndata: %s\n\n", sync)
 	f.Flush()
 	t := time.NewTicker(30 * time.Second)
 	defer t.Stop()
@@ -381,11 +392,34 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case e := <-events:
-			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, sseData(e.Data))
+			data := sseData(e.Data)
+			if e.Type == "sync-status" {
+				data = syncFlag(s.mail.AnySyncing())
+				sync = data
+			}
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Type, data)
 			f.Flush()
 		case <-t.C:
-			_, _ = fmt.Fprint(w, ": ping\n\n")
+			// The hub drops events for a subscriber that fell behind, and a
+			// dropped "nobody is syncing" would strand the spinner on. The
+			// keepalive re-states the truth when it has drifted; when it hasn't
+			// (the normal case) it stays a bare comment.
+			if now := syncFlag(s.mail.AnySyncing()); now != sync {
+				sync = now
+				_, _ = fmt.Fprintf(w, "event: sync-status\ndata: %s\n\n", now)
+			} else {
+				_, _ = fmt.Fprint(w, ": ping\n\n")
+			}
 			f.Flush()
 		}
 	}
+}
+
+// syncFlag is the sync-status SSE payload: the spinner is a boolean, so send a
+// boolean.
+func syncFlag(any bool) string {
+	if any {
+		return "1"
+	}
+	return "0"
 }

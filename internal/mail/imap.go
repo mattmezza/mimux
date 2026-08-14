@@ -167,6 +167,18 @@ func (m *Manager) Status() []AccountStatus {
 	return out
 }
 
+// AnySyncing reports whether at least one account is mid-sync — the single
+// truth the "Syncing…" spinner renders. Lives here, next to the statuses it
+// reads, so the SSE relay and the page render can't compute it differently.
+func (m *Manager) AnySyncing() bool {
+	for _, st := range m.Status() {
+		if st.State == "syncing" {
+			return true
+		}
+	}
+	return false
+}
+
 // Subscribe returns an event channel and an unsubscribe func for SSE.
 func (m *Manager) Subscribe() (<-chan Event, func()) { return m.hub.subscribe() }
 
@@ -405,6 +417,12 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 		if err := a.drain(c); err != nil {
 			return err
 		}
+		// Every trip round this loop IS a sync (IDLE woke us, the poll elapsed,
+		// or someone asked): say so before doing the work, not just "ok" after.
+		// Without this the steady state — i.e. nearly every background sync —
+		// went ok -> ok and broadcast a single event, which is why the spinner
+		// could only ever blink.
+		a.setStatus("syncing", "")
 		// Retry any \Seen flip that never reached the server before syncing flags
 		// back from it — otherwise the sync reads a stale "unread" and the local
 		// mark-read is lost.

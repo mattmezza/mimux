@@ -38,7 +38,7 @@
       {{if $t.Subject}}{{$t.Subject}}{{else}}(no subject){{end}}
     </div>
     <div class="msg-snippet text-zinc-500 text-xs">{{$m.Snippet}}</div>
-    {{with messageLabels $m.Labels}}<div class="mt-0.5 flex flex-wrap gap-1">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}
+    {{if .ShowLabels}}{{with messageLabels $m.Labels}}<div class="mt-0.5 flex flex-wrap gap-1">{{range .}}<span class="text-[10px] rounded bg-zinc-800 px-1 text-zinc-400">{{.}}</span>{{end}}</div>{{end}}{{end}}
   </div>
   {{if eq $n 1}}
   <button title="{{if $m.IsStarred}}Unstar{{else}}Star{{end}} (s)" aria-label="{{if $m.IsStarred}}Unstar{{else}}Star{{end}}" onclick="event.stopPropagation()"

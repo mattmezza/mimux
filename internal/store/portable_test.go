@@ -38,6 +38,14 @@ func seedConfig(t *testing.T, s *Store) {
 	if err := s.SaveAppConfig(look); err != nil {
 		t.Fatal(err)
 	}
+	// Prefs (Settings → Reading) ride the same generic app_settings dump; flip a
+	// default-off one so the round trip fails if it ever moved out.
+	prefs := s.GetPrefs()
+	prefs.ShowListLabels = true
+	prefs.AvatarShape = "square"
+	if err := s.SavePrefs(prefs); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.SaveToken("work", StoredToken{Access: "at", Refresh: "rt",
 		Expiry: time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC)}); err != nil {
 		t.Fatal(err)
@@ -133,6 +141,12 @@ func TestConfigRoundTrip(t *testing.T) {
 	if look := dst.GetAppConfig(); look.Accent != "violet" || look.IconBG != "transparent" ||
 		look.IconAccent != "#ff0088" || look.IconLeaf != "#00ddaa" || look.IconShape != "circle" {
 		t.Errorf("appearance not restored: %+v", look)
+	}
+	if !dst.GetPrefs().ShowListLabels {
+		t.Error("ShowListLabels not restored")
+	}
+	if dst.GetPrefs().AvatarShape != "square" {
+		t.Errorf("AvatarShape not restored: %q", dst.GetPrefs().AvatarShape)
 	}
 	if tok, _ := dst.GetToken("work"); tok == nil || tok.Refresh != "rt" {
 		t.Errorf("token not restored: %+v", tok)

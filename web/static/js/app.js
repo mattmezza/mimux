@@ -180,6 +180,41 @@ document.addEventListener("click", (e) => {
   }
 }, true);
 
+// --- "Syncing…" spinner ---
+// One boolean, owned by the server. It arrives twice: stamped on <body> by the
+// initial render, then pushed on every sync-status SSE event. Nothing here
+// polls, guesses or waits out a timer — the client only mirrors what it's told.
+// The one bit of logic is requirement (2): when the last account finishes, the
+// message list must be refreshed BEFORE the spinner goes, so it never vanishes
+// ahead of the mail it was promising.
+let smSyncing = document.body.classList.contains("sm-syncing");
+let smAwaitList = false; // spinner is on borrowed time, waiting for the list
+function setSyncing(on) {
+  if (on) {
+    smSyncing = true;
+    smAwaitList = false; // something started again: the pending hide is void
+    document.body.classList.add("sm-syncing");
+    return;
+  }
+  if (!smSyncing) return;
+  smSyncing = false;
+  if (!document.getElementById("message-list")) {
+    document.body.classList.remove("sm-syncing"); // no list to wait for
+    return;
+  }
+  smAwaitList = true;
+  document.body.dispatchEvent(new Event("sm:refresh"));
+}
+document.body.addEventListener("htmx:afterSwap", (e) => {
+  // Any #message-list swap settles the debt, not just the one we asked for: a
+  // new-mail refresh racing ours is an equally fresh list. htmx fires afterSwap
+  // on the newly inserted content, so this bubbles up to body.
+  if (smAwaitList && e.target.id === "message-list") {
+    smAwaitList = false;
+    document.body.classList.remove("sm-syncing");
+  }
+});
+
 // --- server-sent events ---
 (function () {
   if (!window.EventSource) return;
@@ -190,79 +225,40 @@ document.addEventListener("click", (e) => {
   // them — including a whole sync that started AND finished while
   // disconnected, so the accounts are already back to "ok" by the time we're
   // listening again and there's no sync-status event left to show. Refresh
-  // once on every reconnect, and re-check sync state too (sm:sync) so the
-  // statusbar/sidebar/list-syncing pill at least reflect current truth
-  // immediately rather than waiting for their own 60s poll. Skipped on the
-  // first open, where the page has just loaded its own fresh data.
+  // once on every reconnect. Skipped on the first open, where the page has just
+  // loaded its own fresh data. Sync state needs no help here: the server sends
+  // a sync-status the moment the stream opens, reconnects included.
   let opened = false;
   es.addEventListener("open", () => {
     if (opened) {
       document.body.dispatchEvent(new Event("sm:refresh"));
-      document.body.dispatchEvent(new Event("sm:sync"));
       refreshUnreadTitle();
     }
     opened = true;
   });
   es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
-  es.addEventListener("sync-status", () => { document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
+  // data is "1"/"0": is ANY account syncing, computed server-side (handleEvents).
+  es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
   es.addEventListener("toast", (e) => toast(e.data));
   es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
   es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
   es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
 })();
 
-// --- sync visibility + sync on app open ---
-// The "Syncing…" pill and the statusbar both render server state, but that
-// state only turns true once the server has flipped an account to "syncing" —
-// after our request lands. A sync the user just asked for would therefore show
-// nothing for a beat, and a short one could finish having shown nothing at all.
-// So mark the body the instant a sync is requested and let the server's own
-// /syncing answer take over from there (.sm-syncing in app.css).
+// --- sync on app open ---
+// Opening the app — a cold load, or a backgrounded tab/PWA coming back — syncs
+// the accounts that are due. The server decides which, per account, from its
+// last sync and that account's sync interval; we just poke it. Rate-limited so
+// flicking between tabs doesn't hammer it. Whether that woke anything shows up
+// on its own, over SSE.
 (function initSync() {
-  // A /syncing answer of "nobody is syncing" this soon after a request is not
-  // yet trustworthy — the server may not have flipped the accounts. Bridge it.
-  const GRACE = 6000;
-  let requestedAt = 0;
-  // Arm the optimistic spinner. Exposed because the manual-sync gestures
-  // (pull-to-refresh, wheel overscroll) post via fetch, not htmx, so there is
-  // no htmx:beforeRequest to catch for them — they call this directly.
-  window.smSyncRequested = function () {
-    requestedAt = Date.now();
-    document.body.classList.add("sm-syncing");
-  };
-  document.body.addEventListener("htmx:beforeRequest", (e) => {
-    if (e.detail.requestConfig?.path === "/refresh") window.smSyncRequested();
-  });
-  document.body.addEventListener("htmx:afterRequest", (e) => {
-    // The accounts are flipped by the time /refresh answers: pull that truth
-    // into the pill, statusbar and health rows now rather than up to 60s later.
-    if (e.detail.requestConfig?.path === "/refresh") document.body.dispatchEvent(new Event("sm:sync"));
-  });
-  document.body.addEventListener("htmx:afterSwap", (e) => {
-    if (e.detail.requestConfig?.path !== "/syncing") return;
-    // The swapped-in pill carries .is-syncing when the server says a sync is
-    // running: hand the optimistic class over to it, or drop it once the grace
-    // window has passed with the server still reporting nothing syncing.
-    const live = document.getElementById("list-syncing")?.classList.contains("is-syncing");
-    if (live || Date.now() - requestedAt > GRACE) document.body.classList.remove("sm-syncing");
-  });
-
-  // Opening the app — a cold load, or a backgrounded tab/PWA coming back —
-  // syncs the accounts that are due. The server decides which, per account,
-  // from its last sync and that account's sync interval; we just poke it.
-  // Rate-limited so flicking between tabs doesn't hammer it.
   const OPEN_GAP = 60000;
   let lastOpen = 0;
   function syncOnOpen() {
     if (document.visibilityState !== "visible" || Date.now() - lastOpen < OPEN_GAP) return;
     lastOpen = Date.now();
     const meta = document.querySelector('meta[name="csrf-token"]');
-    // Plain fetch, not htmx.ajax: this check often wakes nothing, so it must
-    // not raise the optimistic spinner above. The sm:sync afterwards shows the
-    // real state if it did start a sync.
-    fetch("/refresh?stale=1", { method: "POST", headers: { "X-CSRF-Token": meta ? meta.content : "" } })
-      .then(() => document.body.dispatchEvent(new Event("sm:sync")))
-      .catch(() => {});
+    fetch("/refresh?stale=1", { method: "POST", headers: { "X-CSRF-Token": meta ? meta.content : "" } }).catch(() => {});
   }
   document.addEventListener("visibilitychange", syncOnOpen);
   syncOnOpen();
@@ -740,12 +736,10 @@ window.toggleThreadMessage = toggleThreadMessage;
     // postAction, not htmx.ajax: swap:"none" body-scoped request (see
     // postMarkRead below) — a star/move firing at the same time could drop
     // this on body's shared queue and resolve it as if it had synced.
-    window.smSyncRequested(); // fetch fires no htmx event to arm it with
+    // /refresh flips every account to "syncing" before it answers, so the
+    // spinner is already up over SSE by the time this resolves.
     postAction("/refresh")
-      .then(() => {
-        document.body.dispatchEvent(new Event("sm:refresh"));
-        document.body.dispatchEvent(new Event("sm:sync")); // pull real sync state into the pill
-      })
+      .then(() => document.body.dispatchEvent(new Event("sm:refresh")))
       .catch(() => {})
       .then(() => { busy = false; hide(); });
   }

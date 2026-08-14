@@ -50,7 +50,7 @@ if (!window.smTranslate) {
   // a concrete language); changing it re-requests the body with the new pair.
   function smLangSelect(frame, bar, param, value, label, autoLabel) {
     var sel = document.createElement("select");
-    sel.className = "rounded bg-zinc-800 border border-zinc-700 px-1 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500";
+    sel.className = "shrink-0 rounded bg-zinc-800 border border-zinc-700 px-1 py-0.5 text-xs text-zinc-100 focus:outline-none focus:border-indigo-500";
     sel.setAttribute("aria-label", label);
     sel.title = label;
     if (autoLabel) sel.appendChild(new Option(autoLabel, "", false, value === ""));
@@ -78,7 +78,7 @@ if (!window.smTranslate) {
     var failed = root && root.dataset.smError !== undefined;
     bar.textContent = "";
     if (!lang && !target && !failed) { bar.className = "shrink-0 empty:hidden"; return; }
-    bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b " +
+    bar.className = "shrink-0 flex flex-col sm:flex-row sm:items-center gap-2 px-4 py-1.5 text-xs border-b " +
       (failed ? "bg-red-500/10 border-red-500/20 text-red-300"
               : "bg-indigo-500/10 border-indigo-500/20 text-indigo-300");
     var msg = document.createElement("span");
@@ -87,19 +87,25 @@ if (!window.smTranslate) {
       : (lang ? "Translated from " + smLangName(lang) : "Translated");
     bar.appendChild(msg);
     // No pickers in the error state — another language can't fix a missing key.
+    // Pickers + button live in their own wrapping row so they never squeeze msg
+    // on a narrow screen; sm:flex-row above keeps everything inline on desktop.
+    var controls = bar;
     if (!failed) {
-      bar.appendChild(smLangSelect(frame, bar, "sl", root.dataset.smSource || "", "Source language", "Detect language"));
+      controls = document.createElement("div");
+      controls.className = "flex flex-wrap items-center gap-2";
+      bar.appendChild(controls);
+      controls.appendChild(smLangSelect(frame, bar, "sl", root.dataset.smSource || "", "Source language", "Detect language"));
       var arrow = document.createElement("span");
       arrow.textContent = "→";
-      bar.appendChild(arrow);
-      bar.appendChild(smLangSelect(frame, bar, "tl", target, "Target language", ""));
+      controls.appendChild(arrow);
+      controls.appendChild(smLangSelect(frame, bar, "tl", target, "Target language", ""));
     }
     var btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "underline hover:opacity-80";
+    btn.className = "shrink-0 underline hover:opacity-80";
     btn.textContent = failed ? "Dismiss" : "Show original";
     btn.onclick = function () { smTranslate(frame, bar); };
-    bar.appendChild(btn);
+    controls.appendChild(btn);
   };
 }
 </script>
