@@ -2420,6 +2420,18 @@ const keymap = {
   "j": () => moveSelection(1),
   "k": () => moveSelection(-1),
   "o": () => openSelected(),
+  // Space expands/collapses the selected thread by clicking its disclosure
+  // button — the same control the mouse uses, so the htmx fetch, the hidden
+  // class, aria-expanded and the chevron all stay owned by thread_row.html.
+  // Returns false (no preventDefault, so the page/pane keeps scrolling) on a
+  // single-message row, a sub-row, or while the reading pane holds focus.
+  " ": () => {
+    if (readingScroller()) return false;
+    const btn = selectedRow()?.querySelector(".thread-toggle");
+    if (!btn) return false;
+    btn.click();
+    return true;
+  },
   "r": () => flagSelected("read"),
   "u": () => flagSelected("unread"),
   "s": () => { if (goPending) { goPending = false; starredSearch(); return true; } return flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"); },
