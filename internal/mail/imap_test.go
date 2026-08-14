@@ -51,32 +51,6 @@ func TestSubmitTimesOut(t *testing.T) {
 	}
 }
 
-// TestDueForSync pins the app-open staleness rule: stale accounts and
-// never-synced ones are due, freshly synced ones aren't, and an account already
-// mid-sync is never woken again.
-func TestDueForSync(t *testing.T) {
-	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	interval := 15 * time.Minute
-	cases := []struct {
-		name string
-		st   AccountStatus
-		want bool
-	}{
-		{"never synced", AccountStatus{State: "ok"}, true},
-		{"synced just now", AccountStatus{State: "ok", LastSync: now}, false},
-		{"synced within the interval", AccountStatus{State: "ok", LastSync: now.Add(-14 * time.Minute)}, false},
-		{"exactly one interval ago", AccountStatus{State: "ok", LastSync: now.Add(-interval)}, true},
-		{"long overdue", AccountStatus{State: "ok", LastSync: now.Add(-2 * time.Hour)}, true},
-		{"errored and stale", AccountStatus{State: "error", LastSync: now.Add(-time.Hour)}, true},
-		{"already syncing", AccountStatus{State: "syncing", LastSync: now.Add(-2 * time.Hour)}, false},
-	}
-	for _, c := range cases {
-		if got := dueForSync(c.st, interval, now); got != c.want {
-			t.Errorf("%s: dueForSync = %v, want %v", c.name, got, c.want)
-		}
-	}
-}
-
 // TestAnySyncing walks the overlap the "Syncing…" spinner exists for: two
 // accounts, one finishing while the other is still going. The aggregate must
 // stay true until the last one is done — and every transition must reach SSE

@@ -265,15 +265,11 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "health_rows", s.mail.Status())
 }
 
-// handleRefresh triggers an immediate sync across every account. With ?stale=1
-// (the app-open/foreground check) only the accounts actually due per their own
-// sync interval are woken, so relaunching the PWA is cheap.
+// handleRefresh triggers an immediate sync across every account. Only the user
+// asks for this (Refresh button, pull-to-refresh); background freshness is the
+// mail workers' own IDLE + poll loop, which needs no browser.
 func (s *Server) handleRefresh(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Query().Get("stale") == "1" {
-		s.mail.RefreshStale()
-	} else {
-		s.mail.RefreshAll()
-	}
+	s.mail.RefreshAll()
 	w.WriteHeader(http.StatusNoContent)
 }
 
