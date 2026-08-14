@@ -325,6 +325,10 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		}
 		if isNew {
 			a.runRules(ctx, f.ID, uint32(buf.UID))
+			// Both notification paths are non-blocking (they hand off to a
+			// goroutine) and both are no-ops until the user opts in, so the
+			// sync loop pays nothing for them beyond one Prefs read.
+			a.maybeNotify(f, buf)
 		}
 	}
 	return n, nil

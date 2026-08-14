@@ -16,13 +16,15 @@ data.
 - **Search** — instant local full-text search plus on-demand deep IMAP
   server search, streamed back over SSE as results arrive
 - **Filters** — a rule engine (conditions → actions: move, label, forward,
-  mark read, star, delete) that runs on incoming mail
+  mark read, star, delete, notify) that runs on incoming mail
 - **AI compose/reply and translate**, both optional and bring-your-own-key
   (OpenRouter, Google Translate)
 - **OAuth2** login for Gmail and Zoho, alongside plain password/app-password auth
 - **Keyboard-first** — a full shortcut set for navigating and triaging mail
   without leaving the home row (see below)
 - **Installable PWA** with an offline fallback to your last-synced inbox
+- **Notifications** for new mail when SM isn't open — Web Push straight from
+  your server, or a POST to an [ntfy](https://ntfy.sh) topic (see below)
 
 ## Screenshots
 
@@ -122,6 +124,50 @@ For accounts using OAuth2 (choose **OAuth2** in the account editor):
 4. The account shows **Connect** (in the sidebar and the Accounts list) until
    authorized — click it to grant consent. Tokens are stored in the DB and
    refreshed automatically; the sync worker (re)starts on callback.
+
+## Notifications
+
+Off until you turn them on, in **Settings → Notifications**. Pick *when* first:
+
+- **Off** (default) — nothing is ever sent and no permission is ever requested.
+- **Only what my filter rules say** — a rule with the **Notify me** action
+  fires one. Set those up under *Filters*.
+- **Every new message in an inbox**.
+
+Either way SM only notifies about new mail arriving in an **inbox**: never your
+own sent mail, never the backlog downloaded on a first sync, never a message
+that was already read elsewhere, and never anything older than a day.
+
+Then pick *how* — the two transports are independent and can both be on:
+
+**Web Push** (Settings → Notifications → *Enable on this device*) delivers from
+your own server, with the sender and subject encrypted end-to-end to that
+browser. Nothing to configure: the VAPID key pair is generated on first use and
+stored in the database. Requirements:
+
+- **HTTPS with a real certificate.** Browsers refuse both service workers and
+  push on an insecure origin, so `http://<lan-ip>:8083` will not work.
+- **iPhone/iPad: install the web app first.** Safari only allows push for a web
+  app added to the Home Screen (iOS 16.4+) — Share → *Add to Home Screen*, open
+  SM from that icon, and enable notifications there. It cannot work in a normal
+  Safari tab, in any browser on iOS.
+- The browser asks for permission **once**. If it's refused, the button can't
+  ask again — reset Notifications for the site in the browser's own settings.
+
+Each browser/device subscribes separately and is listed with a Remove button.
+Signing out drops that device's subscription. A subscription the push service
+reports as gone (404/410) is deleted automatically.
+
+**ntfy** needs no permission, no HTTPS and no installed app: put a topic URL
+(`https://ntfy.sh/<something-long-and-unguessable>`, or your own ntfy server) in
+the box, install the ntfy app, and subscribe to the same topic. This is the
+fallback when Web Push isn't available. Anyone who knows the topic name can read
+the notifications, so self-host ntfy if the sender and subject are sensitive.
+
+*Privacy:* Web Push payloads are encrypted end-to-end — the push service
+(Apple/Google/Mozilla) relays ciphertext it cannot read. It does still see that
+your device received a push, and when: metadata, not content. ntfy sees the
+sender and subject in the clear unless you run it yourself.
 
 ## Important notes
 

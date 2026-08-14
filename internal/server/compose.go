@@ -306,6 +306,46 @@ func (s *Server) handleComposePreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.WriteString(w, mail.RenderMarkdown(r.PostFormValue("body")))
 }
 
+// addrSuggestLimit is how many typeahead rows the dropdown shows.
+const addrSuggestLimit = 6
+
+// composeFragment isolates the address the user is still typing: the last
+// comma-separated token of the field, minus a "Name <" prefix if they are
+// mid-way through the angle-bracket form. Earlier, complete addresses in the
+// field are not part of the query.
+func composeFragment(v string) string {
+	if i := strings.LastIndex(v, ","); i >= 0 {
+		v = v[i+1:]
+	}
+	if i := strings.LastIndex(v, "<"); i >= 0 {
+		v = v[i+1:]
+	}
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(v), ">"))
+}
+
+// handleAddressSuggest is the compose typeahead, mirroring /search/suggest: the
+// field posts its own raw value (to/cc/bcc) and gets a dropdown fragment back.
+func (s *Server) handleAddressSuggest(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var raw string
+	for _, f := range []string{"to", "cc", "bcc"} {
+		if q.Has(f) {
+			raw = q.Get(f)
+			break
+		}
+	}
+	frag := composeFragment(raw)
+	var own []string
+	for _, id := range identities(s.cfg.Accounts) {
+		own = append(own, id.Address)
+	}
+	sug, err := s.store.SuggestAddresses(frag, own, addrSuggestLimit)
+	if err != nil {
+		slog.Error("address suggest", "err", err)
+	}
+	s.renderPartial(w, "address_suggest", map[string]any{"Suggestions": sug})
+}
+
 // maxAttachTotal caps the combined size of all attachments on one message.
 const maxAttachTotal = 25 << 20 // 25MB
 

@@ -2,7 +2,7 @@
 {{define "content"}}
 <div class="h-dvh flex flex-col min-h-0"
      x-data="{
-       tabs: ['appearance','reading','composing','quick-actions','syncing','search','accounts','signatures','templates','integrations','backup'],
+       tabs: ['appearance','reading','composing','quick-actions','notifications','syncing','search','accounts','signatures','templates','integrations','backup'],
        tab: 'appearance',
        init() {
          const h = (location.hash.slice(1) || localStorage.getItem('sm.settingsTab') || '').trim();
@@ -46,6 +46,7 @@
             {id:'reading', label:'Reading'},
             {id:'composing', label:'Composing'},
             {id:'quick-actions', label:'Quick actions'},
+            {id:'notifications', label:'Notifications'},
             {id:'syncing', label:'Syncing'},
             {id:'search', label:'Search'},
             {id:'accounts', label:'Accounts'},
@@ -408,6 +409,120 @@
                 }));
               });
             </script>
+          </section>
+
+          {{/* Notifications. Two independent transports, one master switch.
+               Nothing here is ever disabled: a disabled control isn't submitted
+               at all, which is how the avatar dependents came to need rescuing
+               in handleSettingsSave — leaving them enabled means the posted
+               form always says what the user sees, whatever the switch is set
+               to. The Web Push half degrades to an explanation (never a broken
+               button) when the browser, the connection or the permission can't
+               support it; ntfy needs none of that and stands alone. */}}
+          <section x-show="tab === 'notifications'" x-cloak class="space-y-5"
+                   x-data="pushUI('{{.VAPIDKey}}')" x-init="refresh()">
+            <h2 class="text-sm font-semibold text-zinc-100">Notifications</h2>
+            <p class="text-xs text-zinc-500">
+              Off until you turn them on. SM only ever notifies about new mail arriving in an inbox —
+              never your own sent mail, and never the backlog it downloads on a first sync.
+            </p>
+
+            <label class="block space-y-1">
+              <span class="text-sm text-zinc-200">When should SM notify me?</span>
+              <select name="notify_scope"
+                class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                {{range .NotifyScopes}}<option value="{{.ID}}" {{if eq $.Prefs.NotifyScope .ID}}selected{{end}}>{{.Label}}</option>{{end}}
+              </select>
+              <span class="block text-xs text-zinc-500">
+                “Only what my filter rules say” notifies for messages matched by a rule with the
+                <em>Notify me</em> action — set those up under <a href="/filters" class="text-indigo-400 hover:underline">Filters</a>.
+              </span>
+            </label>
+
+            <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200 font-medium">This device (Web Push)</legend>
+              <p class="text-xs text-zinc-500">
+                Notifications from SM itself, even when it isn't open. Each browser and device
+                subscribes separately.
+              </p>
+
+              <template x-if="state === 'checking'">
+                <p class="text-xs text-zinc-500">Checking…</p>
+              </template>
+
+              <template x-if="state === 'insecure'">
+                <p class="text-xs text-amber-400/90">
+                  This page is not served over HTTPS, and browsers only allow push notifications on a
+                  secure connection. Put SM behind a reverse proxy with a real certificate, then come
+                  back. ntfy below works either way.
+                </p>
+              </template>
+
+              <template x-if="state === 'ios-tab'">
+                <p class="text-xs text-amber-400/90">
+                  On iPhone and iPad, push notifications only work for a web app installed to the
+                  Home Screen — never in a normal Safari tab. Tap Share → <strong>Add to Home
+                  Screen</strong>, open SM from that icon, and enable notifications there. (iOS 16.4
+                  or later.) Or use ntfy below, which needs none of this.
+                </p>
+              </template>
+
+              <template x-if="state === 'unsupported'">
+                <p class="text-xs text-amber-400/90">
+                  This browser doesn't support push notifications. ntfy below works instead.
+                </p>
+              </template>
+
+              <template x-if="state === 'denied'">
+                <p class="text-xs text-amber-400/90">
+                  Notifications are blocked for this site. A browser only asks once, so this has to
+                  be reset by hand: open the site settings (the icon next to the address bar), set
+                  Notifications back to “Ask”, then reload this page.
+                </p>
+              </template>
+
+              <template x-if="state === 'off'">
+                <button type="button" @click="enable()" :disabled="busy"
+                  class="rounded-md bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150">
+                  Enable on this device
+                </button>
+              </template>
+
+              <template x-if="state === 'on'">
+                <div class="flex items-center gap-3">
+                  <span class="text-xs text-emerald-400">Enabled on this device.</span>
+                  <button type="button" @click="disable()" :disabled="busy"
+                    class="rounded-md border border-zinc-700 hover:bg-zinc-800 disabled:opacity-50 px-3 py-1.5 text-sm text-zinc-200 transition-colors duration-150">
+                    Turn off on this device
+                  </button>
+                </div>
+              </template>
+
+              {{template "push_devices" (dict "Devices" .PushDevices)}}
+            </fieldset>
+
+            <fieldset class="space-y-2">
+              <legend class="text-sm text-zinc-200 font-medium">ntfy</legend>
+              <p class="text-xs text-zinc-500">
+                An alternative that needs no browser permission and no installed app: SM posts to an
+                <a href="https://ntfy.sh" class="text-indigo-400 hover:underline" rel="noreferrer">ntfy</a>
+                topic and the ntfy app on your phone shows it. Pick a long, unguessable topic name —
+                anyone who knows it can read your notifications, so use a self-hosted ntfy if the
+                sender and subject matter.
+              </p>
+              <label class="block space-y-1">
+                <span class="text-sm text-zinc-200">Topic URL</span>
+                <input type="url" name="ntfy_url" value="{{.Prefs.NtfyURL}}"
+                  placeholder="https://ntfy.sh/sm-9f3c2a-mail"
+                  class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                <span class="block text-xs text-zinc-500">Leave blank to disable. Save settings before testing.</span>
+              </label>
+            </fieldset>
+
+            <button type="button" @click="test()"
+              class="rounded-md border border-zinc-700 hover:bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 transition-colors duration-150">
+              Send a test notification
+            </button>
           </section>
 
           <section x-show="tab === 'syncing'" x-cloak class="space-y-4">

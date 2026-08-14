@@ -1,0 +1,32 @@
+{{/* One To/Cc/Bcc row with its typeahead, so the three fields share one copy of
+     the wiring. hx-params pins the request to this field's own value — the
+     enclosing compose form must never ride along on a GET. The dropdown hides
+     itself when the server returns nothing (empty:hidden), so "no match" needs
+     no extra state; app.js owns the keyboard cursor and token replacement. */}}
+{{define "compose_addr"}}
+<div class="flex items-center gap-2">
+  <label for="compose-{{.Name}}" class="w-12 shrink-0 text-xs text-zinc-500">{{.Label}}</label>
+  <div class="relative flex-1 min-w-0">
+    <input id="compose-{{.Name}}" name="{{.Name}}" value="{{.Value}}" {{with .Placeholder}}placeholder="{{.}}"{{end}}
+      autocomplete="off" data-addr-input role="combobox" aria-autocomplete="list"
+      aria-expanded="false" aria-controls="{{.Name}}-suggest"
+      hx-get="/compose/suggest" hx-trigger="input changed delay:200ms" hx-params="{{.Name}}"
+      hx-target="#{{.Name}}-suggest" hx-swap="innerHTML" hx-push-url="false"
+      class="w-full rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
+    <div id="{{.Name}}-suggest" role="listbox" aria-label="{{.Label}} address suggestions"
+      class="empty:hidden absolute top-full left-0 right-0 mt-1 z-50 rounded-md bg-zinc-900 border border-zinc-700 shadow-xl max-h-72 overflow-y-auto"></div>
+  </div>
+</div>
+{{end}}
+
+{{define "address_suggest"}}
+{{/* Compose typeahead rows. app.js reads data-addr to replace the token being
+     typed; aria-selected is the keyboard cursor (no :hover-only selection). */}}
+{{range .Suggestions}}
+<button type="button" role="option" aria-selected="false" data-addr="{{.Display}}"
+        class="w-full text-left px-3 py-1.5 hover:bg-zinc-800 aria-selected:bg-zinc-700 flex flex-col gap-0.5">
+  {{if .Name}}<span class="truncate text-sm text-zinc-200">{{.Name}}</span>{{end}}
+  <span class="truncate text-xs text-zinc-500">{{.Address}}</span>
+</button>
+{{end}}
+{{end}}

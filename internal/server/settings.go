@@ -19,6 +19,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	sigs, _ := s.store.ListSignatures()
 	tpls, _ := s.store.ListTemplates()
 	msgCount, _ := s.store.MessageCount()
+	// Registered push devices, and the public key a new one needs to subscribe.
+	// VAPIDPublicKey generates the pair on first call — invisible, one-off, and
+	// it never prompts the user for anything.
+	pushDevices, _ := s.store.ListPushSubs()
 	s.render(w, "settings", map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Prefs":        prefs,
@@ -28,6 +32,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"Presets":      account.PresetNames(),
 		"QAEditor":     qaEditorRows(prefs.QuickActions),
 		"RowActions":   store.AllRowActions,
+		"NotifyScopes": store.AllNotifyScopes,
+		"PushDevices":  pushDevices,
+		"VAPIDKey":     s.mail.VAPIDPublicKey(),
 		"Accents":      store.AllAccents,
 		"IconShapes":   iconShapes,
 		"AvatarShapes": avatarShapes,
@@ -102,6 +109,17 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		RowDoubleAction:  store.ValidRowAction(r.PostFormValue("row_double_action"), "unread"),
 		SwipeLeftAction:  store.ValidRowAction(r.PostFormValue("swipe_left_action"), "none"),
 		SwipeRightAction: store.ValidRowAction(r.PostFormValue("swipe_right_action"), "unread"),
+		// Notifications. Neither control is ever disabled in the UI — the whole
+		// section stays submittable whatever the master switch says — so unlike
+		// the avatar dependents below there is nothing here to preserve
+		// server-side: an absent field really does mean the user cleared it.
+		NotifyScope: store.ValidNotifyScope(r.PostFormValue("notify_scope"), "off"),
+		NtfyURL:     strings.TrimSpace(r.PostFormValue("ntfy_url")),
+	}
+	// A topic URL that isn't http(s) would be posted to on every new message and
+	// fail every time; refuse it at the boundary instead.
+	if u := p.NtfyURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		p.NtfyURL = ""
 	}
 	switch p.UndoSendDelay {
 	case 3, 5, 10:

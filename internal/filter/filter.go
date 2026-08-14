@@ -33,6 +33,10 @@ const (
 	ActionStar     = "star"
 	ActionDelete   = "delete"
 	ActionLabel    = "label"
+	// ActionNotify sends a notification (Web Push and/or ntfy) for the matched
+	// message. It takes no argument: what a notification says and where it goes
+	// is configured once in Settings → Notifications, not per rule.
+	ActionNotify = "notify"
 )
 
 // MessageMeta is the subset of a message a rule can match against. The sync
@@ -135,6 +139,7 @@ func DryRun(r Rule, msgs []MessageMeta) []MessageMeta {
 var validActionTypes = map[string]bool{
 	ActionForward: true, ActionMove: true, ActionMarkRead: true,
 	ActionStar: true, ActionDelete: true, ActionLabel: true,
+	ActionNotify: true,
 }
 
 // Validate checks a rule is well-formed before it's stored: known

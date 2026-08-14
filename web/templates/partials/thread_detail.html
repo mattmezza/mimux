@@ -58,8 +58,8 @@
       </button>
       <div data-thread-body class="px-4 pb-4" {{if not $expanded}}hidden{{end}}>
         <div class="text-xs text-zinc-500 mb-2 space-y-0.5">
-          <div><span class="text-zinc-600">From</span> {{if .FromName}}{{.FromName}} {{end}}&lt;{{.FromAddress}}&gt;</div>
-          {{if .ToAddresses}}<div><span class="text-zinc-600">To</span> {{.ToAddresses}}</div>{{end}}
+          <div><span class="text-zinc-600">From</span> {{if .FromName}}{{.FromName}} {{end}}&lt;{{template "copy_addr" .FromAddress}}&gt;</div>
+          {{if .ToAddresses}}<div><span class="text-zinc-600">To</span> {{range $i, $a := splitAddrs .ToAddresses}}{{if $i}}, {{end}}{{template "copy_addr" $a}}{{end}}</div>{{end}}
           {{with receivedAlias .Account .ToAddresses .CcAddresses}}<div><span class="text-zinc-600">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
           {{template "label_pills" (dict "M" . "Known" $.Known)}}
         </div>

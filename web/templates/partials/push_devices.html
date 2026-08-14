@@ -1,0 +1,32 @@
+{{define "push_devices"}}
+{{/* Registered Web Push devices. Swapped whole (outerHTML) after a subscribe
+     or a remove, so the list is never a stale echo of what the server knows.
+     The remove buttons carry form="settings-subform" for the same reason the
+     other sub-managers do: they live inside the big settings form, and without
+     it htmx would serialize the entire settings page into every remove. */}}
+<div id="push-devices" class="space-y-2">
+  {{if .Devices}}
+    <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden">
+      {{range .Devices}}
+      <li class="flex items-center gap-3 px-3 py-2">
+        <svg class="w-4 h-4 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"/></svg>
+        <span class="flex-1 min-w-0">
+          <span class="block text-sm text-zinc-200 truncate">{{.Label}}</span>
+          <span class="block text-xs text-zinc-500">Added {{.CreatedAt}}</span>
+        </span>
+        <button type="button" form="settings-subform"
+          {{/* The endpoint has to be a *quoted* JSON string here — unquoted it
+               is invalid JSON, htmx silently posts nothing, and the delete
+               becomes a no-op that still swaps in a fresh (unchanged) list. */}}
+          hx-post="/push/unsubscribe" hx-vals='{"endpoint": "{{.Endpoint}}"}'
+          hx-target="#push-devices" hx-swap="outerHTML"
+          class="shrink-0 text-xs px-2 py-1 rounded-md text-zinc-400 hover:text-red-300 hover:bg-zinc-800 transition-colors duration-150">Remove</button>
+      </li>
+      {{end}}
+    </ul>
+    <p class="text-xs text-zinc-500">Removing a device stops notifications going to it. That browser keeps its own subscription until you turn it off there.</p>
+  {{else}}
+    <p class="text-xs text-zinc-500">No devices registered yet.</p>
+  {{end}}
+</div>
+{{end}}

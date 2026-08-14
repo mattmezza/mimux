@@ -1,6 +1,8 @@
 package store
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +45,12 @@ func seedConfig(t *testing.T, s *Store) {
 	prefs := s.GetPrefs()
 	prefs.ShowListLabels = true
 	prefs.AvatarShape = "square"
+	// Notification *preferences* travel (they're just settings). The VAPID
+	// private key and the push subscriptions deliberately do NOT — they live in
+	// their own tables precisely so this dump can't carry them; see migration
+	// 0160 and the assertions after the round trip.
+	prefs.NotifyScope = "all"
+	prefs.NtfyURL = "https://ntfy.sh/sm-test-topic"
 	if err := s.SavePrefs(prefs); err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +156,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	if dst.GetPrefs().AvatarShape != "square" {
 		t.Errorf("AvatarShape not restored: %q", dst.GetPrefs().AvatarShape)
 	}
+	if p := dst.GetPrefs(); p.NotifyScope != "all" || p.NtfyURL != "https://ntfy.sh/sm-test-topic" {
+		t.Errorf("notification prefs not restored: %q %q", p.NotifyScope, p.NtfyURL)
+	}
 	if tok, _ := dst.GetToken("work"); tok == nil || tok.Refresh != "rt" {
 		t.Errorf("token not restored: %+v", tok)
 	}
@@ -194,6 +205,35 @@ func TestConfigRoundTrip(t *testing.T) {
 	if len(rules) != 1 || len(sigs) != 1 || len(tpls) != 1 || len(saved) != 1 || len(accs) != 1 {
 		t.Errorf("re-import duplicated rows: %d rules, %d sigs, %d tpls, %d saved, %d accounts",
 			len(rules), len(sigs), len(tpls), len(saved), len(accs))
+	}
+}
+
+// TestExportOmitsPushSecrets: the backup file is cleartext and gets copied
+// around, so the VAPID private key — the one credential that lets its holder
+// push arbitrary notifications to the user's devices — must never appear in it,
+// nor must the device subscriptions. They live outside app_settings for exactly
+// this reason (migration 0160); this test is what stops someone "tidying" them
+// back into it.
+func TestExportOmitsPushSecrets(t *testing.T) {
+	s := open(t)
+	if err := s.SaveVAPIDKeys("pub-key-xyz", "priv-key-xyz"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SavePushSub(PushSub{Endpoint: "https://push.example/abc", P256dh: "p", Auth: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	e, err := s.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, err := json.Marshal(e)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"priv-key-xyz", "pub-key-xyz", "https://push.example/abc"} {
+		if strings.Contains(string(blob), secret) {
+			t.Errorf("export leaked %q", secret)
+		}
 	}
 }
 

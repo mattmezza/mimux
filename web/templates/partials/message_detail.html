@@ -1,3 +1,9 @@
+{{/* One header address, click-to-copy (app.js). A button, not a mailto: link —
+     the header addresses have never been links here, and "copy" is what's
+     actually wanted from a header (composing has its own Reply/Forward
+     buttons). select-text keeps the old select-and-copy working too. */}}
+{{define "copy_addr"}}<button type="button" data-copy-addr="{{.}}" title="Copy address" class="select-text hover:text-indigo-300 hover:underline decoration-dotted underline-offset-2">{{.}}</button>{{end}}
+
 {{define "message_detail"}}
 {{$m := .Msg}}
 <div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
@@ -34,9 +40,9 @@
       <div class="min-w-0 flex-1">
         <h1 class="text-zinc-100 font-semibold text-base leading-snug break-words">{{if $m.Subject}}{{$m.Subject}}{{else}}(no subject){{end}}</h1>
         <div class="mt-1.5 text-xs text-zinc-400 space-y-1">
-          <div class="truncate" title="{{if $m.FromName}}{{$m.FromName}} {{end}}&lt;{{$m.FromAddress}}&gt;"><span class="text-zinc-500">From</span> <span class="text-zinc-300">{{if $m.FromName}}{{$m.FromName}} {{end}}&lt;{{$m.FromAddress}}&gt;</span></div>
-          {{if $m.ToAddresses}}<div class="truncate" title="{{$m.ToAddresses}}"><span class="text-zinc-500">To</span> {{$m.ToAddresses}}</div>{{end}}
-          {{if $m.CcAddresses}}<div class="truncate" title="{{$m.CcAddresses}}"><span class="text-zinc-500">Cc</span> {{$m.CcAddresses}}</div>{{end}}
+          <div class="truncate" title="{{if $m.FromName}}{{$m.FromName}} {{end}}&lt;{{$m.FromAddress}}&gt;"><span class="text-zinc-500">From</span> <span class="text-zinc-300">{{if $m.FromName}}{{$m.FromName}} {{end}}&lt;{{template "copy_addr" $m.FromAddress}}&gt;</span></div>
+          {{if $m.ToAddresses}}<div class="truncate" title="{{$m.ToAddresses}}"><span class="text-zinc-500">To</span> {{range $i, $a := splitAddrs $m.ToAddresses}}{{if $i}}, {{end}}{{template "copy_addr" $a}}{{end}}</div>{{end}}
+          {{if $m.CcAddresses}}<div class="truncate" title="{{$m.CcAddresses}}"><span class="text-zinc-500">Cc</span> {{range $i, $a := splitAddrs $m.CcAddresses}}{{if $i}}, {{end}}{{template "copy_addr" $a}}{{end}}</div>{{end}}
           {{with receivedAlias $m.Account $m.ToAddresses $m.CcAddresses}}<div class="truncate"><span class="text-zinc-500">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
           <div class="flex items-center gap-2 flex-wrap text-zinc-500">
             <span>{{$m.Date.Format "Mon, 2 Jan 2006 15:04"}}</span>

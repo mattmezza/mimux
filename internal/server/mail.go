@@ -36,6 +36,7 @@ var templateFuncs = template.FuncMap{
 	"folderLabel":    folderLabel,
 	"folderTree":     folderTree,
 	"messageLabels":  mail.MessageLabels,
+	"splitAddrs":     mail.SplitAddrList,
 	"labelToken":     mail.LabelToken,
 	"dict":           dict,
 	"highlight":      highlight,
