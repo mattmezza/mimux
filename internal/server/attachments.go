@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,7 @@ func (s *Server) handleAttachments(w http.ResponseWriter, r *http.Request) {
 			Part: partPathString(a.Part),
 			Name: a.Filename,
 			Size: humanSize(a.Size),
-			Kind: attachmentKind(a.MediaType),
+			Kind: attachmentKind(a.MediaType, a.Filename),
 		})
 	}
 	s.renderPartial(w, "attachments", map[string]any{"MsgID": msg.ID, "Attachments": views})
@@ -81,6 +82,13 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "attachment unavailable", http.StatusBadGateway)
 		return
+	}
+	// Same extension fallback the Preview button gates on: a .pdf declared
+	// octet-stream would otherwise download instead of rendering in the viewer.
+	if mediaType == "" || strings.EqualFold(mediaType, "application/octet-stream") {
+		if t := extMediaType(filename); t != "" {
+			mediaType = t
+		}
 	}
 	if mediaType == "" {
 		mediaType = "application/octet-stream"
@@ -128,18 +136,56 @@ func parsePartPath(s string) []int {
 	return out
 }
 
-func attachmentKind(mediaType string) string {
+// attachmentKind decides the inline preview mode: image | pdf | text | other.
+// "other" means the template renders no Preview button (download only), so this
+// is the single source of truth for "is this previewable at all". The declared
+// MIME type wins; the filename extension is a fallback because plenty of
+// senders label every attachment application/octet-stream.
+func attachmentKind(mediaType, filename string) string {
+	if k := kindOfMedia(mediaType); k != "other" {
+		return k
+	}
+	return kindOfMedia(extMediaType(filename))
+}
+
+func kindOfMedia(mediaType string) string {
 	mt := strings.ToLower(mediaType)
 	switch {
 	case strings.HasPrefix(mt, "image/"):
 		return "image"
-	case mt == "application/pdf":
+	// ponytail: SVG stays previewable — it renders in an <img>, which never runs
+	// script, and the bytes are served under the sandbox CSP below.
+	case strings.HasPrefix(mt, "application/pdf"):
 		return "pdf"
 	case strings.HasPrefix(mt, "text/"):
 		return "text"
 	default:
 		return "other"
 	}
+}
+
+// extMediaType maps a filename to a media type, for senders that declare
+// application/octet-stream for everything. ponytail: hardcoded and tiny — only
+// the types we preview — rather than mime.TypeByExtension, which varies with
+// /etc/mime.types between dev box and container.
+func extMediaType(filename string) string {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".pdf":
+		return "application/pdf"
+	case ".txt", ".log", ".csv", ".md":
+		return "text/plain; charset=utf-8"
+	}
+	return ""
 }
 
 // sanitizeFilename strips characters that could break the Content-Disposition
