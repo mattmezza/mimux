@@ -74,7 +74,7 @@ func TestNotifyPushPrunesGoneSubscription(t *testing.T) {
 	if err := m.st.SavePushSub(fakeSubscription(t, srv.URL)); err != nil {
 		t.Fatal(err)
 	}
-	m.notifyPush("Gmail", "Someone", "Hello")
+	m.notifyPush("Gmail", "Someone", "Hello", "")
 
 	if got := atomic.LoadInt32(&hits); got != 1 {
 		t.Fatalf("push service hit %d times, want 1", got)
@@ -101,7 +101,7 @@ func TestNotifyPushKeepsSubscriptionOnServerError(t *testing.T) {
 	if err := m.st.SavePushSub(fakeSubscription(t, srv.URL)); err != nil {
 		t.Fatal(err)
 	}
-	m.notifyPush("Gmail", "Someone", "Hello")
+	m.notifyPush("Gmail", "Someone", "Hello", "")
 
 	subs, _ := m.st.ListPushSubs()
 	if len(subs) != 1 {
@@ -114,11 +114,11 @@ func TestNotifyPushKeepsSubscriptionOnServerError(t *testing.T) {
 // arrive.
 func TestNotifyNtfy(t *testing.T) {
 	m := testManager(t)
-	type got struct{ title, body string }
+	type got struct{ title, body, click string }
 	ch := make(chan got, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
-		ch <- got{r.Header.Get("Title"), string(b)}
+		ch <- got{r.Header.Get("Title"), string(b), r.Header.Get("Click")}
 	}))
 	defer srv.Close()
 
@@ -127,7 +127,7 @@ func TestNotifyNtfy(t *testing.T) {
 	if err := m.st.SavePrefs(prefs); err != nil {
 		t.Fatal(err)
 	}
-	m.notify("Gmail", "Alice", "Lunch?")
+	m.notify("Gmail", "Alice", "Lunch?", "https://mail.example.com/?t=42&src=7")
 
 	select {
 	case g := <-ch:
@@ -137,6 +137,10 @@ func TestNotifyNtfy(t *testing.T) {
 		if g.body != "Lunch?" {
 			t.Errorf("body = %q", g.body)
 		}
+		// Without Click the notification opens nothing on tap.
+		if g.click != "https://mail.example.com/?t=42&src=7" {
+			t.Errorf("Click = %q", g.click)
+		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("ntfy was never called")
 	}
@@ -145,7 +149,7 @@ func TestNotifyNtfy(t *testing.T) {
 // A non-http(s) topic URL must be refused rather than posted to.
 func TestNotifyNtfyRejectsNonHTTP(t *testing.T) {
 	m := testManager(t)
-	m.notifyNtfy("file:///etc/passwd", "t", "b") // must not panic or dial
+	m.notifyNtfy("file:///etc/passwd", "t", "b", "") // must not panic or dial
 }
 
 // TestNotifiableGuards pins the guards that keep a first sync — or a
@@ -186,6 +190,26 @@ func TestNotifyScopeDefaultsOff(t *testing.T) {
 	m := testManager(t)
 	if got := m.st.GetPrefs().NotifyScope; got != "off" {
 		t.Fatalf("default NotifyScope = %q, want %q", got, "off")
+	}
+}
+
+// The tap target: it must be absolute (ntfy's Click header is opened by a phone
+// that has no notion of this app's origin), must survive a base URL with a
+// trailing slash, and must be the ?t=<id>&src=<folder> deep link app.js knows
+// how to restore — a wrong shape silently opens the plain inbox.
+func TestMessageLink(t *testing.T) {
+	if got := messageLink("https://mail.example.com", 7, 42); got != "https://mail.example.com/?t=42&src=7" {
+		t.Errorf("messageLink = %q", got)
+	}
+	if got := messageLink("https://mail.example.com/", 7, 42); got != "https://mail.example.com/?t=42&src=7" {
+		t.Errorf("messageLink with trailing slash = %q", got)
+	}
+	// Nothing to open: better no link than a link to nowhere.
+	if got := messageLink("", 7, 42); got != "" {
+		t.Errorf("messageLink without a base URL = %q", got)
+	}
+	if got := messageLink("https://mail.example.com", 7, 0); got != "" {
+		t.Errorf("messageLink without a message id = %q", got)
 	}
 }
 

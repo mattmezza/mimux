@@ -2,7 +2,7 @@
 // with the cache as an offline-only fallback. This deliberately avoids serving
 // stale JS/CSS/templates — a cache-first strategy previously pinned old assets
 // in already-open browsers and broke the app after updates.
-const CACHE = "sm-v5";
+const CACHE = "sm-v6";
 // The icon is deliberately NOT precached: it is served from /icon.svg?v=<hash>
 // of the user's colour settings, so a precached URL would be a stale mark the
 // moment they change one. The network-first fetch handler below caches it on
@@ -33,7 +33,8 @@ self.addEventListener("activate", (e) => {
 
 // --- Push notifications ---------------------------------------------------
 // The payload arrives encrypted (only this install can decrypt it) and carries
-// the sender, the subject and the account. See internal/mail/notify.go.
+// the sender, the subject, the account and the URL that opens this very message.
+// See internal/mail/notify.go.
 self.addEventListener("push", (e) => {
   let d = {};
   try {
@@ -42,6 +43,14 @@ self.addEventListener("push", (e) => {
     d = {};
   }
   const title = d.title || "New mail";
+  // The server sends an absolute URL (ntfy needs one); re-base it onto this
+  // origin so a BaseURL that doesn't match where the app is actually open still
+  // navigates in place rather than opening a second, foreign window.
+  let url = "/";
+  try {
+    const u = new URL(d.url || "/", location.origin); // "" or missing => the app root
+    url = u.pathname + u.search;
+  } catch (_) {}
   e.waitUntil(
     (async () => {
       // Never swallow a push. Chrome requires a visible notification for every
@@ -56,6 +65,7 @@ self.addEventListener("push", (e) => {
       await self.registration.showNotification(title, {
         body: d.body || "",
         tag: "sm-" + (d.account || ""),
+        data: { url },
         renotify: !visible,
         silent: visible,
         icon: "/static/icons/icon-192.png",
@@ -67,15 +77,25 @@ self.addEventListener("push", (e) => {
 
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
+  // Where the push said to go. Collapsed notifications (same tag) carry the
+  // newest message's URL, which is the one the user is tapping about.
+  const url = (e.notification.data && e.notification.data.url) || "/";
   e.waitUntil(
     (async () => {
       // Focus the app if it is already open anywhere, rather than piling up
-      // duplicate windows.
+      // duplicate windows — and point it at the message.
       const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       for (const c of wins) {
-        if ("focus" in c) return c.focus();
+        if ("focus" in c) {
+          await c.focus();
+          // navigate() is same-origin only and can reject (it also fails on a
+          // client the worker doesn't control); a focused window is still
+          // better than a second one, so failure is not fatal.
+          if ("navigate" in c) await c.navigate(url).catch(() => {});
+          return;
+        }
       }
-      return self.clients.openWindow("/");
+      return self.clients.openWindow(url);
     })()
   );
 });

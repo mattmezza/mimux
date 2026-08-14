@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -39,10 +40,11 @@ const notifyTTL = 4 * time.Hour
 
 var notifyClient = &http.Client{Timeout: notifyTimeout}
 
-// notify sends one notification through every configured transport. Blocking:
+// notify sends one notification through every configured transport. link is the
+// absolute URL a tap should open (empty for "just open the app"). Blocking:
 // callers run it in a goroutine. Errors are logged, never returned — a dead
 // push service must not surface as a sync failure.
-func (m *Manager) notify(account, from, subject string) {
+func (m *Manager) notify(account, from, subject, link string) {
 	title := strings.TrimSpace(from)
 	if title == "" {
 		title = "New mail"
@@ -56,14 +58,14 @@ func (m *Manager) notify(account, from, subject string) {
 	}
 	body = truncateRunes(body, 140)
 	if url := strings.TrimSpace(m.st.GetPrefs().NtfyURL); url != "" {
-		m.notifyNtfy(url, title, body)
+		m.notifyNtfy(url, title, body, link)
 	}
-	m.notifyPush(account, title, body)
+	m.notifyPush(account, title, body, link)
 }
 
 // notifyNtfy posts to an ntfy topic. The message is the body; ntfy reads the
-// headline off the Title header.
-func (m *Manager) notifyNtfy(url, title, body string) {
+// headline off the Title header and the tap target off Click.
+func (m *Manager) notifyNtfy(url, title, body, link string) {
 	if !strings.HasPrefix(url, "https://") && !strings.HasPrefix(url, "http://") {
 		slog.Warn("notify: ntfy url must be http(s)", "url", url)
 		return
@@ -77,6 +79,9 @@ func (m *Manager) notifyNtfy(url, title, body string) {
 	}
 	req.Header.Set("Title", title)
 	req.Header.Set("Tags", "email")
+	if link != "" {
+		req.Header.Set("Click", link)
+	}
 	resp, err := notifyClient.Do(req)
 	if err != nil {
 		slog.Warn("notify: ntfy post", "err", err)
@@ -92,7 +97,7 @@ func (m *Manager) notifyNtfy(url, title, body string) {
 // prunes the ones the push service says are gone. A 404/410 is the *only*
 // documented signal that a subscription is dead: without acting on it the table
 // fills with endpoints that are POSTed to forever.
-func (m *Manager) notifyPush(account, title, body string) {
+func (m *Manager) notifyPush(account, title, body, link string) {
 	subs, err := m.st.ListPushSubs()
 	if err != nil || len(subs) == 0 {
 		return
@@ -104,7 +109,7 @@ func (m *Manager) notifyPush(account, title, body string) {
 	// The payload is encrypted to each device's own key — the push service
 	// relays ciphertext it cannot read. It still sees that this endpoint got a
 	// message, when, and roughly how big: metadata, not content.
-	payload, err := json.Marshal(map[string]string{"title": title, "body": body, "account": account})
+	payload, err := json.Marshal(map[string]string{"title": title, "body": body, "account": account, "url": link})
 	if err != nil {
 		return
 	}
@@ -156,6 +161,19 @@ func pushTopic(account string) string {
 	return truncateRunes(account, 32)
 }
 
+// messageLink is the absolute URL that opens one message: the inbox page with
+// the message's conversation deep-linked into the reading pane (?t=<id>&src=
+// <folder>, the same shape the list pushes into history — see app.js). Absolute
+// because ntfy's Click header is opened by a phone that knows nothing about
+// this app's origin; the service worker re-bases it onto its own origin.
+func messageLink(baseURL string, folderID, msgID int64) string {
+	if baseURL == "" || msgID == 0 {
+		return ""
+	}
+	return strings.TrimRight(baseURL, "/") + "/?t=" + strconv.FormatInt(msgID, 10) +
+		"&src=" + strconv.FormatInt(folderID, 10)
+}
+
 // vapidSubscriber is the "sub" claim in the VAPID JWT: who to contact about
 // this push traffic. The public base URL when it's HTTPS (the only deployment
 // where push works at all), else a placeholder for local development.
@@ -190,7 +208,9 @@ func (m *Manager) VAPIDPublicKey() string {
 // the user can prove the plumbing works without waiting for mail. Explicitly
 // user-initiated, so it ignores the NotifyScope master switch.
 func (m *Manager) NotifyTest() {
-	go m.notify("", "SM", "Test notification — notifications are working.")
+	// ponytail: no link — a test notification has no message to open, so a tap
+	// falls back to "just open the app".
+	go m.notify("", "SM", "Test notification — notifications are working.", "")
 }
 
 // maybeNotify is the "tell me about every new message" path, called for each
@@ -229,7 +249,14 @@ func (a *account) maybeNotify(f *store.Folder, buf *imapclient.FetchMessageBuffe
 	if buf.Envelope != nil {
 		subject = buf.Envelope.Subject
 	}
-	go a.m.notify(a.cfg.DisplayLabel(), from, subject)
+	// The row was upserted immediately before this call (see fetchSet), so it
+	// has an id — which is what lets a tap open this message instead of the
+	// inbox. One extra query, only on the path that is about to buzz a phone.
+	link := ""
+	if msg, err := a.m.st.MessageByFolderUID(f.ID, uint32(buf.UID)); err == nil && msg != nil {
+		link = messageLink(a.m.cfg.Server.BaseURL, f.ID, msg.ID)
+	}
+	go a.m.notify(a.cfg.DisplayLabel(), from, subject, link)
 }
 
 // notifiable holds the guards maybeNotify documents, split out because they are
