@@ -57,7 +57,12 @@ func (s *Store) UpsertMessage(m *Message) error {
 			 to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(folder_id, uid) DO UPDATE SET
-			date = excluded.date, is_read = excluded.is_read, is_starred = excluded.is_starred,
+			date = excluded.date,
+			-- A local \Seen flip that hasn't reached the server yet outranks the
+			-- server's flags: otherwise a re-fetch of this row (UIDVALIDITY reset,
+			-- backfill) reverts a message the user already marked read.
+			is_read = CASE WHEN seen_dirty = 1 THEN is_read ELSE excluded.is_read END,
+			is_starred = excluded.is_starred,
 			has_attachment = excluded.has_attachment, snippet = excluded.snippet,
 			labels = CASE WHEN excluded.labels = '' THEN labels ELSE excluded.labels END`,
 		m.Account, m.FolderID, m.UID, m.MessageID, m.InReplyTo, m.Refs, m.FromName, m.FromAddress,
@@ -490,6 +495,28 @@ func (s *Store) FolderUIDs(folderID int64) (map[uint32]bool, error) {
 	return out, rows.Err()
 }
 
+// FolderLabels returns every stored message's label value in a folder, keyed
+// by UID — sync's cheap way (one query for the whole folder, like FolderUIDs)
+// to look up what to merge newly-fetched flags into without a query per
+// message. A UID absent from the result is a message not yet stored.
+func (s *Store) FolderLabels(folderID int64) (map[uint32]string, error) {
+	rows, err := s.DB.Query(`SELECT uid, labels FROM messages WHERE folder_id = ?`, folderID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[uint32]string{}
+	for rows.Next() {
+		var u uint32
+		var l string
+		if err := rows.Scan(&u, &l); err != nil {
+			return nil, err
+		}
+		out[u] = l
+	}
+	return out, rows.Err()
+}
+
 // MaxUID returns the highest stored UID in a folder, 0 if empty.
 func (s *Store) MaxUID(folderID int64) (uint32, error) {
 	var u sql.NullInt64
@@ -499,9 +526,51 @@ func (s *Store) MaxUID(folderID int64) (uint32, error) {
 	return uint32(u.Int64), nil // #nosec G115 -- UID fits uint32 by protocol
 }
 
+// SetRead records a LOCAL read/unread decision: it flips is_read and marks the
+// \Seen push as still owed (seen_dirty). Every local entry point goes through
+// here — the read handler, mark-read-at-open, filter rules — so the intent
+// survives a failed/timed-out IMAP push and a restart, and sync can't overwrite
+// it in the meantime. mail.Manager.SetRead clears the marker once the flag is
+// on the server; the account worker retries it every cycle until then.
 func (s *Store) SetRead(id int64, read bool) error {
-	_, err := s.DB.Exec(`UPDATE messages SET is_read = ? WHERE id = ?`, b2i(read), id)
+	_, err := s.DB.Exec(`UPDATE messages SET is_read = ?, seen_dirty = 1 WHERE id = ?`, b2i(read), id)
 	return err
+}
+
+// SetReadFromServer applies the server's \Seen truth during sync. It skips rows
+// whose own \Seen push is still owed — those are ahead of the server, not behind
+// it, and overwriting them is exactly how a mark-read "came back unread".
+func (s *Store) SetReadFromServer(id int64, read bool) error {
+	_, err := s.DB.Exec(`UPDATE messages SET is_read = ? WHERE id = ? AND seen_dirty = 0`, b2i(read), id)
+	return err
+}
+
+// ClearSeenDirty marks a message's \Seen state as confirmed on the server. The
+// is_read guard makes it a no-op when the user has since toggled again — that
+// newer state is still owed a push of its own.
+func (s *Store) ClearSeenDirty(id int64, read bool) error {
+	_, err := s.DB.Exec(`UPDATE messages SET seen_dirty = 0 WHERE id = ? AND is_read = ?`, id, b2i(read))
+	return err
+}
+
+// DirtySeen returns an account's messages whose \Seen push is still owed,
+// oldest first, for the worker to retry.
+func (s *Store) DirtySeen(account string, limit int) ([]Message, error) {
+	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages
+		WHERE account = ? AND seen_dirty = 1 ORDER BY id LIMIT ?`, account, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *m)
+	}
+	return out, rows.Err()
 }
 
 func (s *Store) SetStarred(id int64, starred bool) error {
