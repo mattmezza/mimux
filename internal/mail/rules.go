@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
+	"github.com/emersion/go-imap/v2/imapclient"
+
 	"github.com/mattmezza/sm/internal/filter"
 	"github.com/mattmezza/sm/internal/store"
 )
@@ -27,7 +29,11 @@ func matchingActions(rules []filter.Rule, meta filter.MessageMeta) []filter.Acti
 // newly-synced message and applies matching actions. It never lets sync
 // break: a bad rule, an unknown action or a failed IMAP/SMTP call is logged
 // and the loop continues with the next action/message.
-func (a *account) runRules(ctx context.Context, folderID int64, uid uint32) {
+//
+// c is the sync's own connection: this runs on the worker goroutine, so the
+// actions have to use it rather than the command queue only that goroutine
+// drains (see account.exec).
+func (a *account) runRules(ctx context.Context, c *imapclient.Client, folderID int64, uid uint32) {
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("filter: rule execution panicked", "account", a.cfg.Name, "err", r)
@@ -47,29 +53,43 @@ func (a *account) runRules(ctx context.Context, folderID int64, uid uint32) {
 	}
 	meta := filter.MessageMeta{From: msg.FromAddress, To: msg.ToAddresses, Subject: msg.Subject, Body: msg.Snippet}
 	for _, act := range matchingActions(rules, meta) {
-		if err := a.m.applyAction(ctx, msg, act); err != nil {
+		if err := a.m.applyAction(ctx, c, msg, act); err != nil {
 			slog.Warn("filter: action failed", "account", a.cfg.Name, "action", act.Type, "err", err)
 		}
 	}
 }
 
-// applyAction runs a single filter action against msg.
-func (m *Manager) applyAction(ctx context.Context, msg *store.Message, act filter.Action) error {
+// applyAction runs a single filter action against msg, on the connection the
+// caller holds (see runRules and account.exec).
+func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *store.Message, act filter.Action) error {
 	switch act.Type {
 	case filter.ActionMarkRead:
 		_ = m.st.SetRead(msg.ID, true)
-		return m.SetRead(ctx, msg, true)
+		return m.setRead(ctx, c, msg, true)
 	case filter.ActionStar:
 		_ = m.st.SetStarred(msg.ID, true)
-		return m.SetStarred(ctx, msg, true)
+		return m.setStarred(ctx, c, msg, true)
 	case filter.ActionMove:
 		_ = m.st.DeleteMessage(msg.ID)
-		return m.MoveToFolder(ctx, msg, act.Arg)
+		return m.moveToFolder(ctx, c, msg, act.Arg)
 	case filter.ActionDelete:
 		_ = m.st.DeleteMessage(msg.ID)
-		return m.Move(ctx, msg, "trash")
+		// "trash" resolves special-use-first, so this is Move(msg, "trash") with
+		// the connection threaded through.
+		return m.moveToFolder(ctx, c, msg, "trash")
 	case filter.ActionForward:
-		return m.forwardMessage(ctx, msg, act.Arg)
+		// Off the worker, like notifyForRule below: forwarding talks SMTP and then
+		// APPENDs to Sent via a.submit, which the goroutine running this sync
+		// cannot drain until it returns. NOTE: the copy + a logged error is
+		// the whole error handling; give it the outbox treatment (store.Outbox +
+		// the scheduler's retry) if forwards ever need to survive a restart.
+		fwd := *msg
+		go func() {
+			if err := m.forwardMessage(ctx, &fwd, act.Arg); err != nil {
+				slog.Warn("filter: forward failed", "account", fwd.Account, "to", act.Arg, "err", err)
+			}
+		}()
+		return nil
 	case filter.ActionNotify:
 		return m.notifyForRule(msg)
 	case filter.ActionLabel:

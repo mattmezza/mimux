@@ -546,6 +546,20 @@ func (a *account) submitRO(ctx context.Context, fn func(*imapclient.Client) erro
 	return a.enqueue(ctx, fn, false)
 }
 
+// exec runs an IMAP command on a connection the caller already holds, and falls
+// back to the worker's queue (nil c) for everyone who holds none — HTTP
+// handlers, the scheduler. The distinction is not an optimisation: filter rules
+// run from inside fetchSet, i.e. on the worker goroutine itself, and drain() is
+// the only thing that ever empties a.cmds. A rule action that called submit
+// there would wait on a queue only the goroutine it is blocking can drain — a
+// full submitTimeout of stalled sync, then a failed action.
+func (a *account) exec(ctx context.Context, c *imapclient.Client, fn func(*imapclient.Client) error) error {
+	if c != nil {
+		return fn(c)
+	}
+	return a.submit(ctx, fn)
+}
+
 // enqueue queues a command for the worker and waits for its result. Bounded by
 // submitTimeout so a wedged/unreachable server (worker stuck in connect/backoff,
 // never draining a.cmds) fails the caller instead of hanging on ctx forever —

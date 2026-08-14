@@ -90,7 +90,14 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 // callers fire this in the background, so a dropped error used to mean the flag
 // silently never reached the server.
 func (m *Manager) SetRead(ctx context.Context, msg *store.Message, read bool) error {
-	if err := m.storeFlag(ctx, msg, imap.FlagSeen, read); err != nil {
+	return m.setRead(ctx, nil, msg, read)
+}
+
+// setRead is SetRead with the caller's own connection (see account.exec); nil c
+// means "queue it for the worker", which is what every caller but a filter rule
+// wants.
+func (m *Manager) setRead(ctx context.Context, c *imapclient.Client, msg *store.Message, read bool) error {
+	if err := m.storeFlag(ctx, c, msg, imap.FlagSeen, read); err != nil {
 		return err
 	}
 	return m.st.ClearSeenDirty(msg.ID, read)
@@ -135,10 +142,14 @@ func (a *account) pushSeenDirty(c *imapclient.Client) {
 
 // SetStarred adds or removes the \Flagged flag on the server.
 func (m *Manager) SetStarred(ctx context.Context, msg *store.Message, starred bool) error {
-	return m.storeFlag(ctx, msg, imap.FlagFlagged, starred)
+	return m.setStarred(ctx, nil, msg, starred)
 }
 
-func (m *Manager) storeFlag(ctx context.Context, msg *store.Message, flag imap.Flag, add bool) error {
+func (m *Manager) setStarred(ctx context.Context, c *imapclient.Client, msg *store.Message, starred bool) error {
+	return m.storeFlag(ctx, c, msg, imap.FlagFlagged, starred)
+}
+
+func (m *Manager) storeFlag(ctx context.Context, c *imapclient.Client, msg *store.Message, flag imap.Flag, add bool) error {
 	a := m.accounts[msg.Account]
 	if a == nil {
 		return fmt.Errorf("unknown account %q", msg.Account)
@@ -151,7 +162,7 @@ func (m *Manager) storeFlag(ctx context.Context, msg *store.Message, flag imap.F
 	if !add {
 		op = imap.StoreFlagsDel
 	}
-	return a.submit(ctx, func(c *imapclient.Client) error {
+	return a.exec(ctx, c, func(c *imapclient.Client) error {
 		if _, err := c.Select(f.Name, nil).Wait(); err != nil {
 			return err
 		}
@@ -196,7 +207,7 @@ func (m *Manager) Move(ctx context.Context, msg *store.Message, targetSpecial st
 	if target == nil {
 		return fmt.Errorf("no %s folder for this account", targetSpecial)
 	}
-	return m.moveTo(ctx, msg, target)
+	return m.moveTo(ctx, nil, msg, target)
 }
 
 // MoveToFolder is Move's named-folder variant, for filter rule "move"
@@ -204,6 +215,11 @@ func (m *Manager) Move(ctx context.Context, msg *store.Message, targetSpecial st
 // (so "archive"/"trash"/... keep working), then against literal folder
 // names.
 func (m *Manager) MoveToFolder(ctx context.Context, msg *store.Message, name string) error {
+	return m.moveToFolder(ctx, nil, msg, name)
+}
+
+// moveToFolder is MoveToFolder with the caller's own connection (account.exec).
+func (m *Manager) moveToFolder(ctx context.Context, c *imapclient.Client, msg *store.Message, name string) error {
 	target, err := m.st.FolderBySpecial(msg.Account, strings.ToLower(name))
 	if err != nil {
 		return err
@@ -216,10 +232,10 @@ func (m *Manager) MoveToFolder(ctx context.Context, msg *store.Message, name str
 	if target == nil {
 		return fmt.Errorf("no folder named %q for account %q", name, msg.Account)
 	}
-	return m.moveTo(ctx, msg, target)
+	return m.moveTo(ctx, c, msg, target)
 }
 
-func (m *Manager) moveTo(ctx context.Context, msg *store.Message, target *store.Folder) error {
+func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.Message, target *store.Folder) error {
 	a := m.accounts[msg.Account]
 	if a == nil {
 		return fmt.Errorf("unknown account %q", msg.Account)
@@ -231,7 +247,7 @@ func (m *Manager) moveTo(ctx context.Context, msg *store.Message, target *store.
 	if target.ID == src.ID {
 		return nil
 	}
-	return a.submit(ctx, func(c *imapclient.Client) error {
+	return a.exec(ctx, c, func(c *imapclient.Client) error {
 		if _, err := c.Select(src.Name, nil).Wait(); err != nil {
 			return err
 		}
