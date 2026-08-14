@@ -113,6 +113,16 @@ func validLayout(v, def string) string {
 	return def
 }
 
+// validMode whitelists a compose editor format to the three the partial can
+// render, so a stale pref or a hand-posted form can't inject anything else.
+func validMode(v string) string {
+	switch v {
+	case "plain", "html", "markdown":
+		return v
+	}
+	return "plain"
+}
+
 // layoutForKind picks the layout pref that applies to a compose kind.
 func layoutForKind(p store.Prefs, kind string) string {
 	if kind == "" || kind == "new" {
@@ -293,11 +303,29 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleComposePreview renders markdown source (POST body field) to the same
-// sanitized HTML used at send time, for the markdown editor's Preview tab.
+// handleComposePreview serves POST /compose/preview in two shapes:
+//
+//   - plain: render markdown source (POST body field) to the same sanitized
+//     HTML used at send time, for the markdown editor's Preview tab.
+//   - ?convert=1: the per-message format switcher. Converts the posted body
+//     from mode_from to the newly picked mode and re-renders just the editor
+//     block (#compose-body-wrap), so the attachment selection and every other
+//     field survive the switch.
+//
+// ponytail: the switcher rides this route instead of getting its own
+// /compose/mode, because the route table in server.go is owned by another
+// in-flight change. Give it a route of its own once that lands.
 func (s *Server) handleComposePreview(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("convert") != "" {
+		mode := validMode(r.PostFormValue("mode"))
+		s.renderPartial(w, "compose_body", composeView{
+			Mode: mode,
+			Body: mail.ConvertBody(r.PostFormValue("body"), validMode(r.PostFormValue("mode_from")), mode),
+		})
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

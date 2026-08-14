@@ -36,9 +36,16 @@
       </button>
       </div>
     </div>
+    {{/* The whole form is the attachment drop zone. attachBox (app.js) owns the
+         real file selection — a FileList is immutable, so it keeps an array and
+         rebuilds input.files from it on every add/remove/rename. Its drag
+         handlers only claim drops that carry Files, so a text drag inside the
+         body editor still does the native thing. */}}
     <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
       enctype="multipart/form-data" data-undo-delay="{{.UndoSendDelay}}"
       class="flex-1 min-h-0 flex flex-col"
+      x-data="attachBox()" :class="over && 'ring-2 ring-inset ring-indigo-500'"
+      @dragover="onDragOver($event)" @dragleave="onDragLeave($event)" @drop="onDrop($event)"
       hx-on::after-request="if(event.detail.elt===this){onComposeResponse(event)}">
       {{/* Scrolling body + pinned footer, so Send sits on the window's bottom
            edge in every layout instead of floating wherever the content ends. */}}
@@ -47,7 +54,7 @@
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
       <input type="hidden" name="layout" value="{{.Layout}}">
-      <input type="hidden" name="mode" value="{{.Mode}}">
+      {{/* No hidden "mode": the format selector in the toolbar row carries it. */}}
       <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
       <input type="hidden" name="references" value="{{.References}}">
       <input type="hidden" name="send_mode" id="compose-send-mode" value="later">
@@ -92,108 +99,88 @@
       <input name="subject" value="{{.Subject}}" placeholder="Subject"
         class="w-full rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
 
-      {{if eq .Mode "html"}}
-      {{/* WYSIWYG: contenteditable (light surface — honest preview of the sent mail)
-           with a compact toolbar. app.js syncs the editor into the hidden
-           textarea before every save/submit; execCommand does the formatting. */}}
-      <div class="compose-toolbar flex items-center gap-0.5 overflow-x-auto rounded-t-md bg-zinc-800 border border-zinc-700 px-1.5 py-1" data-compose-toolbar>
-        <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" class="ct-btn font-bold">B</button>
-        <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" class="ct-btn italic">I</button>
-        <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" class="ct-btn underline">U</button>
-        <button type="button" data-cmd="strikeThrough" title="Strikethrough" class="ct-btn line-through">S</button>
-        <span class="ct-sep"></span>
-        <select data-cmd-font title="Font" class="ct-select">
-          <option value="">Font</option>
-          <option value="sans-serif">Sans</option>
-          <option value="serif">Serif</option>
-          <option value="monospace">Mono</option>
-        </select>
-        <select data-cmd-size title="Size" class="ct-select">
-          <option value="">Size</option>
-          <option value="2">Small</option>
-          <option value="3">Normal</option>
-          <option value="5">Large</option>
-        </select>
-        <label class="ct-btn relative cursor-pointer" title="Text color">
-          A<span class="absolute inset-x-1 bottom-0.5 h-0.5" style="background:currentColor"></span>
-          <input type="color" data-cmd-color class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
-        </label>
-        <span class="ct-sep"></span>
-        <button type="button" data-cmd="insertUnorderedList" title="Bulleted list" class="ct-btn">•—</button>
-        <button type="button" data-cmd="insertOrderedList" title="Numbered list" class="ct-btn">1.</button>
-        <button type="button" data-cmd-block="blockquote" title="Quote" class="ct-btn">&rdquo;</button>
-        <button type="button" data-cmd-link title="Insert link" class="ct-btn">🔗</button>
-        <button type="button" data-cmd-unlink title="Remove link" class="ct-btn relative">🔗<span class="absolute inset-0 flex items-center justify-center text-red-500 font-bold pointer-events-none">/</span></button>
-        <span class="ct-sep"></span>
-        <button type="button" data-cmd="removeFormat" title="Clear formatting" class="ct-btn">⌫</button>
-      </div>
-      <div id="compose-wysiwyg" contenteditable="true" data-compose-editor
-        class="compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
-      <textarea name="body" class="hidden">{{.Body}}</textarea>
+      {{/* The editor block is its own template so the format switcher can swap
+           just this region (POST /compose/preview?convert=1), leaving the
+           attachments and every other field alone. */}}
+      <div id="compose-body-wrap" class="flex-1 min-h-0 flex flex-col">{{template "compose_body" .}}</div>
 
-      {{else if eq .Mode "markdown"}}
-      {{/* Markdown: Write/Preview tabs. Preview renders via /compose/preview
-           (same goldmark renderer used at send). */}}
-      <div class="flex items-center gap-1 text-xs" data-md-tabs>
-        <button type="button" data-md-tab="write" class="md-tab md-tab-active rounded-t-md px-3 py-1.5">Write</button>
-        <button type="button" data-md-tab="preview"
-          hx-post="/compose/preview" hx-include="closest form" hx-target="#md-preview" hx-swap="innerHTML"
-          class="md-tab rounded-t-md px-3 py-1.5">Preview</button>
-        <span class="text-zinc-600 ml-auto pr-1">Markdown</span>
-      </div>
-      <textarea name="body" placeholder="Write your message… (Markdown supported)" rows="12" data-md-write
-        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
-        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
-      <div id="md-preview" data-md-preview class="hidden compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
+      {{/* Compose toolbar. Attach, Format, Template and Draft with AI all wear
+           .compose-tool so a <label>, two <select>s and a <button> come out the
+           same height/padding/radius and sit in one row. The AI panel lives in
+           this same wrapper (its x-data scope) but below the row, in normal
+           flow — absolute would be clipped by the scrolling container. */}}
+      <div x-data="aiAssist({kind:'{{.Kind}}'})">
+        <div class="flex items-center gap-2 flex-wrap">
+          <label class="compose-tool cursor-pointer">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+            Attach
+            <input type="file" name="attachments" multiple class="hidden"
+              @change="add($event.target.files)">
+          </label>
+          {{/* Per-message body format. This select IS the posted "mode", and on
+               change it swaps #compose-body-wrap with the body converted server
+               side (mail.ConvertBody). The inline onchange runs before htmx's
+               own change listener, so it can veto a lossy switch. */}}
+          <select id="compose-mode" name="mode" aria-label="Message format" title="Message format"
+            onchange="onComposeFormatChange(event, this)"
+            hx-post="/compose/preview?convert=1"
+            hx-include="#compose-form textarea[name='body'], #compose-mode-from"
+            hx-target="#compose-body-wrap" hx-swap="innerHTML"
+            class="compose-tool">
+            <option value="plain" {{if eq .Mode "plain"}}selected{{end}}>Plain text</option>
+            <option value="markdown" {{if eq .Mode "markdown"}}selected{{end}}>Markdown</option>
+            <option value="html" {{if eq .Mode "html"}}selected{{end}}>Rich text</option>
+          </select>
+          {{/* Template picker: each option carries its body, and picking one drops
+               it above whatever's already written (same insertion path as an AI
+               draft), then resets to the placeholder. Hidden when none exist. */}}
+          {{if .Templates}}
+          <select id="compose-template-picker" aria-label="Insert template" title="Insert a saved template"
+            onchange="if (this.selectedIndex > 0) { insertComposeText(this.value, false); this.selectedIndex = 0; }"
+            class="compose-tool">
+            <option value="">Template…</option>
+            {{range .Templates}}<option value="{{.Body}}">{{.Name}}</option>{{end}}
+          </select>
+          {{end}}
+          <button type="button" @click="toggle()" :aria-expanded="open" title="Draft with AI"
+            class="compose-tool" :class="open && 'ring-1 ring-indigo-500/50'">
+            <svg class="w-4 h-4 text-indigo-400" fill="currentColor" viewBox="0 0 24 24"><path d="M9 4 7.6 8.1 3.5 9.5l4.1 1.4L9 15l1.4-4.1L14.5 9.5 10.4 8.1 9 4Zm8 6-.9 2.6-2.6.9 2.6.9.9 2.6.9-2.6 2.6-.9-2.6-.9L17 10Z"/></svg>
+            <span>Draft with AI</span>
+          </button>
+          {{/* Include/skip the linked signature for this compose. Shown by app.js
+               only when the current From identity has an applicable signature. */}}
+          <label id="compose-sig-toggle-wrap" hidden class="inline-flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer">
+            <input type="checkbox" id="compose-sig-toggle" checked onchange="onComposeSigToggle(this)"
+              class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+            Signature
+          </label>
+          <span x-show="over" x-cloak class="text-xs text-indigo-400">Drop files to attach</span>
+        </div>
 
-      {{else}}
-      <textarea name="body" placeholder="Write your message…" rows="12"
-        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
-        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
-      {{end}}
+        {{/* Attachment list: one chip per file, filename inline-editable (the
+             typed name is what gets uploaded — attachBox rebuilds the File),
+             size, and a remove control. */}}
+        <div x-show="items.length" x-cloak class="mt-2 flex flex-wrap gap-1.5">
+          <template x-for="(it, i) in items" :key="it.id">
+            <span class="inline-flex items-center gap-1 max-w-full rounded-md border border-zinc-700 bg-zinc-800 py-1 pl-1.5 pr-1 text-xs text-zinc-200">
+              <input type="text" x-model="it.name" @change="sync()" @keydown.enter.prevent="$event.target.blur()"
+                :aria-label="'Rename attachment ' + it.f.name" :size="Math.max(it.name.length, 6)"
+                class="attach-name min-w-0 rounded border border-transparent bg-transparent px-1 py-0.5 text-zinc-100 hover:border-zinc-600 focus:border-indigo-500 focus:outline-none">
+              <span class="shrink-0 text-zinc-500" x-text="fmtSize(it.f.size)"></span>
+              <button type="button" @click="remove(i)" :aria-label="'Remove attachment ' + it.name"
+                class="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-400 transition-colors duration-150">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+              </button>
+            </span>
+          </template>
+        </div>
 
-      <div class="flex items-center gap-2 flex-wrap">
-        <label class="cursor-pointer inline-flex items-center gap-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm px-3 py-1.5">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
-          Attach
-          <input type="file" name="attachments" multiple class="hidden"
-            onchange="document.getElementById('attach-list').textContent=[...this.files].map(f=>f.name).join(', ')">
-        </label>
-        <span id="attach-list" class="text-xs text-zinc-500 break-all"></span>
-        {{/* Include/skip the linked signature for this compose. Shown by app.js
-             only when the current From identity has an applicable signature. */}}
-        <label id="compose-sig-toggle-wrap" hidden class="inline-flex items-center gap-1.5 text-xs text-zinc-400 cursor-pointer ml-1">
-          <input type="checkbox" id="compose-sig-toggle" checked onchange="onComposeSigToggle(this)"
-            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
-          Signature
-        </label>
-        {{/* Template picker: each option carries its body, and picking one drops
-             it above whatever's already written (same insertion path as an AI
-             draft), then resets to the placeholder. Hidden when none exist. */}}
-        {{if .Templates}}
-        <select id="compose-template-picker" aria-label="Insert template" title="Insert a saved template"
-          onchange="if (this.selectedIndex > 0) { insertComposeText(this.value, false); this.selectedIndex = 0; }"
-          class="ml-1 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-xs text-zinc-200 focus:outline-none focus:border-indigo-500">
-          <option value="">Template…</option>
-          {{range .Templates}}<option value="{{.Body}}">{{.Name}}</option>{{end}}
-        </select>
-        {{end}}
-      </div>
-
-      {{/* AI assist: one sparkle button opens an inline panel. Replies fetch
-           candidate directions; fresh compose asks what to write. All state and
-           the fetch/insert logic live in the aiAssist Alpine component (app.js).
-           ThreadContext is stashed in a hidden node so quotes/newlines survive
-           without escaping into an attribute string. */}}
-      <div x-data="aiAssist({kind:'{{.Kind}}', mode:'{{.Mode}}'})" class="relative">
+        {{/* AI assist: the sparkle button above opens this inline panel. Replies
+             fetch candidate directions; fresh compose asks what to write. All
+             state and the fetch/insert logic live in the aiAssist Alpine
+             component (app.js). ThreadContext is stashed in a hidden node so
+             quotes/newlines survive without escaping into an attribute string. */}}
         <div x-ref="ctx" hidden>{{.ThreadContext}}</div>
-        <button type="button" @click="toggle()" :aria-expanded="open" title="Draft with AI"
-          class="inline-flex items-center gap-1.5 rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm px-3 py-1.5"
-          :class="open && 'ring-1 ring-indigo-500/50'">
-          <svg class="w-4 h-4 text-indigo-400" fill="currentColor" viewBox="0 0 24 24"><path d="M9 4 7.6 8.1 3.5 9.5l4.1 1.4L9 15l1.4-4.1L14.5 9.5 10.4 8.1 9 4Zm8 6-.9 2.6-2.6.9 2.6.9.9 2.6.9-2.6 2.6-.9-2.6-.9L17 10Z"/></svg>
-          <span>Draft with AI</span>
-        </button>
-
         <div x-show="open" x-cloak x-transition.origin.top
           class="mt-2 rounded-md border border-zinc-700 bg-zinc-800 shadow-lg p-3 space-y-3">
           <div class="flex items-center justify-between">
@@ -353,4 +340,73 @@
     </div>
   </div>
 </div>
+{{end}}
+
+
+{{/* compose_body is the editor region alone: the format switcher swaps just
+     this (POST /compose/preview?convert=1) so the attachment selection and
+     every other field survive a format change. */}}
+{{define "compose_body"}}
+      {{/* mode_from is the format the body is currently written in; the
+           switcher posts it so the server knows which conversion to run. */}}
+      <input type="hidden" id="compose-mode-from" name="mode_from" value="{{.Mode}}">
+      {{if eq .Mode "html"}}
+      {{/* WYSIWYG: contenteditable (light surface — honest preview of the sent mail)
+           with a compact toolbar. app.js syncs the editor into the hidden
+           textarea before every save/submit; execCommand does the formatting. */}}
+      <div class="compose-toolbar flex items-center gap-0.5 overflow-x-auto rounded-t-md bg-zinc-800 border border-zinc-700 px-1.5 py-1" data-compose-toolbar>
+        <button type="button" data-cmd="bold" title="Bold (Ctrl+B)" class="ct-btn font-bold">B</button>
+        <button type="button" data-cmd="italic" title="Italic (Ctrl+I)" class="ct-btn italic">I</button>
+        <button type="button" data-cmd="underline" title="Underline (Ctrl+U)" class="ct-btn underline">U</button>
+        <button type="button" data-cmd="strikeThrough" title="Strikethrough" class="ct-btn line-through">S</button>
+        <span class="ct-sep"></span>
+        <select data-cmd-font title="Font" class="ct-select">
+          <option value="">Font</option>
+          <option value="sans-serif">Sans</option>
+          <option value="serif">Serif</option>
+          <option value="monospace">Mono</option>
+        </select>
+        <select data-cmd-size title="Size" class="ct-select">
+          <option value="">Size</option>
+          <option value="2">Small</option>
+          <option value="3">Normal</option>
+          <option value="5">Large</option>
+        </select>
+        <label class="ct-btn relative cursor-pointer" title="Text color">
+          A<span class="absolute inset-x-1 bottom-0.5 h-0.5" style="background:currentColor"></span>
+          <input type="color" data-cmd-color class="absolute inset-0 opacity-0 cursor-pointer w-full h-full">
+        </label>
+        <span class="ct-sep"></span>
+        <button type="button" data-cmd="insertUnorderedList" title="Bulleted list" class="ct-btn">•—</button>
+        <button type="button" data-cmd="insertOrderedList" title="Numbered list" class="ct-btn">1.</button>
+        <button type="button" data-cmd-block="blockquote" title="Quote" class="ct-btn">&rdquo;</button>
+        <button type="button" data-cmd-link title="Insert link" class="ct-btn">🔗</button>
+        <button type="button" data-cmd-unlink title="Remove link" class="ct-btn relative">🔗<span class="absolute inset-0 flex items-center justify-center text-red-500 font-bold pointer-events-none">/</span></button>
+        <span class="ct-sep"></span>
+        <button type="button" data-cmd="removeFormat" title="Clear formatting" class="ct-btn">⌫</button>
+      </div>
+      <div id="compose-wysiwyg" contenteditable="true" data-compose-editor
+        class="compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md border border-t-0 border-zinc-700 px-3 py-2 focus:outline-none focus:border-indigo-500 transition-colors duration-150 overflow-y-auto">{{composeHTML .Body}}</div>
+      <textarea name="body" class="hidden">{{.Body}}</textarea>
+
+      {{else if eq .Mode "markdown"}}
+      {{/* Markdown: Write/Preview tabs. Preview renders via /compose/preview
+           (same goldmark renderer used at send). */}}
+      <div class="flex items-center gap-1 text-xs" data-md-tabs>
+        <button type="button" data-md-tab="write" class="md-tab md-tab-active rounded-t-md px-3 py-1.5">Write</button>
+        <button type="button" data-md-tab="preview"
+          hx-post="/compose/preview" hx-include="closest form" hx-target="#md-preview" hx-swap="innerHTML"
+          class="md-tab rounded-t-md px-3 py-1.5">Preview</button>
+        <span class="text-zinc-600 ml-auto pr-1">Markdown</span>
+      </div>
+      <textarea name="body" placeholder="Write your message… (Markdown supported)" rows="12" data-md-write
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
+        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-b-md rounded-tr-md border border-zinc-800 focus:border-indigo-500 px-3 py-2 bg-zinc-950 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+      <div id="md-preview" data-md-preview class="hidden compose-wysiwyg flex-1 min-h-[16rem] rounded-b-md rounded-tr-md border border-zinc-800 px-3 py-2 overflow-y-auto"></div>
+
+      {{else}}
+      <textarea name="body" placeholder="Write your message…" rows="12"
+        hx-on:keydown="if(event.ctrlKey&&event.key==='Enter'){event.preventDefault();submitCompose()}"
+        class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
+      {{end}}
 {{end}}

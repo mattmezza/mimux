@@ -59,6 +59,9 @@ func (s *Server) renderCompose(w http.ResponseWriter, view composeView) {
 	if view.Templates == nil {
 		view.Templates, _ = s.store.ListTemplates()
 	}
+	// Normalize here so the format selector always has an option to mark
+	// selected, whatever the pref/draft/posted value was.
+	view.Mode = validMode(view.Mode)
 	s.renderPartial(w, "compose", view)
 }
 
