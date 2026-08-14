@@ -31,6 +31,7 @@ var templateFuncs = template.FuncMap{
 	"avatarInitials": mail.AvatarInitials,
 	"faviconURL":     mail.FaviconURL,
 	"relTime":        relTime,
+	"absTime":        absTime,
 	"untilTime":      untilTime,
 	"outSnippet":     outSnippet,
 	"folderLabel":    folderLabel,
@@ -1060,10 +1061,21 @@ func folderLabel(f store.Folder) string {
 	return name
 }
 
+// absTime is relTime's exact twin: the full timestamp behind a "4h" label, for
+// a native title tooltip. Local() because dates are stored (and read back) as
+// UTC — the container's TZ is the user's zone.
+func absTime(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Local().Format("Mon, 2 Jan 2006, 15:04")
+}
+
 func relTime(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}
+	t = t.Local()
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
