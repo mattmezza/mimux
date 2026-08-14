@@ -19,6 +19,7 @@ import (
 func accountFromForm(r *http.Request) config.Account {
 	a := config.Account{
 		Name:               strings.TrimSpace(r.PostFormValue("name")),
+		Label:              strings.TrimSpace(r.PostFormValue("label")),
 		SenderName:         strings.TrimSpace(r.PostFormValue("sender_name")),
 		Provider:           strings.TrimSpace(r.PostFormValue("provider")),
 		Email:              strings.TrimSpace(r.PostFormValue("email")),
@@ -56,7 +57,7 @@ func (s *Server) handleAccountSave(w http.ResponseWriter, r *http.Request) {
 	}
 	a := accountFromForm(r)
 	// On edit the name is fixed (it keys the synced mail); a rename is a
-	// remove+add, which the user does explicitly.
+	// remove+add, which the user does explicitly. Label is the renameable part.
 	if a.Name == "" || a.Email == "" {
 		s.accountError(w, r, "Name and email are required.")
 		return
@@ -85,7 +86,7 @@ func (s *Server) handleAccountSave(w http.ResponseWriter, r *http.Request) {
 	}
 	s.refreshAccounts()
 	s.mail.Reload()
-	s.mail.Toast("Account saved: " + a.Name)
+	s.mail.Toast("Account saved: " + a.DisplayLabel())
 	s.renderAccountsManager(w, r)
 }
 
@@ -123,6 +124,7 @@ type accountView struct {
 // password or oauth secret to the page.
 type acctEditable struct {
 	Name           string         `json:"name"`
+	Label          string         `json:"label"`
 	SenderName     string         `json:"sender_name"`
 	Provider       string         `json:"provider"`
 	Email          string         `json:"email"`
@@ -139,7 +141,7 @@ type acctEditable struct {
 
 func (v accountView) Editable() acctEditable {
 	return acctEditable{
-		Name: v.Name, SenderName: v.SenderName, Provider: v.Provider, Email: v.Email,
+		Name: v.Name, Label: v.Label, SenderName: v.SenderName, Provider: v.Provider, Email: v.Email,
 		Auth: v.Auth, IMAPHost: v.IMAPHost, IMAPPort: v.IMAPPort,
 		SMTPHost: v.SMTPHost, SMTPPort: v.SMTPPort, OAuth2ClientID: v.OAuth2ClientID,
 		Aliases:     v.Aliases,

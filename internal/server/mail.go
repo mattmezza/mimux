@@ -30,6 +30,7 @@ var templateFuncs = template.FuncMap{
 	"avatarColor":    mail.AvatarColor,
 	"avatarInitials": mail.AvatarInitials,
 	"faviconURL":     mail.FaviconURL,
+	"acctLabel":      acctLabel,
 	"relTime":        relTime,
 	"absTime":        absTime,
 	"untilTime":      untilTime,
@@ -156,6 +157,31 @@ func setAccountAliases(accts []config.Account) {
 		}
 	}
 	accountAliases = m
+}
+
+// accountLabels maps account name -> its display label, rebuilt alongside
+// accountAliases. Only names with a label set are present, so acctLabel's
+// fallback is a plain map miss.
+var accountLabels = map[string]string{}
+
+func setAccountLabels(accts []config.Account) {
+	m := map[string]string{}
+	for _, a := range accts {
+		if a.Label != "" {
+			m[a.Name] = a.Label
+		}
+	}
+	accountLabels = m
+}
+
+// acctLabel renders an account name the way the user wants to read it. Every
+// user-visible mention of an account goes through this; the raw name stays in
+// form values, hx-vals and routes, since it's still the key.
+func acctLabel(name string) string {
+	if l := accountLabels[name]; l != "" {
+		return l
+	}
+	return name
 }
 
 // receivedAlias returns the account alias a message was delivered to (present

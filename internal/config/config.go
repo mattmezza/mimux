@@ -54,8 +54,11 @@ type DB struct {
 // this type stays the in-memory representation the mail engine and templates use.
 type Account struct {
 	// Name is the account's identity/key (folders, tokens, colors, filters are
-	// keyed by it) and the badge label.
+	// keyed by it), which is why it can't be renamed — see Label for the part
+	// the user can change.
 	Name string
+	// Label is what the UI shows instead of Name. Blank inherits Name.
+	Label string
 	// SenderName is the display name on outgoing mail (the From header).
 	SenderName         string
 	Provider           string
@@ -82,6 +85,14 @@ type Account struct {
 type Alias struct {
 	Name  string // display name on outgoing mail sent as this alias
 	Email string // the alias address
+}
+
+// DisplayLabel is the account's name as the UI should show it.
+func (a Account) DisplayLabel() string {
+	if a.Label != "" {
+		return a.Label
+	}
+	return a.Name
 }
 
 // DisplayNameFor returns the From display name to use when sending as addr: the

@@ -28,6 +28,7 @@ func (stubRuleStore) ReorderRules(ids []int64) error  { return nil }
 func TestListRendersFullPage(t *testing.T) {
 	funcs := template.FuncMap{
 		"folderLabel": func(f any) string { return "" },
+		"acctLabel":   func(s string) string { return s },
 		"relTime":     func(t time.Time) string { return "" },
 		"highlight":   func(s string, terms []string) template.HTML { return template.HTML(s) }, // #nosec G203 -- test stub mirroring prod funcmap
 	}

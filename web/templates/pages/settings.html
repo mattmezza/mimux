@@ -568,7 +568,7 @@
               <p class="text-xs text-zinc-500">Leave a field blank to use the global value above — some accounts get a lot more mail than others.</p>
               {{range .Accounts}}
               <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
-                <span class="block text-sm text-zinc-200">{{.Name}}</span>
+                <span class="block text-sm text-zinc-200">{{acctLabel .Name}}</span>
                 <div class="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <label class="block space-y-1">
                     <span class="text-xs text-zinc-400">Check every N minutes</span>
@@ -646,7 +646,7 @@
                 // ponytail: oauth providers hardcoded to mirror account.SupportsOAuth;
                 // add here if a new OAuth preset lands.
                 const OAUTH = ["gmail", "zoho"];
-                const blank = () => ({ name:"", sender_name:"", provider:"", email:"", auth:"password",
+                const blank = () => ({ name:"", label:"", sender_name:"", provider:"", email:"", auth:"password",
                   password:"", oauth2_client_id:"", oauth2_client_secret:"",
                   imap_host:"", imap_port:"", smtp_host:"", smtp_port:"", aliases:[] });
                 Alpine.data("acctMgr", () => ({
@@ -656,7 +656,7 @@
                   startAdd() { this.f = blank(); this.editing=false; this.hasPassword=false; this.hasSecret=false; this.showSecret=false; this.showForm=true; },
                   edit(json) {
                     const a = typeof json === "string" ? JSON.parse(json) : json;
-                    this.f = { name:a.name, sender_name:a.sender_name||"", provider:a.provider||"", email:a.email||"",
+                    this.f = { name:a.name, label:a.label||"", sender_name:a.sender_name||"", provider:a.provider||"", email:a.email||"",
                       auth:a.auth||"password", password:"", oauth2_client_id:a.oauth2_client_id||"", oauth2_client_secret:"",
                       imap_host:a.imap_host||"", imap_port:a.imap_port||"", smtp_host:a.smtp_host||"", smtp_port:a.smtp_port||"",
                       aliases:(a.aliases||[]).map(x => ({ name:x.name||"", email:x.email||"" })) };
@@ -677,7 +677,7 @@
                 <label class="flex items-center gap-3">
                   <input type="color" name="color:{{.Name}}" value="{{$c}}"
                     class="h-8 w-12 rounded-md bg-zinc-800 border border-zinc-700 cursor-pointer">
-                  <span class="text-sm text-zinc-200">{{.Name}}</span>
+                  <span class="text-sm text-zinc-200">{{acctLabel .Name}}</span>
                 </label>
               {{end}}
             </div>

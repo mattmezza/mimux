@@ -229,7 +229,7 @@ func (a *account) maybeNotify(f *store.Folder, buf *imapclient.FetchMessageBuffe
 	if buf.Envelope != nil {
 		subject = buf.Envelope.Subject
 	}
-	go a.m.notify(a.cfg.Name, from, subject)
+	go a.m.notify(a.cfg.DisplayLabel(), from, subject)
 }
 
 // notifiable holds the guards maybeNotify documents, split out because they are

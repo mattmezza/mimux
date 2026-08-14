@@ -15,7 +15,7 @@
 
   <div class="flex-1 min-w-0">
     <p class="text-zinc-100 font-medium truncate">
-      {{.Name}}{{if .Account}} <span class="text-zinc-500 font-normal">— {{.Account}}</span>{{end}}
+      {{.Name}}{{if .Account}} <span class="text-zinc-500 font-normal">— {{acctLabel .Account}}</span>{{end}}
     </p>
     <p class="text-zinc-500 text-xs truncate">
       {{range $i, $c := .Conditions}}{{if $i}} and {{end}}{{$c.Field}} {{$c.Op}} &#34;{{$c.Value}}&#34;{{end}}

@@ -66,6 +66,7 @@ func (s *Server) refreshAccounts() {
 	}
 	s.cfg.Accounts = accts
 	setAccountAliases(accts)
+	setAccountLabels(accts)
 }
 
 // parseTemplates builds one template set per page, each including the base
