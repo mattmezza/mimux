@@ -76,6 +76,59 @@ func TestOutboxCRUD(t *testing.T) {
 	}
 }
 
+// A row claimed but never marked (process died mid-send) is invisible to every
+// list and never retried — RecoverSending is what unsticks it.
+func TestRecoverSending(t *testing.T) {
+	s := open(t)
+	past := time.Now().Add(-time.Minute)
+	stuck := &Outbox{Account: "work", To: "a@x", Subject: "stranded", SendAt: past}
+	ok := &Outbox{Account: "work", To: "b@x", Subject: "fine", SendAt: past}
+	for _, o := range []*Outbox{stuck, ok} {
+		if err := s.EnqueueOutbox(o); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if claimed, err := s.ClaimOutbox(stuck.ID); err != nil || !claimed {
+		t.Fatalf("claim = %v, %v", claimed, err)
+	}
+	// The black hole: not due, not scheduled, not failed.
+	if due, _ := s.DueOutbox(time.Now()); len(due) != 1 || due[0].ID != ok.ID {
+		t.Fatalf("stranded row should not be due, got %v", due)
+	}
+	if sc, _ := s.ListScheduled(); len(sc) != 1 || sc[0].ID != ok.ID {
+		t.Fatalf("ListScheduled = %v; want only the unclaimed row", sc)
+	}
+	if fl, _ := s.ListFailed(); len(fl) != 0 {
+		t.Fatalf("ListFailed = %v; want 0 before recovery", fl)
+	}
+
+	if n, err := s.RecoverSending(); err != nil || n != 1 {
+		t.Fatalf("RecoverSending = %d, %v; want 1", n, err)
+	}
+	fl, err := s.ListFailed()
+	if err != nil || len(fl) != 1 || fl[0].ID != stuck.ID || fl[0].Error == "" {
+		t.Fatalf("ListFailed after recovery = %v, %v; want the stranded row with an error", fl, err)
+	}
+	// Recovered rows go through the normal Retry path.
+	if retried, err := s.RetryOutbox(stuck.ID); err != nil || !retried {
+		t.Fatalf("retry of recovered row = %v, %v; want true", retried, err)
+	}
+
+	// The normal queued -> sending -> sent flow is untouched by recovery.
+	if claimed, _ := s.ClaimOutbox(ok.ID); !claimed {
+		t.Fatal("claim of queued row failed")
+	}
+	if err := s.MarkOutboxSent(ok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.RecoverSending(); err != nil || n != 0 {
+		t.Fatalf("second RecoverSending = %d, %v; want 0", n, err)
+	}
+	if rs, _ := s.ListRecentSent(time.Now().Add(-time.Hour)); len(rs) != 1 || rs[0].ID != ok.ID {
+		t.Fatalf("ListRecentSent = %v; want the sent row still sent", rs)
+	}
+}
+
 func TestOutboxRetryAndDelete(t *testing.T) {
 	s := open(t)
 	row := &Outbox{Account: "work", To: "a@x", Subject: "boom", SendAt: time.Now().Add(time.Hour)}
