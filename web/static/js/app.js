@@ -241,7 +241,7 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
 // --- server-sent events ---
 (function () {
   if (!window.EventSource) return;
-  const es = new EventSource("/events");
+  let es;
   // The stream drops on any network change (wifi/VPN switch, laptop sleep, a
   // backgrounded mobile/PWA tab getting suspended). EventSource reconnects on
   // its own, but events sent while it was down are gone — nothing replays
@@ -252,27 +252,44 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
   // loaded its own fresh data. Sync state needs no help here: the server sends
   // a sync-status the moment the stream opens, reconnects included.
   let opened = false;
-  es.addEventListener("open", () => {
-    if (opened) {
-      document.body.dispatchEvent(new Event("sm:refresh"));
-      refreshUnreadTitle();
-    }
-    opened = true;
-  });
-  es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
-  // data is "1"/"0": is ANY account syncing, computed server-side (handleEvents).
-  es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
-  es.addEventListener("toast", (e) => toast(e.data));
-  es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
-  es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
-  es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
-})();
+  function connect() {
+    es = new EventSource("/events");
+    es.addEventListener("open", () => {
+      if (opened) {
+        document.body.dispatchEvent(new Event("sm:refresh"));
+        refreshUnreadTitle();
+      }
+      opened = true;
+    });
+    es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
+    // data is "1"/"0": is ANY account syncing, computed server-side (handleEvents).
+    es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
+    es.addEventListener("toast", (e) => toast(e.data));
+    es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
+    es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
+    es.addEventListener("search-done", (e) => { const d = JSON.parse(e.data); searchAcctState(d.account, "done", d.count); });
+  }
+  connect();
 
-// ponytail: no sync-on-open here. The server holds the IMAP connections and
-// syncs on its own (IDLE + the per-account interval) whether or not a browser
-// is open, and pushes new-mail/sync-status over SSE; a poke on focus only
-// bought an off-cadence sync and a spinner. Sync is triggered by the server, or
-// by the user (Refresh button / pull-to-refresh) — nothing else.
+  // Coming back to a tab that has been sitting there for hours: whatever the
+  // stream missed while the tab was frozen/asleep is missed for good, and a
+  // dropped event looks exactly like no event, so the list can be stale with
+  // nothing left to tell us. Re-render it from the server's DB — one local
+  // query, no IMAP, no spinner, and free when nothing changed.
+  //
+  // ponytail: a REFRESH, not a sync. The POST /refresh on visibility that used
+  // to live here was deleted for good reason (4c6ee6c): the server syncs on its
+  // own cadence whether or not a browser is open. This is the cheap sibling —
+  // no timer, no staleness stamp, no endpoint.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    // readyState 2 = CLOSED: EventSource gave up (or the resumed machine's
+    // socket died in a way it noticed). It will never retry on its own.
+    if (!es || es.readyState === 2) connect();
+    document.body.dispatchEvent(new Event("sm:refresh"));
+    refreshUnreadTitle();
+  });
+})();
 
 // --- unread count in tab title ---
 async function refreshUnreadTitle() {

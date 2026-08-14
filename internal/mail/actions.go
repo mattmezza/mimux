@@ -63,7 +63,7 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 		return nil, fmt.Errorf("folder not found")
 	}
 	var raw []byte
-	err = a.submit(ctx, func(c *imapclient.Client) error {
+	err = a.submitRO(ctx, func(c *imapclient.Client) error {
 		if _, err := c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 			return err
 		}
