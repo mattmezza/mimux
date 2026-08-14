@@ -95,6 +95,7 @@ credentials, sync cadence, translate/AI keys, preferences) is edited in the
 | `SM_PORT` | `8083` | Bind port |
 | `SM_BASE_URL` | `http://localhost:<port>` | Public URL — used for OAuth redirects and email links; `https://` enables Secure cookies |
 | `SM_SECRET` | *(auto)* | Session/CSRF signing secret. When unset it is generated once and persisted to a `secret` file next to the DB, so it stays stable across restarts |
+| `SM_AI_BASE_URL` | *(OpenRouter)* | Any OpenAI-compatible chat-completions endpoint — another provider, or a local runner (`http://llama:8080/v1`). Given a base, `/chat/completions` is appended. With this set the OpenRouter key becomes optional |
 
 Accounts (name, email, provider preset, password or OAuth2 credentials, custom
 IMAP/SMTP hosts, aliases), the sync cadence and message cap, and the Google

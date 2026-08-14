@@ -91,7 +91,7 @@ func (s *Server) quickActionLists(pref string, supported map[string]bool) (bar, 
 			if id == "translate" && s.store.GetAppConfig().TranslateAPIKey == "" {
 				continue
 			}
-			if id == "summarize" && s.store.GetAppConfig().AIKey == "" {
+			if id == "summarize" && !s.aiClient(store.AISummarize).Enabled() {
 				continue
 			}
 			if supported != nil && !supported[id] {

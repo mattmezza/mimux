@@ -18,6 +18,25 @@ func TestDraft_Disabled(t *testing.T) {
 	}
 }
 
+// A keyless client is only disabled when it has nowhere else to go: pointed at
+// a local runner it must work, and must not send an empty bearer.
+func TestDraft_KeylessLocalEndpoint(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := r.Header["Authorization"]; ok {
+			t.Errorf("sent an Authorization header without a key")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"local reply"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{BaseURL: srv.URL, Model: "local", HTTPClient: srv.Client()}
+	res, err := c.Draft(context.Background(), "plain", "", "hello", false)
+	if err != nil || res.Draft != "local reply" {
+		t.Fatalf("Draft = %+v, err = %v", res, err)
+	}
+}
+
 func TestDraft_FreshCompose(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
@@ -42,9 +61,8 @@ func TestDraft_FreshCompose(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "test-key", Model: "test-model", HTTPClient: srv.Client(),
+	c := &Client{BaseURL: srv.URL, APIKey: "test-key", Model: "test-model", HTTPClient: srv.Client(),
 		Prefs: Prefs{Tone: "friendly", Brevity: "concise"}}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
 	res, err := c.Draft(context.Background(), "markdown", "", "renew my domain", true)
 	if err != nil {
 		t.Fatal(err)
@@ -67,8 +85,7 @@ func TestOptions_ParsesJSON(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{ReplyOptions: 4}}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{ReplyOptions: 4}}
 	opts, err := c.Options(context.Background(), "Are you coming?")
 	if err != nil {
 		t.Fatal(err)
@@ -85,8 +102,7 @@ func TestRefine_APIError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
 	if _, err := c.Refine(context.Background(), "plain", "hello", "shorter"); err == nil {
 		t.Fatal("expected error")
 	}
@@ -107,8 +123,7 @@ func TestChat_RetriesTransient(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client()}
 	got, err := c.Refine(context.Background(), "plain", "hello", "shorter")
 	if err != nil || got != "ok" {
 		t.Fatalf("Refine = %q, err = %v", got, err)
@@ -127,8 +142,7 @@ func TestChat_NoRetryOnAuth(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "bad", Model: "m", HTTPClient: srv.Client()}
 	_, err := c.Refine(context.Background(), "plain", "hello", "shorter")
 	if !errors.Is(err, ErrAuth) {
 		t.Fatalf("err = %v, want ErrAuth", err)
@@ -152,8 +166,7 @@ func TestChat_CancelledContextSkipsBackoff(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client()}
 	start := time.Now()
 	if _, err := c.Refine(ctx, "plain", "hello", "shorter"); err == nil {
 		t.Fatal("expected error")
@@ -196,8 +209,7 @@ func TestSummarize_LevelAndTruncation(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{Language: "Italian"}}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client(), Prefs: Prefs{Language: "Italian"}}
 	sum, truncated, err := c.Summarize(context.Background(), "oneline", long)
 	if err != nil {
 		t.Fatal(err)
@@ -222,14 +234,26 @@ func TestSummarize_ShortBodyAndUnknownLevel(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := &Client{APIKey: "k", Model: "m", HTTPClient: srv.Client()}
-	c.HTTPClient.Transport = rewriteHostTransport{base: srv.URL}
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client()}
 	sum, truncated, err := c.Summarize(context.Background(), "brief", "Please pay the invoice.")
 	if err != nil || truncated || sum != "- one\n- two" {
 		t.Fatalf("Summarize = %q, truncated=%v, err=%v", sum, truncated, err)
 	}
 	if _, _, err := c.Summarize(context.Background(), "bogus", "hi"); err == nil {
 		t.Fatal("expected error for unknown summary level")
+	}
+}
+
+func TestClientURL(t *testing.T) {
+	for base, want := range map[string]string{
+		"":                             defaultAPIURL,
+		"http://llama:8080/v1":         "http://llama:8080/v1/chat/completions",
+		"http://llama:8080/v1/":        "http://llama:8080/v1/chat/completions",
+		"http://x/v1/chat/completions": "http://x/v1/chat/completions",
+	} {
+		if got := (&Client{BaseURL: base}).url(); got != want {
+			t.Errorf("url(%q) = %q, want %q", base, got, want)
+		}
 	}
 }
 
@@ -252,18 +276,4 @@ func TestSystemPrompt_Language(t *testing.T) {
 	if !strings.Contains(fixed, "Italian") || !strings.Contains(fixed, "HTML") {
 		t.Errorf("fixed system prompt = %q", fixed)
 	}
-}
-
-// rewriteHostTransport redirects requests to the test server regardless of
-// the URL's host, since Client.chat hardcodes the real API host.
-type rewriteHostTransport struct{ base string }
-
-func (rt rewriteHostTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	base, err := http.NewRequest(req.Method, rt.base, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.URL.Scheme = base.URL.Scheme
-	req.URL.Host = base.URL.Host
-	return http.DefaultTransport.RoundTrip(req)
 }
