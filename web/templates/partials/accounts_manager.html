@@ -10,7 +10,7 @@
       {{else if .State}}<span class="w-2 h-2 rounded-full bg-red-500 shrink-0" title="{{.Message}}"></span>
       {{else}}<span class="w-2 h-2 rounded-full bg-zinc-600 shrink-0" title="Idle"></span>{{end}}
       <span class="min-w-0 flex-1">
-        <span class="block text-sm text-zinc-100 truncate">{{.Name}}</span>
+        <span class="block text-sm text-zinc-100 truncate">{{acctLabel .Name}}{{if .Label}} <span class="text-xs text-zinc-500">({{.Name}})</span>{{end}}</span>
         <span class="block text-xs text-zinc-500 truncate">{{.Email}} · {{if .Provider}}{{.Provider}}{{else}}custom{{end}} · {{.Auth}}{{if .Aliases}} · {{len .Aliases}} alias{{if gt (len .Aliases) 1}}es{{end}}{{end}}</span>
       </span>
       {{if .NeedsAuth}}
@@ -21,7 +21,7 @@
         class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-700 transition-colors duration-150">Edit</button>
       <button type="button"
         form="settings-subform" hx-post="/settings/accounts/{{.Name}}/delete" hx-target="#accounts-manager" hx-swap="outerHTML"
-        hx-confirm="Remove {{.Name}}? This deletes its downloaded folders and messages from this app (the mail stays on the server). You can re-add it later."
+        hx-confirm="Remove {{acctLabel .Name}}? This deletes its downloaded folders and messages from this app (the mail stays on the server). You can re-add it later."
         class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Remove</button>
     </li>
     {{else}}
@@ -41,11 +41,18 @@
   <div x-show="showForm" x-cloak id="acct-fields" class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
     <h3 class="text-sm font-semibold text-zinc-100" x-text="editing ? 'Edit account' : 'Add account'"></h3>
 
-    <label class="block space-y-1">
-      <span class="text-xs text-zinc-400">Account name <span class="text-zinc-600">(identity — keeps its synced mail; can't be changed on edit)</span></span>
-      <input type="text" name="name" x-model="f.name" :readonly="editing" placeholder="e.g. Work"
-        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 read-only:opacity-60">
-    </label>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Account name <span class="text-zinc-600">(identity — keeps its synced mail; can't be changed on edit)</span></span>
+        <input type="text" name="name" x-model="f.name" :readonly="editing" placeholder="e.g. Work"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 read-only:opacity-60">
+      </label>
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Display label <span class="text-zinc-600">(what the app shows; blank = the name)</span></span>
+        <input type="text" name="label" x-model="f.label" placeholder="e.g. Work ✱"
+          class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      </label>
+    </div>
 
     <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
       <label class="block space-y-1">

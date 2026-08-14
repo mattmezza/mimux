@@ -29,7 +29,7 @@
       <span class="row-sender truncate {{if $t.Unread}}text-zinc-100 font-semibold{{else}}text-zinc-400{{end}}">
         {{range $i, $p := $t.Participants}}{{if $i}}, {{end}}{{$p}}{{end}}
       </span>
-      {{if and .Unified $m.Account .ShowBadge}}{{$col := index .Colors $m.Account}}{{if not $col}}{{$col = "#6366f1"}}{{end}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{$col}}" title="{{$m.Account}}">{{$m.Account}}</span>{{end}}
+      {{if and .Unified $m.Account .ShowBadge}}{{$col := index .Colors $m.Account}}{{if not $col}}{{$col = "#6366f1"}}{{end}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{$col}}" title="{{acctLabel $m.Account}}">{{acctLabel $m.Account}}</span>{{end}}
       {{if and $m.HasAttachment .ShowAttach}}<span class="shrink-0 text-zinc-500" title="Has attachment">📎</span>{{end}}
       {{if gt $n 1}}<span class="shrink-0 text-[11px] rounded-full bg-zinc-700 px-1.5 text-zinc-200" title="{{$n}} messages">{{$n}}</span>{{end}}
       <span class="ml-auto shrink-0 text-[11px] text-zinc-500" title="{{absTime $t.Latest}}">{{relTime $t.Latest}}</span>

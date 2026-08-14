@@ -9,7 +9,7 @@ import (
 )
 
 // accountCols is the column list shared by the account queries.
-const accountCols = `name, sender_name, provider, email, auth, password,
+const accountCols = `name, label, sender_name, provider, email, auth, password,
 	oauth2_client_id, oauth2_client_secret, imap_host, imap_port,
 	smtp_host, smtp_port, aliases, position,
 	sync_interval_min, max_per_sync, sync_months, body_cache`
@@ -19,7 +19,7 @@ func scanAccount(sc interface{ Scan(...any) error }) (config.Account, int, error
 	var aliasesJSON string
 	var pos int
 	var syncInterval, maxPerSync, syncMonths, bodyCache sql.NullInt64
-	err := sc.Scan(&a.Name, &a.SenderName, &a.Provider, &a.Email, &a.Auth, &a.Password,
+	err := sc.Scan(&a.Name, &a.Label, &a.SenderName, &a.Provider, &a.Email, &a.Auth, &a.Password,
 		&a.OAuth2ClientID, &a.OAuth2ClientSecret, &a.IMAPHost, &a.IMAPPort,
 		&a.SMTPHost, &a.SMTPPort, &aliasesJSON, &pos,
 		&syncInterval, &maxPerSync, &syncMonths, &bodyCache)
@@ -114,8 +114,9 @@ func (s *Store) UpsertAccount(a config.Account) error {
 	// clobber them.
 	_, err = s.DB.Exec(`
 		INSERT INTO accounts (`+accountCols+`)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)), ?, ?, ?, ?)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE((SELECT position FROM accounts WHERE name = ?), (SELECT COALESCE(MAX(position),0)+1 FROM accounts)), ?, ?, ?, ?)
 		ON CONFLICT(name) DO UPDATE SET
+			label = excluded.label,
 			sender_name = excluded.sender_name,
 			provider = excluded.provider,
 			email = excluded.email,
@@ -128,7 +129,7 @@ func (s *Store) UpsertAccount(a config.Account) error {
 			smtp_host = excluded.smtp_host,
 			smtp_port = excluded.smtp_port,
 			aliases = excluded.aliases`,
-		a.Name, a.SenderName, a.Provider, a.Email, a.Auth, a.Password,
+		a.Name, a.Label, a.SenderName, a.Provider, a.Email, a.Auth, a.Password,
 		a.OAuth2ClientID, a.OAuth2ClientSecret, a.IMAPHost, a.IMAPPort,
 		a.SMTPHost, a.SMTPPort, string(b), a.Name,
 		intOrNull(a.SyncIntervalMin), intOrNull(a.MaxPerSync), intOrNull(a.SyncMonths),

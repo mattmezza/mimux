@@ -60,7 +60,7 @@
   {{else if eq $kind "sent"}}border-zinc-800 bg-zinc-900/40 opacity-80
   {{else}}border-zinc-800 bg-zinc-900/50 hover:bg-zinc-800/50{{end}}">
 
-  <span class="mt-1.5 w-2 h-2 rounded-full shrink-0" title="{{$o.Account}}"
+  <span class="mt-1.5 w-2 h-2 rounded-full shrink-0" title="{{acctLabel $o.Account}}"
         style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}"></span>
 
   <div class="min-w-0 flex-1">
