@@ -16,6 +16,13 @@ const schedulerTick = 5 * time.Second
 // runScheduler drains due outbox rows until ctx is cancelled. Survives restarts
 // because it re-reads queued rows from the DB on every tick.
 func (m *Manager) runScheduler(ctx context.Context) {
+	// Before the first drain: anything still "sending" was claimed by a
+	// previous run that died mid-send, so it is stranded. See RecoverSending.
+	if n, err := m.st.RecoverSending(); err != nil {
+		slog.Error("scheduler: recover stranded", "err", err)
+	} else if n > 0 {
+		slog.Warn("scheduler: rows stranded mid-send moved to failed", "n", n)
+	}
 	m.dispatchDue(ctx) // catch anything already overdue at startup
 	t := time.NewTicker(schedulerTick)
 	defer t.Stop()

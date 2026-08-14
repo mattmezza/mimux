@@ -164,6 +164,31 @@ func (s *Store) ClaimOutbox(id int64) (bool, error) {
 	return n > 0, nil
 }
 
+// RecoverSending rescues rows stranded in "sending" — claimed by the scheduler
+// but never marked sent or failed because the process died mid-send (air
+// restart, deploy, crash). Without this they are retried by nobody and shown by
+// nothing (DueOutbox/ListScheduled/ListFailed all skip "sending").
+//
+// They land in "failed", not "queued", on purpose: the process may have died
+// *after* SMTP accepted the message, and each send generates a fresh
+// Message-ID (mail.BuildMessage) that is never stored, so a re-send is
+// undetectable as a duplicate by us or the recipient. At-most-once by default;
+// the user sees the row in Outgoing → Failed and picks Retry or Delete.
+//
+// Called once at scheduler start, where "sending" unambiguously means stranded:
+// single process, single scheduler, so nothing is in flight yet.
+// ponytail: boot-time only. A send that hangs while the process lives stays
+// "sending" until the next restart — add a send deadline if that ever bites.
+func (s *Store) RecoverSending() (int64, error) {
+	res, err := s.DB.Exec(`UPDATE outbox SET status = 'failed', error = ? WHERE status = 'sending'`,
+		"interrupted mid-send by a restart — it may already have gone out, check Sent before retrying")
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
 func (s *Store) MarkOutboxSent(id int64) error {
 	_, err := s.DB.Exec(`UPDATE outbox SET status = 'sent', error = '' WHERE id = ?`, id)
 	return err
