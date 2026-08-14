@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,11 @@ var ErrDisabled = errors.New("ai: disabled (no openrouter api key configured)")
 // and the only failure worth pointing the user at Settings for.
 var ErrAuth = errors.New("ai: openrouter rejected the api key")
 
-const apiURL = "https://openrouter.ai/api/v1/chat/completions"
+// defaultAPIURL is OpenRouter, which is what an unconfigured install talks to.
+// SM_AI_BASE_URL points sm at any other OpenAI-compatible endpoint instead —
+// another provider, or a local llama.cpp/Ollama sidecar — since chatRequest and
+// chatResponse are already that wire format.
+const defaultAPIURL = "https://openrouter.ai/api/v1/chat/completions"
 
 // Retry tuning. OpenRouter (and the provider behind it) hands out 429s and
 // short-lived 5xx/empty responses often enough that a second click usually
@@ -76,10 +81,12 @@ type DraftResult struct {
 	Subject string
 }
 
-// Client talks to the OpenRouter chat completions API.
+// Client talks to an OpenAI-compatible chat completions API — OpenRouter by
+// default, see defaultAPIURL.
 type Client struct {
 	APIKey     string
 	Model      string
+	BaseURL    string // blank is OpenRouter; accepts a base ("http://llama:8080/v1") or a full endpoint
 	Prefs      Prefs
 	HTTPClient *http.Client
 }
@@ -89,7 +96,27 @@ func NewClient(apiKey, model string) *Client {
 	return &Client{
 		APIKey:     apiKey,
 		Model:      model,
+		BaseURL:    os.Getenv("SM_AI_BASE_URL"),
 		HTTPClient: &http.Client{Timeout: 60 * time.Second},
+	}
+}
+
+// Enabled reports whether a call would run. A custom endpoint counts as
+// configured on its own — a local runner needs no key — and the UI gates on this
+// too, so a hidden feature and a working one can't disagree.
+func (c *Client) Enabled() bool { return c != nil && (c.APIKey != "" || c.BaseURL != "") }
+
+// url resolves BaseURL to a chat-completions endpoint, appending the path when
+// it was given as a base — which is how every local runner documents its URL.
+func (c *Client) url() string {
+	u := strings.TrimRight(c.BaseURL, "/")
+	switch {
+	case u == "":
+		return defaultAPIURL
+	case strings.HasSuffix(u, "/chat/completions"):
+		return u
+	default:
+		return u + "/chat/completions"
 	}
 }
 
@@ -229,7 +256,7 @@ func splitSubject(s string) (subject, body string) {
 // chat is the single call path for every AI feature, so the retry lives here
 // and all of them get it.
 func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string, error) {
-	if c == nil || c.APIKey == "" {
+	if !c.Enabled() {
 		return "", ErrDisabled
 	}
 	body, err := json.Marshal(chatRequest{
@@ -268,12 +295,14 @@ func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string
 // next attempt, or 0 when the failure is permanent (no key, bad key, bad
 // request, unparseable reply) and retrying would only delay the honest error.
 func (c *Client) chatOnce(ctx context.Context, reqBody []byte, attempt int) (string, time.Duration, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.url(), bytes.NewReader(reqBody))
 	if err != nil {
 		return "", 0, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	if c.APIKey != "" { // a local runner has no key and some reject an empty bearer
+		req.Header.Set("Authorization", "Bearer "+c.APIKey)
+	}
 
 	hc := c.HTTPClient
 	if hc == nil {
