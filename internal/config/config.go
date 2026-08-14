@@ -82,9 +82,14 @@ type Account struct {
 
 // Alias is an extra send/receive identity on an account, with its own sender
 // display name and address.
+// The json tags are load-bearing: this struct is marshalled into the Edit
+// button's data-acct payload, and the form prefill reads name/email. Untagged
+// it serialized as Name/Email and every alias row came up blank. Decoding stays
+// compatible with rows written before the tags — encoding/json matches field
+// names case-insensitively.
 type Alias struct {
-	Name  string // display name on outgoing mail sent as this alias
-	Email string // the alias address
+	Name  string `json:"name"`  // display name on outgoing mail sent as this alias
+	Email string `json:"email"` // the alias address
 }
 
 // DisplayLabel is the account's name as the UI should show it.
