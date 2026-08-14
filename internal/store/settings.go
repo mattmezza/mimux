@@ -40,6 +40,36 @@ type Prefs struct {
 	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
 	SwipeLeftAction  string            // swipe a list row left; see AllRowActions (default "none")
 	SwipeRightAction string            // swipe a list row right; see AllRowActions (default "unread")
+	// NotifyScope is the master switch for notifications (Settings →
+	// Notifications): "off" (default — nothing is ever sent, and no permission
+	// prompt is ever shown), "rules" (only messages matched by a filter rule
+	// with the "notify" action) or "all" (every new inbox message). It gates
+	// both transports; each transport is separately configured (a Web Push
+	// subscription per device, an ntfy topic URL below).
+	NotifyScope string
+	// NtfyURL is a full ntfy topic URL (https://ntfy.sh/<topic> or a
+	// self-hosted one). Blank disables that transport. It needs no browser
+	// permission and no installed PWA — the fallback for a phone that can't or
+	// won't run Web Push.
+	NtfyURL string
+}
+
+// AllNotifyScopes are the notification master-switch choices, for the Settings
+// select. Order matters: it's the order shown.
+var AllNotifyScopes = []struct{ ID, Label string }{
+	{"off", "Off — never notify me"},
+	{"rules", "Only what my filter rules say"},
+	{"all", "Every new message in an inbox"},
+}
+
+// ValidNotifyScope returns v if it names a scope, else def.
+func ValidNotifyScope(v, def string) string {
+	for _, s := range AllNotifyScopes {
+		if s.ID == v {
+			return v
+		}
+	}
+	return def
 }
 
 // AllRowActions lists what a gesture on a message list row can do — same menu
@@ -183,6 +213,8 @@ func defaultPrefs() Prefs {
 		RowDoubleAction:  "unread",
 		SwipeLeftAction:  "none",
 		SwipeRightAction: "unread",
+		NotifyScope:      "off",
+		NtfyURL:          "",
 	}
 }
 
@@ -296,6 +328,12 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("swipe_right_action"); ok {
 		p.SwipeRightAction = ValidRowAction(v, p.SwipeRightAction)
 	}
+	if v, ok := s.getSetting("notify_scope"); ok {
+		p.NotifyScope = ValidNotifyScope(v, p.NotifyScope)
+	}
+	if v, ok := s.getSetting("ntfy_url"); ok {
+		p.NtfyURL = v
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -345,6 +383,8 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"row_double_action":  p.RowDoubleAction,
 		"swipe_left_action":  p.SwipeLeftAction,
 		"swipe_right_action": p.SwipeRightAction,
+		"notify_scope":       p.NotifyScope,
+		"ntfy_url":           p.NtfyURL,
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

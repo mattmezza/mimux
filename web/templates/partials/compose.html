@@ -78,23 +78,11 @@
       <input type="hidden" name="from" value="">
       {{end}}
 
-      <div class="flex items-center gap-2">
-        <label class="w-12 shrink-0 text-xs text-zinc-500">To</label>
-        <input name="to" value="{{.To}}" placeholder="name@example.com, ..."
-          class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">
-      </div>
+      {{template "compose_addr" (dict "Label" "To" "Name" "to" "Value" .To "Placeholder" "name@example.com, ...")}}
 
       <div id="cc-bcc-fields" class="space-y-2 {{if and (not .Cc) (not .Bcc)}}hidden{{end}}">
-        <div class="flex items-center gap-2">
-          <label class="w-12 shrink-0 text-xs text-zinc-500">Cc</label>
-          <input name="cc" value="{{.Cc}}"
-            class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
-        </div>
-        <div class="flex items-center gap-2">
-          <label class="w-12 shrink-0 text-xs text-zinc-500">Bcc</label>
-          <input name="bcc" value="{{.Bcc}}"
-            class="flex-1 rounded-md bg-zinc-800 border border-transparent focus:border-indigo-500 px-2 py-1.5 text-zinc-100 focus:outline-none transition-colors duration-150">
-        </div>
+        {{template "compose_addr" (dict "Label" "Cc" "Name" "cc" "Value" .Cc)}}
+        {{template "compose_addr" (dict "Label" "Bcc" "Name" "bcc" "Value" .Bcc)}}
       </div>
       {{if and (not .Cc) (not .Bcc)}}
       <button type="button" class="self-start text-xs text-indigo-400 hover:text-indigo-300"

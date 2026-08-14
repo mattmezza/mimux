@@ -61,6 +61,152 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("/sw.js");
 }
 
+// --- Web Push opt-in (Settings → Notifications) ----------------------------
+// Notification permission is one-shot per origin: a prompt that gets dismissed
+// can never be asked again without the user digging through browser settings.
+// So nothing here runs on its own — refresh() only *reads* the current state,
+// and requestPermission() is reached exclusively from the button's click
+// handler (which is also what iOS requires: the ask must be inside the gesture).
+function pushSupported() {
+  return (
+    window.isSecureContext &&
+    "serviceWorker" in navigator &&
+    "PushManager" in window &&
+    typeof Notification !== "undefined"
+  );
+}
+
+// isIOS covers iPhone/iPad including iPadOS, which reports itself as a Mac and
+// is only distinguishable by having a touchscreen.
+function isIOS() {
+  const ua = navigator.userAgent;
+  return /iPhone|iPod|iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+}
+
+function isStandalone() {
+  return window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+}
+
+// urlB64ToUint8Array converts the server's base64url VAPID public key into the
+// byte array PushManager.subscribe wants.
+function urlB64ToUint8Array(b64) {
+  const padded = (b64 + "=".repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  const raw = atob(padded);
+  const out = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+
+function refreshPushDevices() {
+  if (window.htmx && document.getElementById("push-devices")) {
+    htmx.ajax("GET", "/push/devices", { target: "#push-devices", swap: "outerHTML" });
+  }
+}
+
+// pushUI is the Alpine component behind the Settings → Notifications section.
+// Each unsupported case gets its own explanation rather than one dead button:
+// no HTTPS, iOS outside the Home Screen app, no Push API at all, or permission
+// already refused.
+function pushUI(vapidKey) {
+  return {
+    key: vapidKey,
+    state: "checking", // checking | insecure | ios-tab | unsupported | denied | off | on
+    busy: false,
+    async refresh() {
+      if (!window.isSecureContext) return (this.state = "insecure");
+      if (!pushSupported()) {
+        // iOS exposes no PushManager at all in a normal tab — the fix is to
+        // install the web app, not to change a setting.
+        return (this.state = isIOS() && !isStandalone() ? "ios-tab" : "unsupported");
+      }
+      if (!this.key) return (this.state = "unsupported");
+      if (Notification.permission === "denied") return (this.state = "denied");
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        this.state = sub ? "on" : "off";
+      } catch (e) {
+        this.state = "unsupported";
+      }
+    },
+    async enable() {
+      this.busy = true;
+      try {
+        // Must be the first await: on iOS the permission ask has to happen
+        // inside the click's task, and anything awaited before it breaks that.
+        const perm = await Notification.requestPermission();
+        if (perm !== "granted") {
+          this.state = perm === "denied" ? "denied" : "off";
+          toast("Notifications weren't allowed.");
+          return;
+        }
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8Array(this.key),
+        });
+        const k = sub.toJSON().keys || {};
+        await postAction("/push/subscribe", {
+          body: { endpoint: sub.endpoint, p256dh: k.p256dh || "", auth: k.auth || "" },
+        });
+        this.state = "on";
+        refreshPushDevices();
+        toast("Notifications enabled on this device.");
+      } catch (e) {
+        toast("Couldn't enable notifications on this device.");
+        this.refresh();
+      } finally {
+        this.busy = false;
+      }
+    },
+    async disable() {
+      this.busy = true;
+      try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+          // Tell the server first — after unsubscribe() the endpoint is gone
+          // and the row would be left behind until a push failed on it.
+          await postAction("/push/unsubscribe", { body: { endpoint: sub.endpoint } });
+          await sub.unsubscribe();
+        }
+        this.state = "off";
+        refreshPushDevices();
+        toast("Notifications turned off on this device.");
+      } catch (e) {
+        toast("Couldn't turn notifications off.");
+      } finally {
+        this.busy = false;
+      }
+    },
+    test() {
+      postAction("/push/test")
+        .then(() => toast("Test notification sent."))
+        .catch(() => toast("Couldn't send the test notification."));
+    },
+  };
+}
+
+// Signing out on a device also drops its push subscription: a signed-out
+// browser has no business showing who mailed you and what about. Only this
+// device's subscription goes — the others belong to sessions that are still
+// signed in.
+document.addEventListener("submit", (e) => {
+  const form = e.target;
+  if (!form || form.getAttribute("action") !== "/logout" || form.dataset.pushCleared) return;
+  if (!pushSupported()) return;
+  e.preventDefault();
+  form.dataset.pushCleared = "1";
+  navigator.serviceWorker.ready
+    .then((reg) => reg.pushManager.getSubscription())
+    .then((sub) => {
+      if (!sub) return null;
+      return postAction("/push/unsubscribe", { body: { endpoint: sub.endpoint } }).then(() => sub.unsubscribe());
+    })
+    .catch(() => {})
+    .finally(() => form.submit());
+});
+
 // --- App theme (dark/light/system), stored client-side in localStorage. The
 // flash-free initial apply lives inline in base.html <head>; these keep it in
 // sync when the user switches (Settings) or the OS preference flips. ---
@@ -1091,6 +1237,88 @@ function onDraftSaved(event) {
   if (composeCloseAfterSave) forceCloseCompose();
 }
 window.onDraftSaved = onDraftSaved;
+
+// --- compose address typeahead -------------------------------------------
+// The dropdown itself is server-rendered by htmx (partials/address_suggest.html)
+// and hides itself when the response is empty, so all that's left here is the
+// keyboard cursor and pasting the pick back into the field. Everything is
+// delegated from document: compose is re-rendered by htmx in three layouts.
+function addrBox(input) { return document.getElementById(`${input.name}-suggest`); }
+function addrOptions(input) {
+  const box = addrBox(input);
+  return box ? [...box.querySelectorAll("[role=option]")] : [];
+}
+function addrClose(input) {
+  const box = addrBox(input);
+  if (box) box.innerHTML = "";
+  input.setAttribute("aria-expanded", "false");
+}
+function addrSelect(opts, i) {
+  opts.forEach((o, j) => o.setAttribute("aria-selected", j === i ? "true" : "false"));
+  opts[i].scrollIntoView({ block: "nearest" });
+}
+// Replace only the token being typed and keep the trailing comma, so the
+// addresses already in the field survive and the next one can be typed right
+// away. Mirrors composeFragment() in internal/server/compose.go.
+function addrAccept(input, opt) {
+  const cut = input.value.lastIndexOf(",");
+  input.value = (cut < 0 ? "" : input.value.slice(0, cut + 1) + " ") + opt.dataset.addr + ", ";
+  addrClose(input);
+  input.focus();
+}
+// Capture phase: the global keymap also listens on document, and Escape there
+// closes the whole compose window. While the dropdown is open these keys are
+// ours, and stopPropagation keeps them from reaching it.
+document.addEventListener("keydown", (e) => {
+  const input = e.target;
+  if (!(input instanceof HTMLInputElement) || !input.hasAttribute("data-addr-input")) return;
+  const opts = addrOptions(input);
+  if (!opts.length) return;
+  const cur = opts.findIndex((o) => o.getAttribute("aria-selected") === "true");
+  if (e.key === "ArrowDown") addrSelect(opts, cur < 0 ? 0 : (cur + 1) % opts.length);
+  else if (e.key === "ArrowUp") addrSelect(opts, cur < 0 ? opts.length - 1 : (cur - 1 + opts.length) % opts.length);
+  else if (e.key === "Escape") addrClose(input);
+  // Nothing highlighted means the user is typing a free-form address: leave
+  // Enter to submit the form and Tab to move on, exactly as before.
+  else if ((e.key === "Enter" || e.key === "Tab") && cur >= 0) addrAccept(input, opts[cur]);
+  else return;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+// mousedown default = blur the input, which would close the dropdown before the
+// click lands on the option.
+document.addEventListener("mousedown", (e) => {
+  if (e.target.closest?.("[role=listbox] [role=option]")) e.preventDefault();
+});
+document.addEventListener("click", (e) => {
+  const opt = e.target.closest?.("[role=listbox] [role=option][data-addr]");
+  if (!opt) return;
+  const input = opt.closest("[role=listbox]").previousElementSibling;
+  if (input) addrAccept(input, opt);
+});
+document.addEventListener("focusout", (e) => {
+  if (e.target instanceof HTMLInputElement && e.target.hasAttribute("data-addr-input")) addrClose(e.target);
+});
+document.addEventListener("htmx:afterSwap", (e) => {
+  const box = e.target;
+  if (!(box instanceof HTMLElement) || box.getAttribute("role") !== "listbox") return;
+  box.previousElementSibling?.setAttribute("aria-expanded", box.children.length ? "true" : "false");
+});
+
+// --- click-to-copy on the addresses in a message header -------------------
+// navigator.clipboard needs a secure context (https / localhost). Where it is
+// missing the buttons lose their affordance (see .no-clipboard in app.css) and
+// the click is a no-op — the address stays selectable text either way.
+if (!navigator.clipboard) document.documentElement.classList.add("no-clipboard");
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest?.("[data-copy-addr]");
+  if (!btn || !navigator.clipboard) return;
+  const addr = btn.dataset.copyAddr;
+  navigator.clipboard.writeText(addr).then(
+    () => toast(`Copied ${addr}`),
+    () => toast("Couldn't copy to the clipboard."),
+  );
+});
 
 // --- send later / undo send / schedule / attachment reminder ---
 // Attachment-hint keywords (English + Italian). Mirrors mail.attachWords in

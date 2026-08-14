@@ -105,6 +105,9 @@ func TestRuleValidate(t *testing.T) {
 		wantErr bool
 	}{
 		{"valid", Rule{Name: "x", Conditions: []Condition{{Field: FieldFrom, Op: OpContains, Value: "a"}}, Actions: []Action{{Type: ActionMarkRead}}}, false},
+		// "notify" takes no argument: where a notification goes is configured
+		// once in Settings, not per rule.
+		{"notify", Rule{Name: "x", Conditions: []Condition{{Field: FieldFrom, Op: OpContains, Value: "a"}}, Actions: []Action{{Type: ActionNotify}}}, false},
 		{"missing name", Rule{Conditions: []Condition{{Field: FieldFrom, Op: OpContains, Value: "a"}}, Actions: []Action{{Type: ActionStar}}}, true},
 		{"no conditions", Rule{Name: "x", Actions: []Action{{Type: ActionStar}}}, true},
 		{"no actions", Rule{Name: "x", Conditions: []Condition{{Field: FieldFrom, Op: OpContains, Value: "a"}}}, true},

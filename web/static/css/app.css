@@ -629,3 +629,8 @@ body.sm-syncing #list-syncing { display: flex; }
 /* --- send-later split button dropdown (opus: send-later feature) --- */
 .send-more > summary { list-style: none; }
 .send-more > summary::-webkit-details-marker { display: none; }
+
+/* No clipboard API (insecure context): header addresses keep their text but
+   drop the copy affordance, so nothing looks clickable-but-dead. */
+.no-clipboard [data-copy-addr] { cursor: text; }
+.no-clipboard [data-copy-addr]:hover { color: inherit; text-decoration: none; }

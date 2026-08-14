@@ -31,6 +31,55 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// --- Push notifications ---------------------------------------------------
+// The payload arrives encrypted (only this install can decrypt it) and carries
+// the sender, the subject and the account. See internal/mail/notify.go.
+self.addEventListener("push", (e) => {
+  let d = {};
+  try {
+    d = e.data ? e.data.json() : {};
+  } catch (_) {
+    d = {};
+  }
+  const title = d.title || "New mail";
+  e.waitUntil(
+    (async () => {
+      // Never swallow a push. Chrome requires a visible notification for every
+      // one (that is what userVisibleOnly buys) and shows its own "site updated
+      // in the background" notice otherwise; Safari can revoke a subscription
+      // that repeatedly displays nothing. So when the app is already on screen
+      // — where the SSE stream has updated the list anyway — the notification
+      // is shown silently and collapsed onto the previous one instead of being
+      // skipped.
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const visible = wins.some((c) => c.visibilityState === "visible");
+      await self.registration.showNotification(title, {
+        body: d.body || "",
+        tag: "sm-" + (d.account || ""),
+        renotify: !visible,
+        silent: visible,
+        icon: "/static/icons/icon-192.png",
+        badge: "/static/icons/icon-192.png",
+      });
+    })()
+  );
+});
+
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  e.waitUntil(
+    (async () => {
+      // Focus the app if it is already open anywhere, rather than piling up
+      // duplicate windows.
+      const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const c of wins) {
+        if ("focus" in c) return c.focus();
+      }
+      return self.clients.openWindow("/");
+    })()
+  );
+});
+
 self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;

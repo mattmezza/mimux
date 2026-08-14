@@ -70,6 +70,8 @@ func (m *Manager) applyAction(ctx context.Context, msg *store.Message, act filte
 		return m.Move(ctx, msg, "trash")
 	case filter.ActionForward:
 		return m.forwardMessage(ctx, msg, act.Arg)
+	case filter.ActionNotify:
+		return m.notifyForRule(msg)
 	case filter.ActionLabel:
 		// Same write path (and the same IMAP-push gap) as labelling by hand
 		// from the reading pane — see SetLabel.
@@ -77,6 +79,34 @@ func (m *Manager) applyAction(ctx context.Context, msg *store.Message, act filte
 	default:
 		return fmt.Errorf("filter: unknown action %q", act.Type)
 	}
+}
+
+// notifyForRule is the "notify" filter action: a rule matched, so tell the user
+// about this message. Two gates, both there to stop the same message buzzing
+// twice:
+//
+//   - only under the "rules" scope. Under "all" every new inbox message already
+//     notifies (see account.maybeNotify), which makes the action redundant, not
+//     additive; under "off" nothing notifies at all.
+//   - inbox only. Rules run for every folder a sync touches, so without this a
+//     rule matching your correspondent fires again on the Sent copy of your own
+//     reply, and a third time on Gmail's All Mail copy.
+func (m *Manager) notifyForRule(msg *store.Message) error {
+	if m.st.GetPrefs().NotifyScope != "rules" {
+		return nil
+	}
+	f, err := m.st.FolderByID(msg.FolderID)
+	if err != nil || f == nil || f.SpecialUse != "inbox" {
+		return nil
+	}
+	from := msg.FromName
+	if from == "" {
+		from = msg.FromAddress
+	}
+	// Fire and forget: applyAction runs inside the sync loop, and a push service
+	// that takes ten seconds to answer must not hold up the mailbox.
+	go m.notify(msg.Account, from, msg.Subject)
+	return nil
 }
 
 // forwardMessage sends msg on to a new recipient as part of a "forward"
