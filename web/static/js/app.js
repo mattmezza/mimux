@@ -981,11 +981,24 @@ window.previewAttachment = function (btn, url, kind) {
   if (holder.dataset.loaded) { holder.classList.toggle("hidden"); return; }
   holder.dataset.loaded = "1";
   holder.classList.remove("hidden");
-  if (kind === "image") {
-    holder.innerHTML = `<img src="${url}" alt="" class="max-h-96 max-w-full rounded">`;
-  } else {
-    holder.innerHTML = `<iframe src="${url}" class="w-full h-96 rounded border-0 bg-white" title="Attachment preview"></iframe>`;
-  }
+  // Fetching the part means a live IMAP round-trip, so show the same spinner
+  // the list header uses until the element fires load (or errors).
+  holder.setAttribute("aria-busy", "true");
+  holder.innerHTML = `<span data-preview-spinner role="status" class="flex items-center gap-1.5 text-[11px] text-zinc-500"><svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg>Loading preview…</span>`;
+  const el = document.createElement(kind === "image" ? "img" : "iframe");
+  if (kind === "image") { el.alt = ""; el.className = "max-h-96 max-w-full rounded hidden"; }
+  else { el.title = "Attachment preview"; el.className = "w-full h-96 rounded border-0 bg-white hidden"; }
+  // NOTE: an iframe fires load even for an error page, so a failed fetch
+  // just shows the browser's own error inside the frame.
+  const done = () => {
+    holder.querySelector("[data-preview-spinner]")?.remove();
+    holder.removeAttribute("aria-busy");
+    el.classList.remove("hidden");
+  };
+  el.addEventListener("load", done);
+  el.addEventListener("error", done);
+  el.src = url;
+  holder.appendChild(el);
 };
 
 // --- per-message dark/light: email bodies render light by default (many
