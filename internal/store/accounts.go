@@ -194,3 +194,52 @@ func (s *Store) DeleteAccount(name string) error {
 	}
 	return tx.Commit()
 }
+
+// AccountStat is the stored-mail footprint of one account, for the accounts
+// dialog in the status bar.
+type AccountStat struct {
+	Messages int64
+	Unread   int64
+	Folders  int64
+	Bytes    int64
+}
+
+// AccountStats returns per-account counters keyed by account name. Two grouped
+// queries, not one per account: messages carry count+size, folders carry the
+// folder count and the unread_count sync already maintains.
+// NOTE: no outbox/body-cache columns here — one more table, one more query,
+// and neither number is what the dialog is for.
+func (s *Store) AccountStats() (map[string]AccountStat, error) {
+	out := map[string]AccountStat{}
+	for _, q := range []struct {
+		sql  string
+		scan func(*AccountStat, int64, int64)
+	}{
+		{`SELECT account, COUNT(*), COALESCE(SUM(size), 0) FROM messages GROUP BY account`,
+			func(st *AccountStat, a, b int64) { st.Messages, st.Bytes = a, b }},
+		{`SELECT account, COUNT(*), COALESCE(SUM(unread_count), 0) FROM folders GROUP BY account`,
+			func(st *AccountStat, a, b int64) { st.Folders, st.Unread = a, b }},
+	} {
+		rows, err := s.DB.Query(q.sql)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var name string
+			var a, b int64
+			if err := rows.Scan(&name, &a, &b); err != nil {
+				_ = rows.Close()
+				return nil, err
+			}
+			st := out[name]
+			q.scan(&st, a, b)
+			out[name] = st
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		_ = rows.Close()
+	}
+	return out, nil
+}

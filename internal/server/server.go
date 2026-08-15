@@ -167,6 +167,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/oauth/{name}/start", s.handleOAuthStart)
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
+		r.Get("/accounts/info", s.handleAccountsInfo)
 		r.Get("/health", s.handleHealth)
 		r.Get("/unread", s.handleUnread)
 		r.Post("/refresh", s.handleRefresh)

@@ -47,6 +47,7 @@ var templateFuncs = template.FuncMap{
 	"shortURL":       shortURL,
 	"composeHTML":    composeHTML,
 	"toJSON":         toJSON,
+	"humanBytes":     humanBytes,
 	"translateLangs": func() []translate.Language { return translate.Languages },
 }
 
@@ -285,6 +286,33 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, unified boo
 
 func (s *Server) handleStatusbar(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status()})
+}
+
+// accountInfo is one row of the accounts dialog: the account + its live status
+// (accountView) plus its stored-mail counters.
+type accountInfo struct {
+	accountView
+	store.AccountStat
+}
+
+// handleAccountsInfo renders the accounts dialog body — fetched fresh each time
+// the dialog opens, so the counters are never stale page state.
+func (s *Server) handleAccountsInfo(w http.ResponseWriter, r *http.Request) {
+	stats, err := s.store.AccountStats()
+	if err != nil {
+		slog.Error("account stats", "err", err)
+	}
+	infos := []accountInfo{}
+	var total store.AccountStat
+	for _, v := range s.accountViews() {
+		st := stats[v.Name]
+		infos = append(infos, accountInfo{accountView: v, AccountStat: st})
+		total.Messages += st.Messages
+		total.Unread += st.Unread
+		total.Folders += st.Folders
+		total.Bytes += st.Bytes
+	}
+	s.renderPartial(w, "accounts_info", map[string]any{"Accounts": infos, "Total": total})
 }
 
 // handleHealth re-renders the sidebar accounts-health rows (live-updated over
