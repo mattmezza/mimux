@@ -136,13 +136,23 @@
 {{end}}
 
 {{define "health_rows"}}
+{{/* Mobile's way into the accounts dialog — the status bar that carries it on
+     desktop is hidden below md. Inline onclick + body dispatch, same as the
+     status bar buttons: survives the /health poll swap, and the from:body
+     hx-trigger on the overlay refetches its body. */}}
 {{range .}}
-<li class="flex items-center gap-2 px-2 py-1 rounded-md text-xs text-zinc-400" title="{{if .Message}}{{.Message}}{{else}}{{.State}}{{end}}">
+<li>
+<button type="button" title="{{if .Message}}{{.Message}}{{else}}{{.State}}{{end}}"
+  aria-label="Account details: {{acctLabel .Account}}"
+  @click="sidebarOpen = false"
+  onclick="document.body.dispatchEvent(new CustomEvent('sm:accounts', {bubbles: true}))"
+  class="w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
   {{if eq .State "ok"}}<span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
   {{else if eq .State "syncing"}}<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
   {{else}}<span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>{{end}}
   <span class="truncate flex-1">{{acctLabel .Account}}</span>
   <span class="shrink-0 text-[10px] {{if eq .State "ok"}}text-green-500{{else if eq .State "syncing"}}text-amber-400{{else}}text-red-400{{end}}">{{if eq .State "ok"}}{{if .LastSync.IsZero}}OK{{else}}{{relTime .LastSync}}{{if ne (relTime .LastSync) "now"}} ago{{end}}{{end}}{{else if eq .State "syncing"}}syncing{{else}}error{{end}}</span>
+</button>
 </li>
 {{else}}
 <li class="px-2 py-1 text-[11px] text-zinc-600">No accounts.</li>

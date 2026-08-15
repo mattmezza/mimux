@@ -201,7 +201,18 @@ type AccountStat struct {
 	Messages int64
 	Unread   int64
 	Folders  int64
-	Bytes    int64
+	Bytes    int64 // summed RFC822 size as IMAP reports it — mail size, not disk (see DBSize)
+}
+
+// DBSize is the size of the SQLite file itself — what "how much disk is this
+// costing me" actually means. AccountStat.Bytes is a different number: the
+// server-reported RFC822 size of the mail, most of which (attachments, and any
+// body that isn't cached) never lands here.
+func (s *Store) DBSize() int64 {
+	var pages, size int64
+	_ = s.DB.QueryRow(`PRAGMA page_count`).Scan(&pages)
+	_ = s.DB.QueryRow(`PRAGMA page_size`).Scan(&size)
+	return pages * size
 }
 
 // AccountStats returns per-account counters keyed by account name. Two grouped
