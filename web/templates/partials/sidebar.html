@@ -146,7 +146,7 @@
   aria-label="Account details: {{acctLabel .Account}}"
   @click="sidebarOpen = false"
   onclick="document.body.dispatchEvent(new CustomEvent('sm:accounts', {bubbles: true}))"
-  class="w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
+  class="w-full flex items-center gap-2 px-2 py-1 rounded-md text-xs text-left text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
   {{if eq .State "ok"}}<span class="w-1.5 h-1.5 rounded-full bg-green-500 shrink-0"></span>
   {{else if eq .State "syncing"}}<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
   {{else}}<span class="w-1.5 h-1.5 rounded-full bg-red-500 shrink-0"></span>{{end}}
