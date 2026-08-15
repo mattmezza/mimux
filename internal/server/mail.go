@@ -285,7 +285,9 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, unified boo
 // --- handlers ---
 
 func (s *Server) handleStatusbar(w http.ResponseWriter, r *http.Request) {
-	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status()})
+	// Version too: the poll swaps the whole footer, so leaving it out made the
+	// release link point at an empty tag 60s after load.
+	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status(), "Version": s.version})
 }
 
 // accountInfo is one row of the accounts dialog: the account + its live status
@@ -312,7 +314,7 @@ func (s *Server) handleAccountsInfo(w http.ResponseWriter, r *http.Request) {
 		total.Folders += st.Folders
 		total.Bytes += st.Bytes
 	}
-	s.renderPartial(w, "accounts_info", map[string]any{"Accounts": infos, "Total": total})
+	s.renderPartial(w, "accounts_info", map[string]any{"Accounts": infos, "Total": total, "DBSize": s.store.DBSize()})
 }
 
 // handleHealth re-renders the sidebar accounts-health rows (live-updated over

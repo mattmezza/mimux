@@ -24,23 +24,29 @@
        class="mt-2 inline-block text-xs px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors duration-150">Needs re-authorization — connect</a>
     {{end}}
 
-    <dl class="mt-2 grid grid-cols-4 gap-2 text-xs">
+    {{/* "Mail size", not "on disk": this is the RFC822 size the IMAP server
+         reports, attachments included. Local disk is the DB figure below. */}}
+    <dl class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
       <div><dt class="text-zinc-500">Messages</dt><dd class="text-zinc-200">{{.Messages}}</dd></div>
       <div><dt class="text-zinc-500">Unread</dt><dd class="text-zinc-200">{{.Unread}}</dd></div>
       <div><dt class="text-zinc-500">Folders</dt><dd class="text-zinc-200">{{.Folders}}</dd></div>
-      <div><dt class="text-zinc-500">On disk</dt><dd class="text-zinc-200">{{humanBytes .Bytes}}</dd></div>
+      <div><dt class="text-zinc-500">Mail size</dt><dd class="text-zinc-200">{{humanBytes .Bytes}}</dd></div>
     </dl>
   </div>
   {{else}}
   <p class="text-sm text-zinc-500">No accounts yet.</p>
   {{end}}
 
-  <dl class="grid grid-cols-4 gap-2 px-3 py-2.5 text-xs border-t border-zinc-700">
+  <dl class="grid grid-cols-2 sm:grid-cols-4 gap-2 px-3 py-2.5 text-xs border-t border-zinc-700">
     <div><dt class="text-zinc-500">Total messages</dt><dd class="text-zinc-100">{{.Total.Messages}}</dd></div>
     <div><dt class="text-zinc-500">Total unread</dt><dd class="text-zinc-100">{{.Total.Unread}}</dd></div>
     <div><dt class="text-zinc-500">Total folders</dt><dd class="text-zinc-100">{{.Total.Folders}}</dd></div>
-    <div><dt class="text-zinc-500">Total on disk</dt><dd class="text-zinc-100">{{humanBytes .Total.Bytes}}</dd></div>
+    <div><dt class="text-zinc-500">Total mail size</dt><dd class="text-zinc-100">{{humanBytes .Total.Bytes}}</dd></div>
   </dl>
+  <p class="px-3 pb-1 text-xs text-zinc-500">
+    Database on disk: <span class="text-zinc-300">{{humanBytes .DBSize}}</span>
+    <span class="block text-[11px] text-zinc-600">Mail size is what the server reports for your messages; only headers and cached bodies are stored locally.</span>
+  </p>
 
   {{/* NOTE: /refresh is global, so one footer button — no per-account
        sync endpoint exists and this dialog isn't reason enough to add one. */}}
