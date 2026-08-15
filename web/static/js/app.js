@@ -648,6 +648,14 @@ function moveSelection(delta) {
   selectRow(rows[i]);
   return true;
 }
+// J/K: same two contexts as moveSelection, but all the way to the end.
+function jumpEdge(dir) {
+  const pane = readingScroller();
+  if (pane) { pane.scrollTo({ top: dir > 0 ? pane.scrollHeight : 0, behavior: "smooth" }); return true; }
+  const rows = listRows();
+  if (rows.length) selectRow(dir > 0 ? rows[rows.length - 1] : rows[0]);
+  return true;
+}
 function currentId() {
   const r = selectedRow();
   // Sub-rows of an expanded thread carry data-mid (their id is msg-s<id>, since
@@ -1794,6 +1802,7 @@ document.addEventListener("dblclick", (e) => {
   let startX = 0, startY = 0, startT = 0;
   let swRow = null, axis = null, dx = 0, pane = null;
   let mouseDown = false, suppressClick = false, lastTouchTime = 0;
+  let lastScrollT = 0, scrollTap = false;
 
   const swipeAction = (left) => rowGesturePref(left ? "swipeLeft" : "swipeRight", left ? "none" : "unread");
 
@@ -1849,6 +1858,14 @@ document.addEventListener("dblclick", (e) => {
 
   document.addEventListener("touchstart", (e) => {
     lastTouchTime = Date.now(); // so a synthesized mousedown right after doesn't double-fire
+    // NOTE: "the list was still moving" == a scroll event fired in the last
+    // 100ms — momentum scroll emits one per frame, so a fling is always inside
+    // it and a settled list never is. Ceiling: a deliberate tap landing within
+    // 100ms of any scroll (incl. selectRow's scrollIntoView) is eaten too.
+    // Upgrade path if that ever bites: compare #message-list scrollTop across a
+    // rAF instead of timing the events.
+    scrollTap = Date.now() - lastScrollT < 100;
+    window.__ctxTap = false; // set by the contextmenu handler if this press long-presses
     const t = e.touches[0];
     if (!t) return;
     startX = t.clientX;
@@ -1884,6 +1901,11 @@ document.addEventListener("dblclick", (e) => {
     if (!row || (e.target.closest && e.target.closest("button"))) return;
     const t = e.changedTouches[0];
     if (t && Math.hypot(t.clientX - startX, t.clientY - startY) > MOVE_THRESHOLD) return;
+    // A long press already opened the row menu, and a tap that arrests a fling
+    // only stops the scroll — both must not also open the row. preventDefault
+    // here kills the browser-synthesized click, which covers the disabled-gesture
+    // path below too (that one returns without ever calling it).
+    if (window.__ctxTap || scrollTap) { e.preventDefault(); return; }
     const dblAct = rowGesturePref("dblAction", "unread");
     if (!ROW_ACTIONS[dblAct]) return; // gesture disabled: let the tap open the row, undelayed
     e.preventDefault(); // suppress the synthesized click; we drive it ourselves
@@ -1965,6 +1987,9 @@ document.addEventListener("dblclick", (e) => {
     e.preventDefault();
     e.stopPropagation();
   }, true);
+
+  // Capture, so it sees scrolls on #message-list (which don't bubble).
+  document.addEventListener("scroll", () => { lastScrollT = Date.now(); }, true);
 })();
 
 // --- right-click context menu on list rows --------------------------------
@@ -1984,6 +2009,10 @@ document.addEventListener("contextmenu", (e) => {
   const row = e.target.closest && e.target.closest("#message-list li[data-message-row]");
   if (!row || !window.htmx) return;
   e.preventDefault();
+  // Touch only: tells the touchend tap logic this press was a long press, so
+  // the lift opens the menu and nothing else. Cleared on every touchstart, and
+  // never read on the mouse path — desktop right-click stays untouched.
+  window.__ctxTap = true;
   closeRowMenu(); // one menu at a time
   selectRow(row);
   const id = row.dataset.mid || row.id.replace(/^msg-/, "");
@@ -2518,6 +2547,8 @@ const keymap = {
   "c": () => openCompose(""),
   "j": () => moveSelection(1),
   "k": () => moveSelection(-1),
+  "J": () => jumpEdge(1),
+  "K": () => jumpEdge(-1),
   "o": () => openSelected(),
   // Space expands/collapses the selected thread by clicking its disclosure
   // button — the same control the mouse uses, so the htmx fetch, the hidden
