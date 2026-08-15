@@ -2631,6 +2631,15 @@ function toggleAbout() {
 }
 document.addEventListener("sm:about", toggleAbout);
 
+// Opens (never toggles) — the same sm:accounts event also drives the overlay's
+// hx-get, so a second dispatch while it's open would refetch, not close. Escape
+// and the backdrop close it.
+function openAccounts() {
+  const el = document.getElementById("accounts-overlay");
+  if (el) el.hidden = false;
+}
+document.addEventListener("sm:accounts", openAccounts);
+
 document.addEventListener("keydown", (e) => {
   // Ctrl+Enter sends from the compose body field (submit syncs the editor).
   if (e.ctrlKey && e.key === "Enter" && e.target?.matches?.('#compose-form textarea[name="body"]')) {
@@ -2688,6 +2697,8 @@ document.addEventListener("keydown", (e) => {
   // that's what made the star and thread-disclosure buttons keyboard-dead).
   if (t instanceof HTMLElement && (e.key === "Enter" || e.key === " ") && t.closest("button, summary, a[href]")) return;
   if (e.key === "Escape") {
+    const accounts = document.getElementById("accounts-overlay");
+    if (accounts && !accounts.hidden) { accounts.hidden = true; return; }
     const about = document.getElementById("about-overlay");
     if (about && !about.hidden) { about.hidden = true; return; }
     const help = document.getElementById("help-overlay");

@@ -1,0 +1,14 @@
+{{define "accounts-overlay"}}
+<div id="accounts-overlay" hidden
+     class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
+     onclick="this.hidden = true">
+  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()"
+       role="dialog" aria-modal="true" aria-label="Accounts">
+    <h2 class="text-zinc-100 font-semibold mb-4">Accounts</h2>
+    {{/* Fetched on every open (the sm:accounts event body-dispatched by the
+         status bar), so the counters are never a stale page render. */}}
+    <div id="accounts-info" hx-get="/accounts/info" hx-trigger="sm:accounts from:body"
+         class="text-xs text-zinc-500">Loading…</div>
+  </div>
+</div>
+{{end}}

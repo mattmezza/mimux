@@ -223,3 +223,40 @@ func TestEffectiveSyncSettings(t *testing.T) {
 		t.Fatalf("explicit zero body-cache override lost: got %d", bodyCache)
 	}
 }
+
+// TestAccountStats: counters must be grouped per account, not summed across
+// them, and must survive an account with folders but no messages.
+func TestAccountStats(t *testing.T) {
+	s := open(t)
+	a, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	_, _ = s.UpsertFolder("A", "Sent", "sent", 1)
+	b, _ := s.UpsertFolder("B", "INBOX", "inbox", 0)
+	for _, m := range []*Message{
+		{Account: "A", FolderID: a, UID: 1, Size: 100},
+		{Account: "A", FolderID: a, UID: 2, Size: 250, IsRead: true},
+		{Account: "B", FolderID: b, UID: 1, Size: 7},
+	} {
+		if err := s.UpsertMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, id := range []int64{a, b} {
+		if err := s.RecountUnread(id); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	got, err := s.AccountStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]AccountStat{
+		"A": {Messages: 2, Unread: 1, Folders: 2, Bytes: 350},
+		"B": {Messages: 1, Unread: 1, Folders: 1, Bytes: 7},
+	}
+	for name, w := range want {
+		if got[name] != w {
+			t.Errorf("%s: got %+v want %+v", name, got[name], w)
+		}
+	}
+}

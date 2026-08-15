@@ -2,11 +2,16 @@
 <footer id="statusbar" hx-get="/statusbar" hx-trigger="sm:sync from:body, every 60s" hx-swap="outerHTML"
         class="h-7 shrink-0 hidden md:flex items-center justify-between px-4 border-t border-zinc-800 bg-zinc-900 text-[11px] text-zinc-500">
   <span id="sync-status" class="flex items-center gap-3">
+    {{/* Inline onclick like the About button: survives the 60s outerHTML poll
+         swap with no rebinding. Body-dispatched so the overlay's hx-trigger
+         (from:body) fires too; it bubbles up to the document listener. */}}
     {{range .Statuses}}
-    <span class="flex items-center gap-1.5" title="{{.Message}}">
+    <button type="button" title="{{.Message}}" aria-label="Account details: {{acctLabel .Account}}"
+      onclick="document.body.dispatchEvent(new CustomEvent('sm:accounts', {bubbles: true}))"
+      class="flex items-center gap-1.5 -mx-1 px-1 py-0.5 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">
       {{if eq .State "ok"}}<span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>{{else if eq .State "syncing"}}<span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>{{else}}<span class="w-1.5 h-1.5 rounded-full bg-red-500"></span>{{end}}
       <span>{{acctLabel .Account}}{{if eq .State "syncing"}} syncing…{{else if eq .State "error"}} error{{else if not .LastSync.IsZero}} ({{relTime .LastSync}}{{if ne (relTime .LastSync) "now"}} ago{{end}}){{end}}</span>
-    </span>
+    </button>
     {{else}}
     <span>Ready</span>
     {{end}}

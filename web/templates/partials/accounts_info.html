@@ -1,0 +1,53 @@
+{{define "accounts_info"}}
+<div class="space-y-2">
+  {{range .Accounts}}
+  <div class="rounded-md border border-zinc-700 bg-zinc-800/30 px-3 py-2.5">
+    <div class="flex items-center gap-2">
+      {{if eq .State "ok"}}<span class="w-2 h-2 rounded-full bg-green-500 shrink-0" title="Synced"></span>
+      {{else if eq .State "syncing"}}<span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" title="Syncing"></span>
+      {{else if .State}}<span class="w-2 h-2 rounded-full bg-red-500 shrink-0" title="Error"></span>
+      {{else}}<span class="w-2 h-2 rounded-full bg-zinc-600 shrink-0" title="Idle"></span>{{end}}
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm text-zinc-100 truncate">{{acctLabel .Name}}</span>
+        <span class="block text-xs text-zinc-500 truncate">{{.Email}} · {{if .Provider}}{{.Provider}}{{else}}custom{{end}} · {{if eq .Auth "oauth2"}}OAuth2{{else}}password{{end}}</span>
+      </span>
+      <span class="shrink-0 text-xs text-zinc-500" title="{{absTime .LastSync}}">
+        {{if .LastSync.IsZero}}never synced{{else}}synced {{relTime .LastSync}}{{if ne (relTime .LastSync) "now"}} ago{{end}}{{end}}
+      </span>
+    </div>
+
+    {{if and (eq .State "error") .Message}}
+    <p class="mt-2 rounded bg-red-500/10 px-2 py-1.5 text-xs text-red-300 break-words">{{.Message}}</p>
+    {{end}}
+    {{if .NeedsAuth}}
+    <a href="/oauth/{{.Name}}/start"
+       class="mt-2 inline-block text-xs px-2.5 py-1 rounded-md bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-colors duration-150">Needs re-authorization — connect</a>
+    {{end}}
+
+    <dl class="mt-2 grid grid-cols-4 gap-2 text-xs">
+      <div><dt class="text-zinc-500">Messages</dt><dd class="text-zinc-200">{{.Messages}}</dd></div>
+      <div><dt class="text-zinc-500">Unread</dt><dd class="text-zinc-200">{{.Unread}}</dd></div>
+      <div><dt class="text-zinc-500">Folders</dt><dd class="text-zinc-200">{{.Folders}}</dd></div>
+      <div><dt class="text-zinc-500">On disk</dt><dd class="text-zinc-200">{{humanBytes .Bytes}}</dd></div>
+    </dl>
+  </div>
+  {{else}}
+  <p class="text-sm text-zinc-500">No accounts yet.</p>
+  {{end}}
+
+  <dl class="grid grid-cols-4 gap-2 px-3 py-2.5 text-xs border-t border-zinc-700">
+    <div><dt class="text-zinc-500">Total messages</dt><dd class="text-zinc-100">{{.Total.Messages}}</dd></div>
+    <div><dt class="text-zinc-500">Total unread</dt><dd class="text-zinc-100">{{.Total.Unread}}</dd></div>
+    <div><dt class="text-zinc-500">Total folders</dt><dd class="text-zinc-100">{{.Total.Folders}}</dd></div>
+    <div><dt class="text-zinc-500">Total on disk</dt><dd class="text-zinc-100">{{humanBytes .Total.Bytes}}</dd></div>
+  </dl>
+
+  {{/* ponytail: /refresh is global, so one footer button — no per-account
+       sync endpoint exists and this dialog isn't reason enough to add one. */}}
+  <div class="flex justify-end pt-1">
+    <button type="button" hx-post="/refresh" hx-swap="none"
+      hx-on::after-request="window.toast&&toast('Syncing all accounts…')"
+      class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Sync now</button>
+  </div>
+</div>
+{{end}}

@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mattmezza/sm/internal/account"
 	"github.com/mattmezza/sm/internal/auth"
 	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/sm/internal/mail"
 	"github.com/mattmezza/sm/internal/store"
 )
 
@@ -115,6 +117,7 @@ type accountView struct {
 	config.Account
 	State     string
 	Message   string
+	LastSync  time.Time
 	NeedsAuth bool
 	CanOAuth  bool
 }
@@ -151,15 +154,15 @@ func (v accountView) Editable() acctEditable {
 }
 
 func (s *Server) accountViews() []accountView {
-	statusByName := map[string]struct{ State, Message string }{}
+	statusByName := map[string]mail.AccountStatus{}
 	for _, st := range s.mail.Status() {
-		statusByName[st.Account] = struct{ State, Message string }{st.State, st.Message}
+		statusByName[st.Account] = st
 	}
 	var out []accountView
 	for _, a := range s.accounts() {
 		v := accountView{Account: a, CanOAuth: account.SupportsOAuth(a.Provider)}
 		if st, ok := statusByName[a.Name]; ok {
-			v.State, v.Message = st.State, st.Message
+			v.State, v.Message, v.LastSync = st.State, st.Message, st.LastSync
 		}
 		if a.Auth == "oauth2" {
 			if tok, _ := s.store.GetToken(a.Name); tok == nil || (tok.Access == "" && tok.Refresh == "") {
