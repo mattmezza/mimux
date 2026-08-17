@@ -1,0 +1,4 @@
+# The filled-in env file: Stripe live key and the licence signing key.
+account.env
+# `go build` output when built in place.
+account

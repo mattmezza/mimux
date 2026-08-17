@@ -1,0 +1,34 @@
+{{define "content"}}
+<h2>Licence and billing</h2>
+{{if .Sent}}
+  <div class="notice">
+    <p>
+      If we have a licence for that address, {{if .Portal}}a link to manage the
+      subscription{{else}}the key{{end}} is on its way to it.
+    </p>
+  </div>
+  <p class="small muted">
+    We do not say whether the address is one of ours &mdash; that answer would
+    make this page a way to find out who our customers are.
+  </p>
+{{else}}
+  <p>
+    Enter the address you paid with. We will email the licence key to it, or a
+    link to Stripe&rsquo;s billing portal where you can update the card or
+    cancel.
+  </p>
+  <form method="post" action="/retrieve">
+    <label for="email" class="small muted">Purchase email</label>
+    <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+    <div class="row">
+      <button type="submit" name="action" value="licence">Email me my key</button>
+      <button type="submit" name="action" value="portal" class="ghost">Manage subscription</button>
+    </div>
+  </form>
+  <p class="small muted">
+    Three requests an hour, per address and per network. Keys are never shown on
+    this page, only sent to the address that bought them.
+  </p>
+{{end}}
+<p><a href="/">Back to the plans</a></p>
+{{end}}

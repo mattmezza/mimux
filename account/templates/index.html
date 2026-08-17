@@ -1,0 +1,43 @@
+{{define "content"}}
+<p>
+  The mail client is free and AGPL, forever. This buys the automation layer on
+  top of it: the REST API, the MCP server, and webhooks &mdash; everything that
+  lets something other than a human drive your mailbox.
+</p>
+
+<div class="plans">
+  <div class="card">
+    <h2>Annual</h2>
+    <div class="price">&euro;49 <span>/ year</span></div>
+    <ul>
+      <li>Every pro feature, always current</li>
+      <li>Email support</li>
+      <li>Cancel any time; the key runs to the end of the term you paid for</li>
+    </ul>
+    <form method="post" action="/checkout">
+      <input type="hidden" name="plan" value="annual">
+      <button type="submit">Buy annual</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Perpetual</h2>
+    <div class="price">&euro;99 <span>once</span></div>
+    <ul>
+      <li>Yours forever, no renewal</li>
+      <li>Entitles you to every release up to the current version</li>
+      <li>Later versions need a new purchase &mdash; the old one never stops working</li>
+    </ul>
+    <form method="post" action="/checkout">
+      <input type="hidden" name="plan" value="perpetual">
+      <button type="submit">Buy perpetual</button>
+    </form>
+  </div>
+</div>
+
+<p class="small muted">
+  Both plans are one licence key, emailed to you after payment. The key is an
+  ed25519 signature that mimux checks locally; there is no activation, no seat
+  count, and no server to be offline when you need to start the binary.
+</p>
+{{end}}
