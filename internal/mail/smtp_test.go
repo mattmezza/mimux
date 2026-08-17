@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -10,7 +11,7 @@ import (
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 // fakeSession is a minimal go-smtp Session that requires PLAIN auth

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -7,8 +8,8 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
-	"github.com/mattmezza/sm/internal/search"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/search"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Criteria maps a parsed SearchQuery to IMAP SEARCH criteria. in:/label: are

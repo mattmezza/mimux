@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -7,8 +8,8 @@ import (
 
 	"github.com/emersion/go-imap/v2/imapclient"
 
-	"github.com/mattmezza/sm/internal/filter"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/filter"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // matchingActions returns, in rule position order, every action from every

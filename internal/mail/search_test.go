@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -5,7 +6,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 
-	"github.com/mattmezza/sm/internal/search"
+	"github.com/mattmezza/mimux/internal/search"
 )
 
 func TestCriteria(t *testing.T) {

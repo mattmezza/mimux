@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package translate calls the Google Translate v2 REST API. Callers cache the
 // results in SQLite (see store.TranslationCacheKey).
 package translate
@@ -84,8 +85,8 @@ type textSeg struct {
 // TranslateHTML translates the human-readable text of an HTML document and
 // returns the re-serialized document — same markup, styling, images and
 // layout, only the words change. The <html> element is tagged with the pair
-// that was used — data-sm-target, data-sm-source when the caller picked one,
-// and data-sm-lang=<detected source language> when it did not — so the reading
+// that was used — data-mimux-target, data-mimux-source when the caller picked one,
+// and data-mimux-lang=<detected source language> when it did not — so the reading
 // pane can label it.
 func (c *Client) TranslateHTML(ctx context.Context, doc string) (out, detectedLang string, err error) {
 	if c == nil || c.APIKey == "" {
@@ -130,12 +131,12 @@ func (c *Client) TranslateHTML(ctx context.Context, doc string) (out, detectedLa
 	// (so the two pickers show it) and, when auto-detecting, what came back.
 	if el := findElement(root, "html"); el != nil {
 		if detectedLang != "" {
-			el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-lang", Val: detectedLang})
+			el.Attr = append(el.Attr, html.Attribute{Key: "data-mimux-lang", Val: detectedLang})
 		}
 		if c.Source != "" {
-			el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-source", Val: c.Source})
+			el.Attr = append(el.Attr, html.Attribute{Key: "data-mimux-source", Val: c.Source})
 		}
-		el.Attr = append(el.Attr, html.Attribute{Key: "data-sm-target", Val: c.Target})
+		el.Attr = append(el.Attr, html.Attribute{Key: "data-mimux-target", Val: c.Target})
 	}
 	var buf bytes.Buffer
 	if err := html.Render(&buf, root); err != nil {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package ai drafts email compose/reply text via an OpenRouter chat
 // completion model.
 package ai
@@ -11,10 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 // ErrDisabled is returned when no API key is configured.
@@ -25,7 +27,7 @@ var ErrDisabled = errors.New("ai: disabled (no openrouter api key configured)")
 var ErrAuth = errors.New("ai: openrouter rejected the api key")
 
 // defaultAPIURL is OpenRouter, which is what an unconfigured install talks to.
-// SM_AI_BASE_URL points sm at any other OpenAI-compatible endpoint instead —
+// MIMUX_AI_BASE_URL points mimux at any other OpenAI-compatible endpoint instead —
 // another provider, or a local llama.cpp/Ollama sidecar — since chatRequest and
 // chatResponse are already that wire format.
 const defaultAPIURL = "https://openrouter.ai/api/v1/chat/completions"
@@ -96,7 +98,7 @@ func NewClient(apiKey, model string) *Client {
 	return &Client{
 		APIKey:     apiKey,
 		Model:      model,
-		BaseURL:    os.Getenv("SM_AI_BASE_URL"),
+		BaseURL:    config.Env("AI_BASE_URL"),
 		HTTPClient: &http.Client{Timeout: 60 * time.Second},
 	}
 }

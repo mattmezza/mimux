@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -9,8 +10,8 @@ import (
 	"github.com/emersion/go-sasl"
 	"golang.org/x/oauth2"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // ErrNoToken is returned when an oauth2 account has no stored token yet —

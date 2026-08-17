@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package store
 
 import (
@@ -5,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/mattmezza/sm/internal/filter"
+	"github.com/mattmezza/mimux/internal/filter"
 )
 
 // ListRules returns every rule (any account, global included), ordered by

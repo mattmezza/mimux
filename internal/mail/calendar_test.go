@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -5,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 // wrapICS wraps an iCalendar body in a minimal multipart/alternative RFC 822

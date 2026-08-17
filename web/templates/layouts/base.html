@@ -7,7 +7,7 @@
   <script>
     (function(){
       try {
-        var t = localStorage.getItem("sm.theme") || "system";
+        var t = localStorage.getItem("mimux.theme") || "system";
         var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
         var el = document.documentElement;
         el.dataset.theme = dark ? "dark" : "light";
@@ -23,7 +23,7 @@
        scroll restore in app.js, since that hangs off htmx:beforeHistorySave.
        Three is plenty for list -> message -> back. -->
   <meta name="htmx-config" content='{"historyCacheSize":3}'>
-  <title>{{block "title" .}}SM — Simple Mail{{end}}</title>
+  <title>{{block "title" .}}mimux{{end}}</title>
   <link rel="stylesheet" href="/static/css/dist.css">
   {{/* Accent override (Settings → Appearance): redefines the indigo scale
        Tailwind compiled into every utility. Must sit after dist.css — same
@@ -35,16 +35,16 @@
   {{/* iOS home screen only takes PNG, so it keeps the default palette. */}}
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script defer src="/static/js/htmx.min.js"></script>
-  <!-- app.js must load before Alpine: it registers the smUI component on the
+  <!-- app.js must load before Alpine: it registers the mimuxUI component on the
        alpine:init event, which Alpine fires the moment its own script runs. -->
   <script defer src="/static/js/app.js"></script>
   <script defer src="/static/js/alpinejs.min.js"></script>
   {{with .CSRF}}<meta name="csrf-token" content="{{.}}">{{end}}
 </head>
-{{/* sm-syncing is the one and only switch for the "Syncing…" spinner: server
+{{/* mimux-syncing is the one and only switch for the "Syncing…" spinner: server
      truth on first paint, then toggled by app.js from the sync-status SSE
      event. On <body> so it survives every htmx swap underneath it. */}}
-<body class="h-screen bg-zinc-900 text-zinc-300 antialiased overflow-hidden text-sm{{if .Syncing}} sm-syncing{{end}}">
+<body class="h-screen bg-zinc-900 text-zinc-300 antialiased overflow-hidden text-sm{{if .Syncing}} mimux-syncing{{end}}">
 <a href="#main-content" class="skip-link">Skip to content</a>
 {{block "content" .}}{{end}}
 <div id="compose-root"></div>

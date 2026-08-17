@@ -1,11 +1,12 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
 	"net/http"
 	"strings"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/mail"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/mail"
 )
 
 // attendeeView is one row in the card's expandable attendee list.

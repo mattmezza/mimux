@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -6,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Thread is a group of messages that form one conversation, ordered oldest

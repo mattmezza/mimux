@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
@@ -12,10 +13,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Identity is one selectable "send as" address for the compose From menu:
@@ -521,9 +522,9 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		_ = s.store.DeleteDraft(draftID)
 	}
 	if scheduled {
-		w.Header().Set("SM-Scheduled", sendAt.UTC().Format(time.RFC3339))
+		w.Header().Set("Mimux-Scheduled", sendAt.UTC().Format(time.RFC3339))
 	} else {
-		w.Header().Set("SM-Outbox-Id", strconv.FormatInt(o.ID, 10))
+		w.Header().Set("Mimux-Outbox-Id", strconv.FormatInt(o.ID, 10))
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

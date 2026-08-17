@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package config
 
 import (
@@ -9,7 +10,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	// Zero env vars (except a temp DB so the generated secret lands in TempDir).
 	dir := t.TempDir()
-	t.Setenv("SM_DB", filepath.Join(dir, "sm.db"))
+	t.Setenv("MIMUX_DB", filepath.Join(dir, "mimux.db"))
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -34,11 +35,11 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadEnvOverrides(t *testing.T) {
-	t.Setenv("SM_DB", filepath.Join(t.TempDir(), "x.db"))
-	t.Setenv("SM_HOST", "127.0.0.1")
-	t.Setenv("SM_PORT", "9099")
-	t.Setenv("SM_BASE_URL", "https://mail.example.com")
-	t.Setenv("SM_SECRET", "explicit-secret")
+	t.Setenv("MIMUX_DB", filepath.Join(t.TempDir(), "x.db"))
+	t.Setenv("MIMUX_HOST", "127.0.0.1")
+	t.Setenv("MIMUX_PORT", "9099")
+	t.Setenv("MIMUX_BASE_URL", "https://mail.example.com")
+	t.Setenv("MIMUX_SECRET", "explicit-secret")
 	cfg, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -50,10 +51,30 @@ func TestLoadEnvOverrides(t *testing.T) {
 }
 
 func TestLoadRejectsBadPort(t *testing.T) {
-	t.Setenv("SM_DB", filepath.Join(t.TempDir(), "x.db"))
-	t.Setenv("SM_PORT", "not-a-number")
+	t.Setenv("MIMUX_DB", filepath.Join(t.TempDir(), "x.db"))
+	t.Setenv("MIMUX_PORT", "not-a-number")
 	if _, err := Load(); err == nil {
-		t.Fatal("expected error for invalid SM_PORT")
+		t.Fatal("expected error for invalid MIMUX_PORT")
+	}
+}
+
+// The SM_ fallback is what keeps an existing install booting after the rename.
+// TODO(v0.21): delete with the shim.
+func TestLoadFallsBackToLegacySMEnv(t *testing.T) {
+	t.Setenv("MIMUX_DB", filepath.Join(t.TempDir(), "x.db"))
+	t.Setenv("SM_PORT", "9099")
+	t.Setenv("SM_SECRET", "legacy-secret")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Server.Port != 9099 || cfg.Server.Secret != "legacy-secret" {
+		t.Errorf("legacy SM_ vars ignored: %+v", cfg.Server)
+	}
+	// MIMUX_ wins when both are set.
+	t.Setenv("MIMUX_PORT", "9100")
+	if cfg, err = Load(); err != nil || cfg.Server.Port != 9100 {
+		t.Errorf("MIMUX_PORT should win over SM_PORT: %+v (%v)", cfg.Server, err)
 	}
 }
 

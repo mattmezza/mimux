@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -5,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // schedulerTick is how often the outbox is drained. 5s is plenty: undo windows

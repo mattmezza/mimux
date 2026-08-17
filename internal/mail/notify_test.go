@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -13,8 +14,8 @@ import (
 	"time"
 
 	"github.com/emersion/go-imap/v2"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func testManager(t *testing.T) *Manager {
@@ -51,7 +52,7 @@ func fakeSubscription(t *testing.T, endpoint string) store.PushSub {
 
 // TestNotifyPushPrunesGoneSubscription is the one that matters: a push service
 // answering 410 means the subscription is dead forever, and a row that isn't
-// deleted is one SM keeps POSTing to on every single new message.
+// deleted is one mimux keeps POSTing to on every single new message.
 func TestNotifyPushPrunesGoneSubscription(t *testing.T) {
 	m := testManager(t)
 	var hits int32

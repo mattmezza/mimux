@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package filter
 
 import (
@@ -12,8 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/web"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/web"
 )
 
 // RuleStore is the persistence dependency Routes needs. *store.Store

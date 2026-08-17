@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package search
 
 import (
@@ -16,60 +17,60 @@ func TestBuildLocalSQL(t *testing.T) {
 		wantArgs  []any
 	}{
 		{
-			name: "free text via fts + account scope",
+			name:  "free text via fts + account scope",
 			query: "hello", scope: ScopeAccount, account: "A",
 			wantParts: []string{"messages_fts MATCH ?", "account = ?"},
 			wantArgs:  []any{`"hello"`, "A"},
 		},
 		{
-			name: "from expands to two likes",
+			name:  "from expands to two likes",
 			query: "from:alice", scope: ScopeAll,
 			wantParts: []string{"(from_address LIKE ? OR from_name LIKE ?)"},
 			wantArgs:  []any{"%alice%", "%alice%"},
 		},
 		{
-			name: "is unread and has attachment",
+			name:  "is unread and has attachment",
 			query: "is:unread has:attachment", scope: ScopeAll,
 			wantParts: []string{"is_read = 0", "has_attachment = 1"},
 			wantArgs:  nil,
 		},
 		{
-			name: "negated from",
+			name:  "negated from",
 			query: "-from:noreply", scope: ScopeAll,
 			wantParts: []string{"NOT (from_address LIKE ? OR from_name LIKE ?)"},
 			wantArgs:  []any{"%noreply%", "%noreply%"},
 		},
 		{
-			name: "negated subject uses NOT LIKE not fts",
+			name:  "negated subject uses NOT LIKE not fts",
 			query: "-subject:spam", scope: ScopeAll,
 			wantParts: []string{"subject NOT LIKE ?"},
 			wantArgs:  []any{"%spam%"},
 		},
 		{
-			name: "subject fts column filter",
+			name:  "subject fts column filter",
 			query: "subject:report", scope: ScopeAll,
 			wantParts: []string{`messages_fts MATCH ?`},
 			wantArgs:  []any{`subject:"report"`},
 		},
 		{
-			name: "has link snippet scan",
+			name:  "has link snippet scan",
 			query: "has:link", scope: ScopeAll,
 			wantParts: []string{"snippet LIKE ?"},
 			wantArgs:  []any{"%http%"},
 		},
 		{
-			name: "folder scope",
+			name:  "folder scope",
 			query: "hi", scope: ScopeFolder, folder: 7,
 			wantParts: []string{"folder_id = ?"},
 		},
 		{
-			name: "in operator subquery",
+			name:  "in operator subquery",
 			query: "in:archive", scope: ScopeAll,
 			wantParts: []string{"folder_id IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"},
 			wantArgs:  []any{"archive", "%archive%"},
 		},
 		{
-			name: "after date",
+			name:  "after date",
 			query: "after:2026-01-01", scope: ScopeAll,
 			wantParts: []string{"date >= ?"},
 			wantArgs:  []any{"2026-01-01T00:00:00Z"},

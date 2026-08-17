@@ -5,9 +5,9 @@
   <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()"
        role="dialog" aria-modal="true" aria-label="Accounts">
     <h2 class="text-zinc-100 font-semibold mb-4">Accounts</h2>
-    {{/* Fetched on every open (the sm:accounts event body-dispatched by the
+    {{/* Fetched on every open (the mimux:accounts event body-dispatched by the
          status bar), so the counters are never a stale page render. */}}
-    <div id="accounts-info" hx-get="/accounts/info" hx-trigger="sm:accounts from:body"
+    <div id="accounts-info" hx-get="/accounts/info" hx-trigger="mimux:accounts from:body"
          class="text-xs text-zinc-500">Loading…</div>
   </div>
 </div>

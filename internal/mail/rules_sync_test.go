@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -12,9 +13,9 @@ import (
 	"github.com/emersion/go-imap/v2/imapserver"
 	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/filter"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/filter"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // literal adapts a byte slice to the imap.LiteralReader the memory server's

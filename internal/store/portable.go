@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package store
 
 import (
@@ -5,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/filter"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/filter"
 )
 
 // ExportVersion is the envelope version for portable config dumps. Bump when the

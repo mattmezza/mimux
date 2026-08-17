@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -12,7 +13,7 @@ import (
 	webpush "github.com/SherClockHolmes/webpush-go"
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Notifications. Two transports hang off one trigger:
@@ -181,7 +182,7 @@ func (m *Manager) vapidSubscriber() string {
 	if u := m.cfg.Server.BaseURL; strings.HasPrefix(u, "https://") {
 		return u
 	}
-	return "mailto:sm@localhost"
+	return "mailto:mimux@localhost"
 }
 
 // VAPIDPublicKey returns the instance's public VAPID key, generating the pair
@@ -210,7 +211,7 @@ func (m *Manager) VAPIDPublicKey() string {
 func (m *Manager) NotifyTest() {
 	// NOTE: no link — a test notification has no message to open, so a tap
 	// falls back to "just open the app".
-	go m.notify("", "SM", "Test notification — notifications are working.", "")
+	go m.notify("", "mimux", "Test notification — notifications are working.", "")
 }
 
 // maybeNotify is the "tell me about every new message" path, called for each

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package store
 
 import (
@@ -7,7 +8,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/mattmezza/sm/internal/search"
+	"github.com/mattmezza/mimux/internal/search"
 )
 
 // SearchLocal runs an instant, index-backed search over the cached messages.

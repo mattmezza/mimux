@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -8,7 +9,7 @@ import (
 
 	"golang.org/x/oauth2"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestXOAUTH2InitialResponse(t *testing.T) {

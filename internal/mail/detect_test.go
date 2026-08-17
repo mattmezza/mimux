@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -26,20 +27,20 @@ func TestDetectSpecialUseFromAttrs(t *testing.T) {
 
 func TestDetectSpecialUseHeuristic(t *testing.T) {
 	cases := map[string]string{
-		"INBOX":                 "inbox",
-		"Sent":                  "sent",
-		"Sent Items":            "sent",
-		"[Gmail]/Sent Mail":     "sent",
-		"Drafts":                "drafts",
-		"Junk":                  "spam",
-		"Spam":                  "spam",
-		"Trash":                 "trash",
-		"Deleted Items":         "trash",
-		"Deleted Messages":      "trash",
-		"Archive":               "archive",
-		"All Mail":              "archive",
-		"Work/Projects":         "",
-		"Newsletters":           "",
+		"INBOX":             "inbox",
+		"Sent":              "sent",
+		"Sent Items":        "sent",
+		"[Gmail]/Sent Mail": "sent",
+		"Drafts":            "drafts",
+		"Junk":              "spam",
+		"Spam":              "spam",
+		"Trash":             "trash",
+		"Deleted Items":     "trash",
+		"Deleted Messages":  "trash",
+		"Archive":           "archive",
+		"All Mail":          "archive",
+		"Work/Projects":     "",
+		"Newsletters":       "",
 	}
 	for name, want := range cases {
 		if got := detectSpecialUse(nil, name); got != want {

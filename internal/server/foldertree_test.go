@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
 	"testing"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestFolderTree(t *testing.T) {

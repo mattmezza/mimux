@@ -1,0 +1,7 @@
+# Blank issues stay on: questions, suggestions and anything that doesn't fit the
+# two forms are welcome, and there is no Discussions tab to send them to.
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/mattmezza/mimux/security/advisories/new
+    about: Report privately here. Never in a public issue.

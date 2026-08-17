@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -13,7 +14,7 @@ import (
 	_ "github.com/emersion/go-message/charset" // register non-UTF-8 charsets
 	"golang.org/x/net/html"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // messageBody is a parsed, decoded email body ready for on-demand rendering.

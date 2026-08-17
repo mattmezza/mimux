@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package auth: argon2id password hashing, session cookies, CSRF.
 package auth
 
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	SessionCookie = "sm_session"
-	CSRFCookie    = "sm_csrf"
+	SessionCookie = "mimux_session"
+	CSRFCookie    = "mimux_csrf"
 	CSRFField     = "csrf_token"
 	SessionTTL    = 30 * 24 * time.Hour
 )

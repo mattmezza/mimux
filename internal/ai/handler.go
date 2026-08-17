@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package ai
 
 import (
@@ -8,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Routes returns a mountable router exposing the AI-assist JSON endpoints. CSRF

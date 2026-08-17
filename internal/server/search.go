@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
@@ -13,10 +14,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/search"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/search"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 const searchLimit = 100
@@ -116,19 +117,19 @@ func (s *Server) handleSearchSuggest(w http.ResponseWriter, r *http.Request) {
 func (s *Server) searchData(csrf, raw string, q *search.SearchQuery, scope search.Scope, account string, folderID int64, msgs []store.Message, serverRan bool) map[string]any {
 	groups := groupResults(msgs, scope)
 	return map[string]any{
-		"CSRF":      csrf,
-		"Q":         raw,
-		"Scope":     string(scope),
-		"Account":   account,
-		"Folder":    folderID,
-		"PushBase":  searchPushBase(raw, scope, folderID),
-		"Pills":     pills(q),
-		"Terms":     q.TextTerms(),
-		"Groups":    groups,
-		"Count":     len(msgs),
+		"CSRF":       csrf,
+		"Q":          raw,
+		"Scope":      string(scope),
+		"Account":    account,
+		"Folder":     folderID,
+		"PushBase":   searchPushBase(raw, scope, folderID),
+		"Pills":      pills(q),
+		"Terms":      q.TextTerms(),
+		"Groups":     groups,
+		"Count":      len(msgs),
 		"HasResults": len(msgs) > 0,
-		"Grouped":   scope == search.ScopeAll,
-		"ServerRan": serverRan,
+		"Grouped":    scope == search.ScopeAll,
+		"ServerRan":  serverRan,
 	}
 }
 

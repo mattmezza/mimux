@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package filter_test exercises the store's filter-rule CRUD against a real
 // (temp file) SQLite db. It lives here rather than internal/store because
 // store.go imports filter for the Rule type — an external test package
@@ -8,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mattmezza/sm/internal/filter"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/filter"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func openStore(t *testing.T) *store.Store {

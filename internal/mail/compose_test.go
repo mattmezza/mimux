@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -10,7 +11,7 @@ import (
 
 	emmail "github.com/emersion/go-message/mail"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 func TestPrefixSubject(t *testing.T) {
@@ -272,10 +273,10 @@ func TestRenderMarkdown(t *testing.T) {
 }
 
 // TestWrapHTMLEmail checks the wrapper ships a full document whose stylesheet is
-// scoped to the .sm-body container so it can't bleed into quoted replies.
+// scoped to the .mimux-body container so it can't bleed into quoted replies.
 func TestWrapHTMLEmail(t *testing.T) {
 	out := WrapHTMLEmail("<p>hi</p>")
-	for _, want := range []string{"<!DOCTYPE html>", "<style>", ".sm-body ", `class="sm-body"`, "<p>hi</p>"} {
+	for _, want := range []string{"<!DOCTYPE html>", "<style>", ".mimux-body ", `class="mimux-body"`, "<p>hi</p>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("WrapHTMLEmail missing %q in:\n%s", want, out)
 		}

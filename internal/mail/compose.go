@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -10,7 +11,7 @@ import (
 
 	emmail "github.com/emersion/go-message/mail"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 func htmlesc(s string) string { return html.EscapeString(s) }
@@ -228,7 +229,7 @@ func msgIDHost(email string) string {
 	if i := strings.LastIndex(email, "@"); i >= 0 && i+1 < len(email) {
 		return email[i+1:]
 	}
-	return "sm.local"
+	return "mimux.local"
 }
 
 // parseAddrs turns raw address strings into mail.Address values for the

@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest something mimux should do
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome, and the answer may well be no — mimux stays small on
+        purpose. Check
+        [things I will probably say no to](https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md#things-i-will-probably-say-no-to)
+        first; if your idea is on that list, it will save us both some typing.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve for you?
+      description: Describe the situation you hit, not the feature you imagined. The concrete annoyance is the useful part.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What did you try instead?
+      description: Existing filters, shortcuts, settings, another client, a script — and why it fell short.
+    validations:
+      required: false

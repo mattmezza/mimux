@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
@@ -8,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // TestComposeEmbedsSignature verifies the compose partial embeds the linked

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
@@ -10,11 +11,11 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/account"
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/account"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // accountFromForm builds an account from the add/edit form fields.
@@ -197,7 +198,7 @@ func (s *Server) handleConfigExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="sm-config.json"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="mimux-config.json"`)
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(exp); err != nil {

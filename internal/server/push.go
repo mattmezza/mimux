@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import (
 	"net/http"
 	"strings"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Web Push subscription endpoints (Settings → Notifications). The browser mints

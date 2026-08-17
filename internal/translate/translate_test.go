@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package translate
 
 import (
@@ -13,7 +14,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestTranslateHTML_Disabled(t *testing.T) {
@@ -55,7 +56,7 @@ func TestTranslateHTML_PreservesStructure(t *testing.T) {
 		`<td bgcolor="#eee">`,
 		`<img src="data:image/gif;base64,AAA" alt="Buongiorno"/>`,
 		`<b>`, `</table>`,
-		`data-sm-lang="it"`,
+		`data-mimux-lang="it"`,
 	} {
 		if !strings.Contains(out, keep) {
 			t.Errorf("output lost %q:\n%s", keep, out)
@@ -121,7 +122,7 @@ func TestTranslateHTML_Source(t *testing.T) {
 	if body := api2.rawBodies()[0]; !strings.Contains(body, `"source":"fr"`) {
 		t.Errorf("source not sent: %s", body)
 	}
-	for _, want := range []string{`data-sm-source="fr"`, `data-sm-target="en"`} {
+	for _, want := range []string{`data-mimux-source="fr"`, `data-mimux-target="en"`} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

@@ -1,6 +1,6 @@
-{{define "title"}}Inbox — SM{{end}}
+{{define "title"}}Inbox — mimux{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}{{if eq .Prefs.AvatarShape "rounded"}}avatar-rounded {{else if eq .Prefs.AvatarShape "square"}}avatar-square {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="smUI" :data-filter="filter"
+<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}{{if eq .Prefs.AvatarShape "rounded"}}avatar-rounded {{else if eq .Prefs.AvatarShape "square"}}avatar-square {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="mimuxUI" :data-filter="filter"
      {{/* Row gesture prefs live here (not on #message-list, which htmx swaps
           for search results and folder switches — this wrapper survives). */}}
      data-dbl-action="{{.Prefs.RowDoubleAction}}" data-swipe-left="{{.Prefs.SwipeLeftAction}}" data-swipe-right="{{.Prefs.SwipeRightAction}}">

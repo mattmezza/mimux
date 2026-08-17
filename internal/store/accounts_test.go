@@ -1,10 +1,11 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package store
 
 import (
 	"reflect"
 	"testing"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 func TestAccountsCRUD(t *testing.T) {
