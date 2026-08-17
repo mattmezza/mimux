@@ -41,6 +41,9 @@ func routes(deps ext.Deps) ext.Extension {
 	})
 
 	tokens := newTokenAuth(deps.Store, deps.Cfg.API.RateLimitPerMinute)
+	// Licence enforcement, and only here: /health above and the spec below stay
+	// open, and nothing in the mail client is behind this. See pro/licence.go.
+	licence := newLicenceGate(deps)
 	// The webhook delivery engine: subscribes to the mail hub and drains the
 	// delivery queue for as long as the process lives. Started here because
 	// this is the pro layer's only entry point — the free build has the
@@ -51,14 +54,16 @@ func routes(deps ext.Deps) ext.Extension {
 	// The MCP endpoint: same tokens, same scopes, agent-shaped. Stateless
 	// streamable HTTP — every POST is self-contained, so it sits behind the
 	// same auth middleware as the JSON API with nothing extra.
-	r.With(tokens.require).Handle("/mcp", newMCPHandler(a))
+	// Licence first, token second, everywhere: a 402 must not spend a request
+	// from the caller's rate-limit budget.
+	r.With(licence.require, tokens.require).Handle("/mcp", newMCPHandler(a))
 	r.Route("/v1", func(r chi.Router) {
 		// Outside the auth group on purpose: the spec is public documentation,
 		// and the client that most needs to read it is the one that hasn't got
 		// a working token yet.
 		r.Get("/openapi.json", handleOpenAPI)
 		r.Group(func(r chi.Router) {
-			r.Use(tokens.require)
+			r.Use(licence.require, tokens.require)
 			r.Get("/tokens/self", handleTokenSelf)
 			a.mount(r)
 		})

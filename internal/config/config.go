@@ -14,6 +14,8 @@
 //	MIMUX_SECRET   session/CSRF secret    (default: generated once, persisted next
 //	                                        to the DB so sessions survive restarts)
 //	MIMUX_API_RATE_LIMIT  API requests per token per minute (default 120, 0 = off)
+//	MIMUX_LICENCE_KEY     pro licence key; takes precedence over the one saved
+//	                        in Settings → API (free builds ignore it)
 //
 // The pre-rename SM_* names still work for one release — see Env.
 package config
@@ -37,6 +39,16 @@ type Config struct {
 	Server Server
 	DB     DB
 	API    API
+	// Version is the running build's version string, set by cmd/mimux at boot
+	// (it owns the -ldflags value). It rides here because the pro layer's
+	// licence check compares it against a perpetual licence's watermark, and
+	// cfg is what it already gets through ext.Deps.
+	Version string
+	// LicenceKey is MIMUX_LICENCE_KEY. Blank falls back to the key stored in
+	// the database. Bootstrap config like the rest of this struct: an install
+	// that provisions its licence from the environment should not have to reach
+	// into SQLite to do it.
+	LicenceKey string
 	// Accounts is a runtime snapshot of the DB-backed accounts, refreshed by the
 	// server whenever the account list changes. It is NOT parsed from any file —
 	// it exists so the HTTP layer and compose selector can read the current
@@ -190,6 +202,7 @@ func Load() (*Config, error) {
 		}
 		cfg.API.RateLimitPerMinute = n
 	}
+	cfg.LicenceKey = strings.TrimSpace(Env("LICENCE_KEY"))
 	if v := Env("DB"); v != "" {
 		cfg.DB.Path = v
 	}

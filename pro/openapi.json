@@ -4,7 +4,7 @@
     "title": "mimux API",
     "version": "v1",
     "summary": "The REST API of the mimux pro layer — mail read, written and moved by a machine.",
-    "description": "mimux is a self-hosted, single-user mail client.\n\n**The product line, in one sentence: a human driving mimux is free, a machine driving mimux is the paid pro layer.**\n\nThe mail client itself — multi-account unified inbox, IMAP IDLE sync, threading, search, compose, drafts, undo-send, scheduled send, filters, calendar invites, notifications, backup/restore, AI compose and translate with your own key — is AGPL-3.0 and always will be. Nothing is ever moved from the free side to the paid side.\n\nThis API is the other half: `pro/`, licensed under the [Elastic Licence 2.0](https://github.com/mattmezza/mimux/blob/main/pro/LICENSE). It is only compiled into the binary built with the `pro` build tag. The free binary does not contain it, and `make verify-free` proves that on every commit. See [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md).\n\n## There is no central API host\n\nmimux is software you run. Every install is its own API. The `servers` entry below is a template: substitute the origin of *your* mimux, e.g. `https://mail.example.com/api`. There is no shared hosted endpoint to point a client at, and there never will be — your mail stays on your machine.\n\n## Conventions\n\n- All field names are `snake_case`.\n- All timestamps are RFC 3339 in UTC (`2026-08-17T09:30:00Z`).\n- Request bodies are JSON and reject unknown fields with `400 invalid_request`, so a typo fails loudly instead of being silently dropped. Bodies are capped at 32 MiB.\n- Every non-2xx response is the same `Error` envelope: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.\n- Collections use `{\"data\": [...], \"next_cursor\": \"...\"}`. `next_cursor` is `\"\"` when there is nothing left; endpoints that are not paginated still return the field, always as `\"\"`.\n\n## Authentication\n\nA personal access token, minted in **Settings → API**, sent as `Authorization: Bearer mimux_pat_…`. Tokens carry scopes; every operation documents the scope it needs both in prose and in the `x-required-scope` extension. Revoking a token in Settings takes effect on the next request — the middleware re-reads the row every time.\n\n## Rate limiting\n\nPer token, token-bucket, refilling continuously to `MIMUX_API_RATE_LIMIT` requests per minute (default 120; set it to 0 to disable). Over budget is `429 rate_limited` with a `Retry-After` header in whole seconds. The limiter is in-process, so it resets when mimux restarts.\n\n## Idempotency\n\n`POST /v1/messages/send`, `POST /v1/drafts` and `POST /v1/filters` accept an `Idempotency-Key` header. A repeat of the same key by the same token on the same path replays the stored response byte-for-byte with `Idempotency-Replayed: true`, so a retried send cannot go out twice.\n\nHonest caveat: **the key store is in memory, per process.** Keys do not survive a restart, they expire after 24 hours, and when 1024 keys accumulate the whole store is dropped at once rather than evicted LRU. Treat it as at-most-once *per process lifetime*, not as a durable guarantee. Only 2xx responses are stored — a failed call is safe to re-execute.\n\n## Webhooks\n\nmimux can also POST to you. See the **Webhooks** tag for the outbound events, the signature scheme and a verification snippet, and `/v1/webhooks` for managing endpoints.\n\n## MCP server\n\nmimux pro is also an MCP (Model Context Protocol) server, so agents that speak MCP get the same capabilities as this REST API without any glue code.\n\n- **Endpoint:** `POST {your-mimux-host}/api/mcp` \u2014 stateless streamable HTTP. Every request is self-contained; there is no session to establish or expire.\n- **Auth:** the same `Authorization: Bearer mimux_pat_...` tokens as the REST API, honouring the same scopes. `tools/list` reflects the token's scopes \u2014 a tool whose scope the token lacks simply is not offered.\n\n| Tool | Scope | Notes |\n|---|---|---|\n| `list_accounts` | `accounts:read` | sync state + unread counts |\n| `list_folders` | `mail:read` | folder tree with ids |\n| `search_mail` | `mail:read` | local index by default; `deep=true` asks the IMAP servers (~15s) |\n| `read_message` | `mail:read` | chunked bodies with explicit `offset` continuation |\n| `mark_read` | `mail:modify` |  |\n| `star_message` | `mail:modify` |  |\n| `move_message` | `mail:modify` | folder id or archive/spam/trash; trash requires `confirm=true` |\n| `draft_reply` | `mail:send` | creates a real draft + preview; **does not send** |\n| `send_draft` | `mail:send` | the only tool that sends; two-step by design |\n\nThere is also a `mimux://inbox/summary` resource (unified inbox summary as JSON, requires `mail:read`).\n\n**stdio bridge:** MCP clients that only speak stdio run `mimux mcp` (pro builds only) with `MIMUX_URL` (default `http://localhost:8083`) and `MIMUX_TOKEN` in the environment. The bridge proxies to a running mimux's `/api/mcp` \u2014 it never opens the database itself.\n\nA complete worked example \u2014 an agent that triages an inbox over this endpoint \u2014 lives in `examples/triage/` in the repository.\n\n## What is not here yet\n\nLicence enforcement is not implemented yet; the API and MCP server run without a licence check for now. This document describes only what the binary actually serves today.",
+    "description": "mimux is a self-hosted, single-user mail client.\n\n**The product line, in one sentence: a human driving mimux is free, a machine driving mimux is the paid pro layer.**\n\nThe mail client itself — multi-account unified inbox, IMAP IDLE sync, threading, search, compose, drafts, undo-send, scheduled send, filters, calendar invites, notifications, backup/restore, AI compose and translate with your own key — is AGPL-3.0 and always will be. Nothing is ever moved from the free side to the paid side.\n\nThis API is the other half: `pro/`, licensed under the [Elastic Licence 2.0](https://github.com/mattmezza/mimux/blob/main/pro/LICENSE). It is only compiled into the binary built with the `pro` build tag. The free binary does not contain it, and `make verify-free` proves that on every commit. See [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md).\n\n## There is no central API host\n\nmimux is software you run. Every install is its own API. The `servers` entry below is a template: substitute the origin of *your* mimux, e.g. `https://mail.example.com/api`. There is no shared hosted endpoint to point a client at, and there never will be — your mail stays on your machine.\n\n## Conventions\n\n- All field names are `snake_case`.\n- All timestamps are RFC 3339 in UTC (`2026-08-17T09:30:00Z`).\n- Request bodies are JSON and reject unknown fields with `400 invalid_request`, so a typo fails loudly instead of being silently dropped. Bodies are capped at 32 MiB.\n- Every non-2xx response is the same `Error` envelope: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.\n- Collections use `{\"data\": [...], \"next_cursor\": \"...\"}`. `next_cursor` is `\"\"` when there is nothing left; endpoints that are not paginated still return the field, always as `\"\"`.\n\n## Authentication\n\nA personal access token, minted in **Settings → API**, sent as `Authorization: Bearer mimux_pat_…`. Tokens carry scopes; every operation documents the scope it needs both in prose and in the `x-required-scope` extension. Revoking a token in Settings takes effect on the next request — the middleware re-reads the row every time.\n\n## Rate limiting\n\nPer token, token-bucket, refilling continuously to `MIMUX_API_RATE_LIMIT` requests per minute (default 120; set it to 0 to disable). Over budget is `429 rate_limited` with a `Retry-After` header in whole seconds. The limiter is in-process, so it resets when mimux restarts.\n\n## Idempotency\n\n`POST /v1/messages/send`, `POST /v1/drafts` and `POST /v1/filters` accept an `Idempotency-Key` header. A repeat of the same key by the same token on the same path replays the stored response byte-for-byte with `Idempotency-Replayed: true`, so a retried send cannot go out twice.\n\nHonest caveat: **the key store is in memory, per process.** Keys do not survive a restart, they expire after 24 hours, and when 1024 keys accumulate the whole store is dropped at once rather than evicted LRU. Treat it as at-most-once *per process lifetime*, not as a durable guarantee. Only 2xx responses are stored — a failed call is safe to re-execute.\n\n## Webhooks\n\nmimux can also POST to you. See the **Webhooks** tag for the outbound events, the signature scheme and a verification snippet, and `/v1/webhooks` for managing endpoints.\n\n## MCP server\n\nmimux pro is also an MCP (Model Context Protocol) server, so agents that speak MCP get the same capabilities as this REST API without any glue code.\n\n- **Endpoint:** `POST {your-mimux-host}/api/mcp` \u2014 stateless streamable HTTP. Every request is self-contained; there is no session to establish or expire.\n- **Auth:** the same `Authorization: Bearer mimux_pat_...` tokens as the REST API, honouring the same scopes. `tools/list` reflects the token's scopes \u2014 a tool whose scope the token lacks simply is not offered.\n\n| Tool | Scope | Notes |\n|---|---|---|\n| `list_accounts` | `accounts:read` | sync state + unread counts |\n| `list_folders` | `mail:read` | folder tree with ids |\n| `search_mail` | `mail:read` | local index by default; `deep=true` asks the IMAP servers (~15s) |\n| `read_message` | `mail:read` | chunked bodies with explicit `offset` continuation |\n| `mark_read` | `mail:modify` |  |\n| `star_message` | `mail:modify` |  |\n| `move_message` | `mail:modify` | folder id or archive/spam/trash; trash requires `confirm=true` |\n| `draft_reply` | `mail:send` | creates a real draft + preview; **does not send** |\n| `send_draft` | `mail:send` | the only tool that sends; two-step by design |\n\nThere is also a `mimux://inbox/summary` resource (unified inbox summary as JSON, requires `mail:read`).\n\n**stdio bridge:** MCP clients that only speak stdio run `mimux mcp` (pro builds only) with `MIMUX_URL` (default `http://localhost:8083`) and `MIMUX_TOKEN` in the environment. The bridge proxies to a running mimux's `/api/mcp` \u2014 it never opens the database itself.\n\nA complete worked example \u2014 an agent that triages an inbox over this endpoint \u2014 lives in `examples/triage/` in the repository.\n\n## Licence\n\nThe pro layer verifies a signed licence key offline — there is no phone-home, no activation call and no machine fingerprint. Set it with `MIMUX_LICENCE_KEY` (which wins) or paste it into **Settings \u2192 API**; `mimux licence status` prints what the running build makes of it and exits non-zero when the API is paused.\n\nWithout a covering licence, **every operation below answers `402` with the `licence_required` or `licence_version` code** (see the `LicenceRequired` response). Two endpoints never do: `GET /health` and `GET /v1/openapi.json` are open unconditionally. Nothing in the mail client is affected either \u2014 sync, send, search and the web UI are AGPL code that has no licence check in it at all.\n\n- **Trial.** A pro build with no key runs for 14 days from its first boot. Responses carry `X-Mimux-Trial: <n> days left`.\n- **Grace.** An expired annual licence keeps serving for 14 more days, and every response carries `X-Mimux-Licence-Warning: licence expired <date>; API stops <date>`.\n- **Perpetual.** A perpetual licence covers builds up to its watermark version, forever. Running a *newer* build is `402 licence_version`, naming both versions \u2014 never a silent degrade.",
     "termsOfService": "https://mimux.dev",
     "contact": {
       "name": "mimux",
@@ -132,6 +132,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
@@ -177,6 +178,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -237,6 +239,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -327,6 +330,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -361,6 +365,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" }
@@ -396,6 +401,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -420,6 +426,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" }
@@ -446,6 +453,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" }
@@ -472,6 +480,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" }
@@ -515,6 +524,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": {
             "description": "No such message, or `n` is negative or beyond the attachment count.",
@@ -580,6 +590,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -613,6 +624,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": {
             "description": "No such job — unknown id, evicted from the 32-job ring, or lost to a restart.",
@@ -695,6 +707,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": {
             "description": "`in_reply_to` names no message.",
@@ -755,6 +768,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": {
             "description": "`in_reply_to` names no message.",
@@ -805,6 +819,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -836,6 +851,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -874,6 +890,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -904,6 +921,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -939,6 +957,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "429": { "$ref": "#/components/responses/RateLimited" },
           "500": { "$ref": "#/components/responses/InternalError" }
@@ -971,6 +990,7 @@
           },
           "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -986,6 +1006,7 @@
         "responses": {
           "204": { "description": "Deleted." },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -1018,6 +1039,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -1051,6 +1073,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -1074,6 +1097,7 @@
             }
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
           "404": { "$ref": "#/components/responses/NotFound" },
           "429": { "$ref": "#/components/responses/RateLimited" },
@@ -1340,6 +1364,36 @@
           }
         }
       },
+      "LicenceRequired": {
+        "description": "`licence_required` or `licence_version` — this install has no licence covering it (expired past its grace period, trial over, or a perpetual licence watermarked below this build). Only `/v1/*` and `/api/mcp` are affected: mail keeps syncing and sending, and `/health` and `/v1/openapi.json` keep answering. `details.url` is where to get a licence.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "expired": {
+                "summary": "Licence expired, grace period over",
+                "value": {
+                  "error": {
+                    "code": "licence_required",
+                    "message": "This licence expired on 2026-07-01 and its 14-day grace period ended on 2026-07-15, so the API and MCP endpoints are paused. Renew at https://account.mimux.dev. Your mail keeps syncing and sending as normal.",
+                    "details": { "url": "https://account.mimux.dev" }
+                  }
+                }
+              },
+              "version": {
+                "summary": "Perpetual licence does not cover this build",
+                "value": {
+                  "error": {
+                    "code": "licence_version",
+                    "message": "This perpetual licence covers mimux up to v0.19; this build is v0.20. Renew at https://account.mimux.dev to cover v0.20, or run v0.19. Mail itself keeps working either way.",
+                    "details": { "url": "https://account.mimux.dev" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "Forbidden": {
         "description": "`insufficient_scope` — the token authenticated but does not carry the scope this operation needs. The message names the missing scope, so you know which box to tick in Settings → API.",
         "content": {
@@ -1409,6 +1463,8 @@
                 "enum": [
                   "invalid_request",
                   "unauthorized",
+                  "licence_required",
+                  "licence_version",
                   "insufficient_scope",
                   "not_found",
                   "rate_limited",
@@ -1420,6 +1476,11 @@
               "message": {
                 "type": "string",
                 "description": "Human-readable explanation. Wording may change between versions."
+              },
+              "details": {
+                "type": "object",
+                "description": "Extra context, present only on the codes that have somewhere to point you: the licence errors carry `url`.",
+                "additionalProperties": true
               }
             }
           }

@@ -51,6 +51,8 @@ func main() {
 		slog.Error("startup", "err", err)
 		os.Exit(1)
 	}
+	// main owns the -ldflags version value; everything else reads it off cfg.
+	cfg.Version = version
 	if err := os.MkdirAll(filepath.Dir(cfg.DB.Path), 0o750); err != nil { // #nosec G703 -- path comes from the admin's own config file
 		slog.Error("startup", "err", err)
 		os.Exit(1)

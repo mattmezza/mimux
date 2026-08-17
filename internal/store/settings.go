@@ -241,6 +241,31 @@ func (s *Store) setSetting(key, value string) error {
 	return err
 }
 
+// App-setting keys shared across the free/pro line. The rows live in the same
+// app_settings table as everything else; the pro layer owns their meaning, the
+// free build only stores and displays them.
+const (
+	// SettingLicenceKey is the pasted "mimuxlic1.…" key. MIMUX_LICENCE_KEY wins
+	// over it when set.
+	SettingLicenceKey = "licence_key"
+	// SettingLicenceStatus is a one-line human summary written by the pro
+	// layer every time it re-evaluates the licence, so Settings can show what
+	// the enforcement side actually concluded rather than guessing. Absent in
+	// a free build — nothing there evaluates anything.
+	SettingLicenceStatus = "pro_licence_status"
+	// SettingProTrialStart is when the pro layer first booted without a key,
+	// RFC 3339. Deleting the row restarts the trial; that is not a mistake,
+	// see pro/licence.go.
+	SettingProTrialStart = "pro_trial_started_at"
+)
+
+// Setting reads one app_settings row. Exported for the keys above, which are
+// written by one side of the free/pro line and read by the other.
+func (s *Store) Setting(key string) (string, bool) { return s.getSetting(key) }
+
+// SetSetting writes one app_settings row; an empty value means "unset".
+func (s *Store) SetSetting(key, value string) error { return s.setSetting(key, value) }
+
 // GetPrefs returns stored preferences, falling back to defaults for any missing
 // or unparseable key. Never errors out the caller.
 func (s *Store) GetPrefs() Prefs {

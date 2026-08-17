@@ -50,6 +50,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"APIScopes":     store.APIScopes,
 		"Webhooks":      webhooks,
 		"WebhookEvents": store.WebhookEvents,
+		"Licence":       s.licenceView(),
 		"Identities":    s.identityLinks(),
 		"DBSize":        s.dbSizeHuman(),
 		"MessageCount":  msgCount,

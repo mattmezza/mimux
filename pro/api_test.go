@@ -31,10 +31,20 @@ type testAPI struct {
 	secret string // token with every scope
 }
 
-func newTestAPI(t *testing.T) *testAPI {
+func newTestAPI(t *testing.T) *testAPI { return newTestAPIWith(t, nil, nil) }
+
+// newTestAPIWith is newTestAPI with a say in the bootstrap config and a chance
+// to seed the store before the router (and with it the licence gate) is built.
+func newTestAPIWith(t *testing.T, cfg *config.Config, seed func(*store.Store)) *testAPI {
 	t.Helper()
 	st := openStore(t)
-	cfg := &config.Config{Accounts: []config.Account{{Name: "a1", Email: "me@example.test"}}}
+	if seed != nil {
+		seed(st)
+	}
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+	cfg.Accounts = []config.Account{{Name: "a1", Email: "me@example.test"}}
 	m := mail.NewManager(cfg, st)
 	h := routes(ext.Deps{Mail: m, Store: st, Cfg: cfg}).Handler
 	secret := mintToken(t, st, &store.APIToken{
