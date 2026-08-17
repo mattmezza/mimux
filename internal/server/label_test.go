@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // TestLabelAddRemove walks the whole add → render → remove path: the POST

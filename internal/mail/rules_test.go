@@ -3,7 +3,7 @@ package mail
 import (
 	"testing"
 
-	"github.com/mattmezza/sm/internal/filter"
+	"github.com/mattmezza/mimux/internal/filter"
 )
 
 // TestMatchingActions is the seam test: given a set of rules and a message,

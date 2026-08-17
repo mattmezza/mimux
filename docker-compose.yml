@@ -1,16 +1,16 @@
 services:
-  sm:
-    image: ghcr.io/mattmezza/sm:latest
+  mimux:
+    image: ghcr.io/mattmezza/mimux:latest
     build: .
     ports:
       - "8083:8083"
     volumes:
       - ./data:/data
     environment:
-      # SM boots with zero config; accounts and API keys are added from the
+      # mimux boots with zero config; accounts and API keys are added from the
       # Settings GUI and stored in the DB. See README for the full env-var list.
-      - SM_DB=/data/sm.db
-      - SM_BASE_URL=http://localhost:8083
-      # - SM_SECRET=... # optional; auto-generated and persisted to /data/secret
+      - MIMUX_DB=/data/mimux.db
+      - MIMUX_BASE_URL=http://localhost:8083
+      # - MIMUX_SECRET=... # optional; auto-generated and persisted to /data/secret
       - TZ=Europe/Zurich
     restart: unless-stopped

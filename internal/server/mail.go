@@ -15,12 +15,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/ai"
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
-	"github.com/mattmezza/sm/internal/translate"
+	"github.com/mattmezza/mimux/internal/ai"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
+	"github.com/mattmezza/mimux/internal/translate"
 )
 
 const listLimit = 200
@@ -400,8 +400,8 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	prefs := s.store.GetPrefs()
 	latest := thread.LatestMessage()
 	// Under the Unread quick filter the client asks us not to auto-read on open
-	// (X-SM-No-Auto-Read); marking becomes fully manual there.
-	noAutoRead := r.Header.Get("X-SM-No-Auto-Read") == "1"
+	// (X-Mimux-No-Auto-Read); marking becomes fully manual there.
+	noAutoRead := r.Header.Get("X-Mimux-No-Auto-Read") == "1"
 	wasUnread := !latest.IsRead && !noAutoRead
 	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(latest.ID, true)
@@ -541,10 +541,10 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	// Opening marks the message read. With a mark-read delay configured, the
 	// client schedules the read after N seconds instead (see app.js); at delay 0
 	// we mark it now (locally + on the server in the background). Under the Unread
-	// quick filter the client sends X-SM-No-Auto-Read so opening never marks read
+	// quick filter the client sends X-Mimux-No-Auto-Read so opening never marks read
 	// (neither now nor via MarkReadPending) — marking is fully manual there.
 	prefs := s.store.GetPrefs()
-	wasUnread := !msg.IsRead && r.Header.Get("X-SM-No-Auto-Read") != "1"
+	wasUnread := !msg.IsRead && r.Header.Get("X-Mimux-No-Auto-Read") != "1"
 	if wasUnread && prefs.MarkReadDelay == 0 {
 		_ = s.store.SetRead(msg.ID, true)
 		_ = s.store.RecountUnread(msg.FolderID)
@@ -619,7 +619,7 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 func (s *Server) translatedBody(ctx context.Context, body, source, target string) string {
 	cfg := s.store.GetAppConfig()
 	if cfg.TranslateAPIKey == "" {
-		return markBody(body, "data-sm-error")
+		return markBody(body, "data-mimux-error")
 	}
 	// Both codes go out in an API request, so anything that isn't a language we
 	// know falls back rather than being forwarded. The configured target gets
@@ -642,7 +642,7 @@ func (s *Server) translatedBody(ctx context.Context, body, source, target string
 	out, lang, err := cl.TranslateHTML(ctx, body)
 	if err != nil {
 		slog.Error("translate body", "err", err)
-		return markBody(body, "data-sm-error")
+		return markBody(body, "data-mimux-error")
 	}
 	if err := s.store.SaveTranslation(key, out, lang); err != nil {
 		slog.Error("translate: cache save", "err", err)
@@ -722,11 +722,11 @@ func (s *Server) handleMarkRead(read bool) http.HandlerFunc {
 			return
 		}
 		// Thread-level ops (double-click on a thread row, the r/u keys, "mark
-		// thread read/unread") signal X-SM-Thread and must persist to EVERY
+		// thread read/unread") signal X-Mimux-Thread and must persist to EVERY
 		// message in the thread, not just the row's latest — otherwise a refresh
 		// shows the thread partially unread. The per-message toggle inside a
 		// thread omits the header and marks only that one message.
-		if r.Header.Get("X-SM-Thread") == "1" {
+		if r.Header.Get("X-Mimux-Thread") == "1" {
 			s.markThreadRead(msg, read)
 		} else {
 			_ = s.store.SetRead(msg.ID, read)

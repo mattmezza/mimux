@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/search"
+	"github.com/mattmezza/mimux/internal/search"
 )
 
 func seedMsg(t *testing.T, s *Store, folder int64, uid uint32, from, subj, snip string) int64 {

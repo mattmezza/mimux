@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/filter"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/filter"
 )
 
 // seedConfig fills a store with one of everything the portable dump claims to
@@ -50,7 +50,7 @@ func seedConfig(t *testing.T, s *Store) {
 	// their own tables precisely so this dump can't carry them; see migration
 	// 0160 and the assertions after the round trip.
 	prefs.NotifyScope = "all"
-	prefs.NtfyURL = "https://ntfy.sh/sm-test-topic"
+	prefs.NtfyURL = "https://ntfy.sh/mimux-test-topic"
 	if err := s.SavePrefs(prefs); err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestConfigRoundTrip(t *testing.T) {
 	if dst.GetPrefs().AvatarShape != "square" {
 		t.Errorf("AvatarShape not restored: %q", dst.GetPrefs().AvatarShape)
 	}
-	if p := dst.GetPrefs(); p.NotifyScope != "all" || p.NtfyURL != "https://ntfy.sh/sm-test-topic" {
+	if p := dst.GetPrefs(); p.NotifyScope != "all" || p.NtfyURL != "https://ntfy.sh/mimux-test-topic" {
 		t.Errorf("notification prefs not restored: %q %q", p.NotifyScope, p.NtfyURL)
 	}
 	if tok, _ := dst.GetToken("work"); tok == nil || tok.Refresh != "rt" {

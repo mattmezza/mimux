@@ -43,7 +43,7 @@ jobs:
           for target in linux/amd64 linux/arm64 darwin/arm64; do
             GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
               go build -ldflags="-s -w -X main.version=${{ github.event.release.tag_name }}" \
-              -o dist/sm-${target%/*}-${target#*/} ./cmd/sm
+              -o dist/mimux-${target%/*}-${target#*/} ./cmd/mimux
           done
       - name: Attach binaries to release
         run: gh release upload "${{ github.event.release.tag_name }}" dist/*
@@ -67,6 +67,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           tags: |
-            ghcr.io/mattmezza/sm:latest
-            ghcr.io/mattmezza/sm:${{ steps.meta.outputs.tag }}
-            ghcr.io/mattmezza/sm:${{ steps.meta.outputs.ver }}
+            ghcr.io/mattmezza/mimux:latest
+            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.tag }}
+            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.ver }}

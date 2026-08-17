@@ -6,12 +6,14 @@
 // Bootstrap comes entirely from environment variables, each with a sane default,
 // so a fresh install with ZERO env vars boots and works:
 //
-//	SM_DB       sqlite path            (default ./data/sm.db)
-//	SM_HOST     bind address           (default 0.0.0.0)
-//	SM_PORT     port                   (default 8083)
-//	SM_BASE_URL public URL             (default http://localhost:<port>)
-//	SM_SECRET   session/CSRF secret    (default: generated once, persisted next
-//	                                     to the DB so sessions survive restarts)
+//	MIMUX_DB       sqlite path            (default ./data/mimux.db)
+//	MIMUX_HOST     bind address           (default 0.0.0.0)
+//	MIMUX_PORT     port                   (default 8083)
+//	MIMUX_BASE_URL public URL             (default http://localhost:<port>)
+//	MIMUX_SECRET   session/CSRF secret    (default: generated once, persisted next
+//	                                        to the DB so sessions survive restarts)
+//
+// The pre-rename SM_* names still work for one release — see Env.
 package config
 
 import (
@@ -26,7 +28,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattmezza/sm/internal/account"
+	"github.com/mattmezza/mimux/internal/account"
 )
 
 type Config struct {
@@ -143,32 +145,46 @@ func NormalizeAccount(a *Account) error {
 	return nil
 }
 
+// Env reads the MIMUX_<key> environment variable, falling back to the
+// pre-rename SM_<key> with a one-line deprecation warning.
+// TODO(v0.21): drop SM_ fallback.
+func Env(key string) string {
+	if v := os.Getenv("MIMUX_" + key); v != "" {
+		return v
+	}
+	if v := os.Getenv("SM_" + key); v != "" {
+		slog.Warn("config: deprecated env var, rename it", "old", "SM_"+key, "new", "MIMUX_"+key)
+		return v
+	}
+	return ""
+}
+
 // Load builds the bootstrap config from environment variables + defaults,
-// generating and persisting a session secret when SM_SECRET is unset.
+// generating and persisting a session secret when MIMUX_SECRET is unset.
 func Load() (*Config, error) {
 	cfg := &Config{
 		Server: Server{Host: "0.0.0.0", Port: 8083},
-		DB:     DB{Path: "./data/sm.db"},
+		DB:     DB{Path: "./data/mimux.db"},
 	}
-	if v := os.Getenv("SM_DB"); v != "" {
+	if v := Env("DB"); v != "" {
 		cfg.DB.Path = v
 	}
-	if v := os.Getenv("SM_HOST"); v != "" {
+	if v := Env("HOST"); v != "" {
 		cfg.Server.Host = v
 	}
-	if v := os.Getenv("SM_PORT"); v != "" {
+	if v := Env("PORT"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil {
-			return nil, fmt.Errorf("config: SM_PORT %q: %w", v, err)
+			return nil, fmt.Errorf("config: MIMUX_PORT %q: %w", v, err)
 		}
 		cfg.Server.Port = n
 	}
-	if v := os.Getenv("SM_BASE_URL"); v != "" {
+	if v := Env("BASE_URL"); v != "" {
 		cfg.Server.BaseURL = v
 	} else {
 		cfg.Server.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
 	}
-	if v := os.Getenv("SM_SECRET"); v != "" {
+	if v := Env("SECRET"); v != "" {
 		cfg.Server.Secret = v
 	} else if err := ensureSecret(cfg); err != nil {
 		return nil, err
@@ -181,7 +197,7 @@ func Load() (*Config, error) {
 func ensureSecret(cfg *Config) error {
 	dir := filepath.Dir(cfg.DB.Path)
 	p := filepath.Join(dir, "secret")
-	if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- path derived from admin's own SM_DB
+	if b, err := os.ReadFile(p); err == nil { // #nosec G304 -- path derived from admin's own MIMUX_DB
 		if s := strings.TrimSpace(string(bytes.TrimSpace(b))); s != "" {
 			cfg.Server.Secret = s
 			return nil

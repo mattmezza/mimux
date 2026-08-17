@@ -1,5 +1,5 @@
 // Package mail implements the IMAP sync engine, body fetching and HTML
-// sanitization for SM.
+// sanitization for mimux.
 package mail
 
 import (
@@ -14,8 +14,8 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // Event is pushed to SSE subscribers.
@@ -265,7 +265,7 @@ func (a *account) setStatus(state, msg string) {
 
 // signalListChanged tells subscribed browsers to re-fetch their open message
 // list (new mail, flag changes or expunges). Reuses the "new-mail" event the
-// client already maps to sm:refresh + an unread-title refresh. Callers coalesce
+// client already maps to mimux:refresh + an unread-title refresh. Callers coalesce
 // to at most one per sync cycle to avoid a refresh storm.
 func (a *account) signalListChanged() {
 	a.m.hub.broadcast(Event{Type: "new-mail", Data: a.cfg.Name})

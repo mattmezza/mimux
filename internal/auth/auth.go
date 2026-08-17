@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	SessionCookie = "sm_session"
-	CSRFCookie    = "sm_csrf"
+	SessionCookie = "mimux_session"
+	CSRFCookie    = "mimux_csrf"
 	CSRFField     = "csrf_token"
 	SessionTTL    = 30 * 24 * time.Hour
 )

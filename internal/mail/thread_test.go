@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // msg is a terse message builder for threading tests. seq drives Date order.

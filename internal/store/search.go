@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/mattmezza/sm/internal/search"
+	"github.com/mattmezza/mimux/internal/search"
 )
 
 // SearchLocal runs an instant, index-backed search over the cached messages.

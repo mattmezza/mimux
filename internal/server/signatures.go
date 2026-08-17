@@ -8,9 +8,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // sigVar is the per-identity signature payload embedded (as JSON) in the compose

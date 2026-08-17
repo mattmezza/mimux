@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestAccountsInfoSmoke(t *testing.T) {

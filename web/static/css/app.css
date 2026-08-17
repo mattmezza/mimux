@@ -395,11 +395,11 @@ html, #message-list { overscroll-behavior-x: contain; }
 
 /* "Syncing…" pill in the message list header. Visible for exactly one reason,
    never for any other: the server says an account is mid-IMAP-sync. That truth
-   arrives as .sm-syncing on <body> — rendered there on first paint and toggled
+   arrives as .mimux-syncing on <body> — rendered there on first paint and toggled
    from the sync-status SSE event (app.js). Deliberately NOT an htmx-indicator:
    showing it for an in-flight list request is what made it blink. */
 #list-syncing { display: none; }
-body.sm-syncing #list-syncing { display: flex; }
+body.mimux-syncing #list-syncing { display: flex; }
 
 /* Settings Save button: dim + swap label to "Saving…" while the htmx POST is in
    flight (the class lands on the enclosing form). */

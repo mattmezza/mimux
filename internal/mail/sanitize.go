@@ -214,13 +214,13 @@ func setAttr(n *html.Node, key, val string) {
 func renderBodyDocument(fragment string, plain bool) string {
 	body := fragment
 	if plain {
-		body = `<pre class="sm-plain">` + html.EscapeString(fragment) + `</pre>`
+		body = `<pre class="mimux-plain">` + html.EscapeString(fragment) + `</pre>`
 	}
 	// Email HTML is authored for a light background (like every major webmail
 	// client renders it). Forcing the app's dark theme onto it makes messages
 	// with hardcoded black text unreadable, so we always render light here and
 	// let the reading pane offer a per-message dark toggle (see toggleBodyTheme
-	// in app.js, which flips the .sm-dark class below).
+	// in app.js, which flips the .mimux-dark class below).
 	// base target=_blank: links/buttons in email must open in a new tab, not
 	// navigate the sandboxed iframe (which just breaks). Modern browsers imply
 	// rel=noopener for target=_blank, so no reverse-tabnabbing exposure.
@@ -231,18 +231,18 @@ func renderBodyDocument(fragment string, plain bool) string {
   body { font: 14px/1.5 -apple-system, system-ui, sans-serif; color: #18181b; background: #fff; word-wrap: break-word; overflow-wrap: break-word; }
   img, table { max-width: 100%; }
   a { color: #4f46e5; }
-  .sm-plain { white-space: pre-wrap; font-family: ui-monospace, monospace; margin: 0; }
-  html.sm-dark, html.sm-dark body { background: #18181b !important; color: #d4d4d8 !important; }
-  html.sm-dark a { color: #818cf8 !important; }
+  .mimux-plain { white-space: pre-wrap; font-family: ui-monospace, monospace; margin: 0; }
+  html.mimux-dark, html.mimux-dark body { background: #18181b !important; color: #d4d4d8 !important; }
+  html.mimux-dark a { color: #818cf8 !important; }
   /* Thin themed scrollbar, matching the app chrome, on both light and dark. */
   * { scrollbar-width: thin; scrollbar-color: #c4c4cc transparent; }
   ::-webkit-scrollbar { width: 8px; height: 8px; }
   ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
   ::-webkit-scrollbar-thumb { background: #c4c4cc; border-radius: 4px; }
   ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
-  html.sm-dark { color-scheme: dark; }
-  html.sm-dark * { scrollbar-color: #3f3f46 transparent; }
-  html.sm-dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
-  html.sm-dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+  html.mimux-dark { color-scheme: dark; }
+  html.mimux-dark * { scrollbar-color: #3f3f46 transparent; }
+  html.mimux-dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
+  html.mimux-dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 </style></head><body>` + body + `</body></html>`
 }
