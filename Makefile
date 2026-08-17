@@ -35,7 +35,7 @@ test-pro: ## Run tests including the pro layer
 	go test -race -cover -tags pro ./...
 
 .PHONY: check
-check: lint test verify-licence verify-free ## Run all checks
+check: lint test verify-licence verify-free verify-boundary ## Run all checks
 
 .PHONY: diagnose
 diagnose: ## Sanitised environment dump to paste into a bug report
@@ -68,6 +68,17 @@ verify-free: ## Prove the free binary links zero ELv2 code
 	@go list -deps -tags pro ./cmd/mimux | grep -q '/mimux/pro' \
 		|| { echo "FAIL: the pro build does NOT link pro/ — the build tag is broken."; exit 1; }
 	@echo "OK: free build excludes pro/; pro build includes it."
+
+.PHONY: verify-boundary
+verify-boundary: ## Prove pro/ binds via internal/ext and never reaches into internal/server
+	@if go list -deps -tags pro ./pro | grep -q '/mimux/internal/server'; then \
+		echo "FAIL: pro/ imports internal/server."; \
+		echo "  Bind through internal/ext instead. If you need something that only"; \
+		echo "  exists as a private method on *server.Server, move it down into"; \
+		echo "  internal/mail or internal/store and call it from both sides."; \
+		exit 1; \
+	fi
+	@echo "OK: pro/ does not reach into internal/server."
 
 .PHONY: verify-licence
 verify-licence: ## Every .go file has an SPDX header, and ELv2 only under pro/

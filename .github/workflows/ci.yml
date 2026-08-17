@@ -51,6 +51,8 @@ jobs:
         run: make verify-licence
       - name: Free build is ELv2-clean
         run: make verify-free
+      - name: pro/ does not reach into internal/server
+        run: make verify-boundary
       - name: Pro build compiles and passes tests
         run: |
           go vet -tags pro ./...

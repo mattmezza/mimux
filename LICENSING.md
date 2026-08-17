@@ -51,10 +51,14 @@ The separation is enforced by Go build tags, not by convention. Every file in
 it into the server.
 
 ```sh
-make build       # free binary — contains zero ELv2 code
-make build-pro   # commercial binary — AGPL client + ELv2 pro layer
-make verify-free # proves the free binary links nothing from pro/
+make build            # free binary — contains zero ELv2 code
+make build-pro        # commercial binary — AGPL client + ELv2 pro layer
+make verify-free      # proves the free binary links nothing from pro/
+make verify-licence   # proves every SPDX header is on the right side
+make verify-boundary  # proves pro/ binds via internal/ext, not internal/server
 ```
+
+All three checks run in CI and in `make check`.
 
 `make build` does not pass the `pro` tag, so the Go toolchain excludes every
 file in `pro/` from the build graph entirely — not compiled, not linked, not

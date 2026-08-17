@@ -87,9 +87,16 @@ sub-routers.
 `//go:build pro`, so the default build excludes it from the build graph
 entirely — `make build` produces a binary with none of it linked in, and
 `make verify-free` proves that from the dependency graph rather than asking you
-to trust it. It binds to the client through one struct, `server.Deps`
-(`internal/server/extension.go`), which hands it the mail manager, the store and
-the config.
+to trust it.
+
+It binds to the client through `internal/ext` — one struct, `ext.Deps`, handing
+it the mail manager, the store and the config — and is not allowed to import
+`internal/server` at all (`make verify-boundary`). That rule is the reason there
+is no speculative "mail engine" interface: anything `pro/` needs that currently
+lives as a private method on `*server.Server` has to move down into
+`internal/mail` or `internal/store`, where the HTML handler calls the same code.
+Shared operations end up in the domain layer because a real caller needed them
+there, not because someone guessed in advance what an API would want.
 
 ## Configuration
 
