@@ -230,14 +230,16 @@ rather than a surprise.
 
 ## Contributing and support
 
+Issues yes, pull requests usually no — bug reports, questions and suggestions are
+the most useful thing you can send. Support is GitHub issues, best effort, from
+one person with a day job.
+
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a bug (start with
-  `make diagnose`), what PRs are welcome, and what I will probably say no to.
+  `make diagnose`), when a PR is worth opening, and what I will probably say no
+  to.
 - [SECURITY.md](SECURITY.md) — how to report a vulnerability. Please don't use a
   public issue.
-- [CLA.md](CLA.md) — one page, and you agree to it by opening a PR.
-
-Free tier support is GitHub issues and Discussions, best effort, from one person
-with a day job.
+- [CLA.md](CLA.md) — one page, relevant only for the rare accepted PR.
 
 ## Licence
 
