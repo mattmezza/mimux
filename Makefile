@@ -30,17 +30,54 @@ test: ## Run tests
 lint: ## Run linter
 	golangci-lint run
 
+.PHONY: test-pro
+test-pro: ## Run tests including the pro layer
+	go test -race -cover -tags pro ./...
+
 .PHONY: check
-check: lint test ## Run all checks
+check: lint test verify-licence verify-free ## Run all checks
+
+.PHONY: diagnose
+diagnose: ## Sanitised environment dump to paste into a bug report
+	@sh scripts/diagnose.sh
 
 ##@ Build
+# The free build passes no build tags, so every file in pro/ (each carrying
+# //go:build pro) is excluded from the build graph entirely. See LICENSING.md.
 .PHONY: build
-build: css-build ## Build binary
+build: css-build ## Build the free binary (AGPL-3.0 only)
 	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(BINARY) ./cmd/mimux
+
+.PHONY: build-pro
+build-pro: css-build ## Build the commercial binary (AGPL client + ELv2 pro)
+	CGO_ENABLED=0 go build -tags pro -ldflags="-s -w -X main.version=$(VERSION)-pro" -o bin/$(BINARY)-pro ./cmd/mimux
 
 .PHONY: docker
 docker: ## Build Docker image locally
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
+
+##@ Licence
+# Both targets are wired into `make check` and CI, so the split in LICENSING.md
+# is verified rather than merely claimed.
+.PHONY: verify-free
+verify-free: ## Prove the free binary links zero ELv2 code
+	@if go list -deps ./cmd/mimux | grep -q '/mimux/pro'; then \
+		echo "FAIL: the free build depends on pro/ (ELv2). Check the //go:build pro tags."; \
+		go list -deps ./cmd/mimux | grep '/mimux/pro'; exit 1; \
+	fi
+	@go list -deps -tags pro ./cmd/mimux | grep -q '/mimux/pro' \
+		|| { echo "FAIL: the pro build does NOT link pro/ — the build tag is broken."; exit 1; }
+	@echo "OK: free build excludes pro/; pro build includes it."
+
+.PHONY: verify-licence
+verify-licence: ## Every .go file has an SPDX header, and ELv2 only under pro/
+	@missing=$$(grep -rL 'SPDX-License-Identifier' --include='*.go' cmd internal pro web 2>/dev/null); \
+	if [ -n "$$missing" ]; then echo "FAIL: missing SPDX header:"; echo "$$missing"; exit 1; fi
+	@stray=$$(grep -rl 'LicenseRef-Elastic-2.0' --include='*.go' cmd internal web 2>/dev/null); \
+	if [ -n "$$stray" ]; then echo "FAIL: ELv2 header outside pro/:"; echo "$$stray"; exit 1; fi
+	@agpl=$$(grep -rl 'AGPL-3.0-only' --include='*.go' pro 2>/dev/null); \
+	if [ -n "$$agpl" ]; then echo "FAIL: AGPL header inside pro/:"; echo "$$agpl"; exit 1; fi
+	@echo "OK: SPDX headers present and on the right side of the line."
 
 ##@ Release
 .PHONY: release

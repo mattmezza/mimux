@@ -1,9 +1,12 @@
 # mimux
 
-Self-hosted, privacy-first web email client. A PWA served by a single Go
-binary: htmx + Alpine.js + Tailwind on the front, IMAP/SMTP + SQLite on the
-back. Runs as one Docker container — bring your own mailboxes, keep your own
-data.
+A fast, keyboard-driven email client you run yourself. Point it at the mailboxes
+you already have, and read, search, triage and send from one unified inbox in the
+browser or as an installed app on your phone. Your mail, your credentials and
+your machine — no account to create, no third party in the middle.
+
+One `docker compose up`. One SQLite file holds everything. Under the hood it is a
+single Go binary serving htmx + Alpine.js + Tailwind, talking IMAP and SMTP.
 
 ## Features
 
@@ -79,6 +82,14 @@ UI state (menus, forms), Tailwind for styling — so there's no JS build step
 beyond the CSS pipeline. `internal/filter`, `internal/search`, `internal/ai`,
 and `internal/translate` are self-contained feature packages mounted as
 sub-routers.
+
+`pro/` is the separately licensed automation layer. Every file in it carries
+`//go:build pro`, so the default build excludes it from the build graph
+entirely — `make build` produces a binary with none of it linked in, and
+`make verify-free` proves that from the dependency graph rather than asking you
+to trust it. It binds to the client through one struct, `server.Deps`
+(`internal/server/extension.go`), which hands it the mail manager, the store and
+the config.
 
 ## Configuration
 
@@ -203,6 +214,46 @@ sender and subject in the clear unless you run it yourself.
 - **Translate / AI are off until you add keys** (Settings → Integrations:
   Google Translate, OpenRouter). Both fail gracefully when unset.
 
-## License
+## Free and paid
 
-[MIT](LICENSE)
+**The mail client is free, AGPL-3.0, and complete — forever.** Everything above
+this line and everything in the feature list: multi-account unified inbox, sync,
+threading, search, compose, filters, calendar, keyboard shortcuts, PWA, push.
+Nothing in it is held back, time-limited, or behind a licence key, and nothing
+will be moved out of it later.
+
+**The paid layer is automation only** — a REST API, an MCP server for AI agents,
+webhooks, and AI compose. The rule is simple: if a *human* drives mimux, that is
+free; if something *else* drives it, that is the paid part. It does not exist
+yet; this line is published in advance so its arrival is a plan being executed
+rather than a surprise.
+
+## Contributing and support
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to report a bug (start with
+  `make diagnose`), what PRs are welcome, and what I will probably say no to.
+- [SECURITY.md](SECURITY.md) — how to report a vulnerability. Please don't use a
+  public issue.
+- [CLA.md](CLA.md) — one page, and you agree to it by opening a PR.
+
+Free tier support is GitHub issues and Discussions, best effort, from one person
+with a day job.
+
+## Licence
+
+The mail client — `cmd/`, `internal/`, `web/` — is
+**[AGPL-3.0-only](LICENSE)**. The `pro/` directory, when it lands, is under the
+[Elastic Licence 2.0](pro/LICENSE).
+
+GitHub shows a single licence badge for the repository and it reads AGPL-3.0,
+which does not describe the whole tree. **[LICENSING.md](LICENSING.md)** maps
+which directory is under which licence, explains how the two halves combine
+legally, and how to verify the split yourself:
+
+```sh
+make verify-free      # proves the free binary links zero ELv2 code
+make verify-licence   # proves every file's SPDX header is on the right side
+```
+
+`mimux` is a trademark of Matteo Merola. The licences cover the code, not the
+name — please rename your fork.

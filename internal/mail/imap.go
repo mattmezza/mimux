@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package mail implements the IMAP sync engine, body fetching and HTML
 // sanitization for mimux.
 package mail

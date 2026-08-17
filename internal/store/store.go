@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package store is the SQLite repository layer.
 package store
 

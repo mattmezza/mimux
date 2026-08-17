@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
 import (
@@ -8,10 +9,10 @@ import (
 // bodyLRU is a tiny fixed-capacity LRU cache for fetched message bodies, keyed
 // by the local message id. Hand-rolled (map + list) — no dependency needed.
 type bodyLRU struct {
-	mu   sync.Mutex
-	cap  int
-	ll   *list.List // front = most recently used
-	m    map[int64]*list.Element
+	mu  sync.Mutex
+	cap int
+	ll  *list.List // front = most recently used
+	m   map[int64]*list.Element
 }
 
 type lruEntry struct {

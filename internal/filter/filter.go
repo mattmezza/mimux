@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package filter is the pure rules engine for auto-filtering incoming mail:
 // conditions (from/to/subject/body, contains/regex) AND together, and a list
 // of actions to run when they all match. No I/O here — the sync loop and the

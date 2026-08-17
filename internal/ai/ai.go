@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package ai drafts email compose/reply text via an OpenRouter chat
 // completion model.
 package ai

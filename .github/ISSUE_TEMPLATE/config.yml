@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Feature requests and ideas
+    url: https://github.com/mattmezza/mimux/discussions
+    about: Bring rough ideas and "should mimux do X?" to Discussions first.
+  - name: Security vulnerability
+    url: https://github.com/mattmezza/mimux/security/advisories/new
+    about: Report privately here. Never in a public issue.
+  - name: Question or help getting set up
+    url: https://github.com/mattmezza/mimux/discussions
+    about: IMAP quirks, OAuth setup, notifications — ask in Discussions.

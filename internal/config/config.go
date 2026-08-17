@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package config holds bootstrap config only — the settings that cannot live in
 // the database (chicken-and-egg): db path, listen host/port, public base_url and
 // the session secret. Everything else (accounts, sync cadence, translate/AI

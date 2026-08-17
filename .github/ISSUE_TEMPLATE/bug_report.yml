@@ -1,0 +1,94 @@
+name: Bug report
+description: Something in mimux is broken or behaves unexpectedly
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this.
+
+        **Run `make diagnose` and paste the output below.** It is sanitised —
+        secrets, passwords, tokens and API keys are redacted — and it answers most
+        of the questions I would otherwise have to ask you.
+
+        **Do not report security vulnerabilities here.** See
+        [SECURITY.md](https://github.com/mattmezza/mimux/blob/main/SECURITY.md)
+        and open a private advisory instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: mimux version
+      description: From the status bar, or `mimux -version`.
+      placeholder: v0.19
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options:
+        - Docker Compose
+        - Docker (manual)
+        - Binary from a release
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Mail provider or IMAP server
+      description: Provider-specific IMAP behaviour is the largest source of bugs here.
+      placeholder: Gmail, Fastmail, Dovecot, Zoho, Migadu, ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened, and what did you expect?
+      description: Two short paragraphs beat one long one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the unified inbox
+        2. Press `e` on a message
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: diagnose
+    attributes:
+      label: "`make diagnose` output"
+      description: Sanitised automatically. Paste it as-is.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Optional. Server output around the time it broke, or browser console errors.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate
+          required: true
+        - label: I have redacted anything sensitive from the logs I pasted
+          required: true

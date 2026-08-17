@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package search parses mimux's query language into a SearchQuery and builds the
 // local SQLite WHERE clause. IMAP-criteria mapping lives in internal/mail
 // (it needs go-imap types); this package stays dependency-free so the parser

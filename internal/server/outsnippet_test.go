@@ -1,13 +1,14 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 package server
 
 import "testing"
 
 func TestOutSnippet(t *testing.T) {
 	cases := map[string]string{
-		"<p>Hi <b>there</b></p>":            "Hi there",
-		"plain &amp; simple":                "plain & simple",
-		"  lots   of\n\twhitespace  ":       "lots of whitespace",
-		"":                                  "",
+		"<p>Hi <b>there</b></p>":      "Hi there",
+		"plain &amp; simple":          "plain & simple",
+		"  lots   of\n\twhitespace  ": "lots of whitespace",
+		"":                            "",
 	}
 	for in, want := range cases {
 		if got := outSnippet(in); got != want {

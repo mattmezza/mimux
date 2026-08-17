@@ -1,8 +1,26 @@
 name: CI
 
 on:
+  # Commits land straight on main, so main is what actually needs checking.
+  push:
+    branches: [main]
+    # Duplicated below on purpose: GitHub Actions does not support YAML anchors.
+    paths-ignore:
+      - "**/*.md"
+      - "www/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "LICENSE"
+      - "pro/LICENSE"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "www/**"
+      - ".github/ISSUE_TEMPLATE/**"
+      - "LICENSE"
+      - "pro/LICENSE"
   workflow_call: # reused by Release as a gate before it builds/publishes
+  # Note: paths filters are not supported on `release:` or `workflow_call`
+  # triggers, so the Release workflow always runs the full gate.
 
 jobs:
   check:
@@ -27,3 +45,13 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test -race -cover ./...
+
+      # The licence split is only real if it is checked. See LICENSING.md.
+      - name: Licence headers
+        run: make verify-licence
+      - name: Free build is ELv2-clean
+        run: make verify-free
+      - name: Pro build compiles and passes tests
+        run: |
+          go vet -tags pro ./...
+          go test -race -tags pro ./...

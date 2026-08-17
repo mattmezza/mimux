@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package server: HTTP routes, middleware, template rendering.
 package server
 
@@ -142,6 +143,10 @@ func (s *Server) Handler() http.Handler {
 	// stay reachable pre-auth: the login and setup pages show the icon too).
 	r.Get("/manifest.json", s.handleManifest)
 	r.Get("/icon.svg", s.handleIcon)
+
+	// Extensions (pro build only — nothing in the free build) mount outside the
+	// auth group below: they are machine-facing and bring their own auth.
+	s.mountExtensions(r)
 
 	r.Get("/setup", s.handleSetupForm)
 	r.Post("/setup", s.handleSetup)

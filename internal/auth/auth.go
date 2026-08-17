@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package auth: argon2id password hashing, session cookies, CSRF.
 package auth
 

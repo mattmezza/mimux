@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package account holds multi-account management; for now, provider presets.
 package account
 

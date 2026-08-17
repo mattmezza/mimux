@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package translate calls the Google Translate v2 REST API. Callers cache the
 // results in SQLite (see store.TranslationCacheKey).
 package translate

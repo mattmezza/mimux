@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: AGPL-3.0-only
 // Package filter_test exercises the store's filter-rule CRUD against a real
 // (temp file) SQLite db. It lives here rather than internal/store because
 // store.go imports filter for the Rule type — an external test package
