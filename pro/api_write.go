@@ -7,6 +7,7 @@ package pro
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -334,19 +335,10 @@ func (a *api) handlePatchMessage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Read != nil {
-		read := *req.Read
-		_ = a.store.SetRead(msg.ID, read)
-		_ = a.store.RecountUnread(msg.FolderID)
-		msg.IsRead = read
-		msgCopy := *msg
-		a.background("set read", func(ctx context.Context) error { return a.mail.SetRead(ctx, &msgCopy, read) })
+		a.applyRead(msg, *req.Read)
 	}
 	if req.Starred != nil {
-		starred := *req.Starred
-		_ = a.store.SetStarred(msg.ID, starred)
-		msg.IsStarred = starred
-		msgCopy := *msg
-		a.background("set starred", func(ctx context.Context) error { return a.mail.SetStarred(ctx, &msgCopy, starred) })
+		a.applyStarred(msg, *req.Starred)
 	}
 	for _, l := range req.LabelsAdd {
 		if err := a.mail.SetLabel(msg, l, true); err != nil {
@@ -371,14 +363,7 @@ func (a *api) handlePatchMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if tf.ID != msg.FolderID {
-			src := msg.FolderID
-			_ = a.store.SetMessageFolder(msg.ID, tf.ID)
-			_ = a.store.RecountUnread(src)
-			_ = a.store.RecountUnread(tf.ID)
-			msgCopy := *msg
-			target := tf.Name
-			a.background("move", func(ctx context.Context) error { return a.mail.MoveToFolder(ctx, &msgCopy, target) })
-			msg.FolderID = tf.ID
+			a.moveFolder(msg, tf)
 		}
 	}
 
@@ -398,19 +383,60 @@ func (a *api) handleMove(target string) http.HandlerFunc {
 		if msg == nil {
 			return
 		}
-		tf, err := a.store.FolderBySpecial(msg.Account, target)
-		if err != nil || tf == nil {
-			apiError(w, http.StatusBadRequest, "invalid_request", "This account has no "+target+" folder.")
+		fid, err := a.moveSpecial(msg, target)
+		if err != nil {
+			apiError(w, http.StatusBadRequest, "invalid_request", err.Error())
 			return
 		}
-		src := msg.FolderID
-		_ = a.store.SetMessageFolder(msg.ID, tf.ID)
-		_ = a.store.RecountUnread(src)
-		_ = a.store.RecountUnread(tf.ID)
-		msgCopy := *msg
-		a.background(target, func(ctx context.Context) error { return a.mail.Move(ctx, &msgCopy, target) })
-		writeJSON(w, map[string]any{"status": "ok", "folder_id": tf.ID})
+		writeJSON(w, map[string]any{"status": "ok", "folder_id": fid})
 	}
+}
+
+// --- optimistic mutation helpers, shared by the REST handlers and the MCP
+// tools: store first, IMAP write in the background (see handlePatchMessage). ---
+
+func (a *api) applyRead(msg *store.Message, read bool) {
+	_ = a.store.SetRead(msg.ID, read)
+	_ = a.store.RecountUnread(msg.FolderID)
+	msg.IsRead = read
+	msgCopy := *msg
+	a.background("set read", func(ctx context.Context) error { return a.mail.SetRead(ctx, &msgCopy, read) })
+}
+
+func (a *api) applyStarred(msg *store.Message, starred bool) {
+	_ = a.store.SetStarred(msg.ID, starred)
+	msg.IsStarred = starred
+	msgCopy := *msg
+	a.background("set starred", func(ctx context.Context) error { return a.mail.SetStarred(ctx, &msgCopy, starred) })
+}
+
+// moveFolder moves msg to tf, which the caller has already validated to exist
+// in the same account and differ from the current folder.
+func (a *api) moveFolder(msg *store.Message, tf *store.Folder) {
+	src := msg.FolderID
+	_ = a.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = a.store.RecountUnread(src)
+	_ = a.store.RecountUnread(tf.ID)
+	msgCopy := *msg
+	target := tf.Name
+	a.background("move", func(ctx context.Context) error { return a.mail.MoveToFolder(ctx, &msgCopy, target) })
+	msg.FolderID = tf.ID
+}
+
+// moveSpecial moves msg to its account's special-use folder (archive, spam,
+// trash), returning the destination folder id.
+func (a *api) moveSpecial(msg *store.Message, target string) (int64, error) {
+	tf, err := a.store.FolderBySpecial(msg.Account, target)
+	if err != nil || tf == nil {
+		return 0, fmt.Errorf("this account has no %s folder", target)
+	}
+	src := msg.FolderID
+	_ = a.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = a.store.RecountUnread(src)
+	_ = a.store.RecountUnread(tf.ID)
+	msgCopy := *msg
+	a.background(target, func(ctx context.Context) error { return a.mail.Move(ctx, &msgCopy, target) })
+	return tf.ID, nil
 }
 
 // --- filters ---

@@ -20,24 +20,35 @@ import (
 // counters. Credentials never appear here — fields are picked, not marshalled
 // off config.Account.
 func (a *api) handleAccounts(w http.ResponseWriter, r *http.Request) {
-	stats, err := a.store.AccountStats()
+	out, err := a.accountsView()
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, "internal", "Couldn't read account stats.")
 		return
 	}
+	writeList(w, out, "")
+}
+
+// accountJSON is the field-picked account view shared by the REST and MCP
+// surfaces. config.Account itself carries credentials and is never marshalled.
+type accountJSON struct {
+	Name     string     `json:"name"`
+	Email    string     `json:"email"`
+	State    string     `json:"state,omitempty"`
+	Message  string     `json:"message,omitempty"`
+	LastSync *time.Time `json:"last_sync,omitempty"`
+	Messages int64      `json:"messages"`
+	Unread   int64      `json:"unread"`
+	Folders  int64      `json:"folders"`
+}
+
+func (a *api) accountsView() ([]accountJSON, error) {
+	stats, err := a.store.AccountStats()
+	if err != nil {
+		return nil, err
+	}
 	status := map[string]mail.AccountStatus{}
 	for _, st := range a.mail.Status() {
 		status[st.Account] = st
-	}
-	type accountJSON struct {
-		Name     string     `json:"name"`
-		Email    string     `json:"email"`
-		State    string     `json:"state,omitempty"`
-		Message  string     `json:"message,omitempty"`
-		LastSync *time.Time `json:"last_sync,omitempty"`
-		Messages int64      `json:"messages"`
-		Unread   int64      `json:"unread"`
-		Folders  int64      `json:"folders"`
 	}
 	out := []accountJSON{}
 	for _, ac := range a.deps.Cfg.Accounts {
@@ -55,7 +66,7 @@ func (a *api) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		}
 		out = append(out, j)
 	}
-	writeList(w, out, "")
+	return out, nil
 }
 
 // folderNodeJSON mirrors store.FolderNode with only the fields an API caller
@@ -91,20 +102,30 @@ func (a *api) handleFolders(w http.ResponseWriter, r *http.Request) {
 			names = append(names, ac.Name)
 		}
 	}
-	type accountFolders struct {
-		Account string           `json:"account"`
-		Folders []folderNodeJSON `json:"folders"`
+	out, err := a.foldersView(names)
+	if err != nil {
+		apiError(w, http.StatusInternalServerError, "internal", "Couldn't list folders.")
+		return
 	}
+	writeList(w, out, "")
+}
+
+// accountFolders is one account's folder tree, shared by REST and MCP.
+type accountFolders struct {
+	Account string           `json:"account"`
+	Folders []folderNodeJSON `json:"folders"`
+}
+
+func (a *api) foldersView(names []string) ([]accountFolders, error) {
 	out := []accountFolders{}
 	for _, name := range names {
 		folders, err := a.store.ListFolders(name)
 		if err != nil {
-			apiError(w, http.StatusInternalServerError, "internal", "Couldn't list folders.")
-			return
+			return nil, err
 		}
 		out = append(out, accountFolders{Account: name, Folders: toFolderNodes(store.FolderTree(folders))})
 	}
-	writeList(w, out, "")
+	return out, nil
 }
 
 const defaultPageLimit = 100

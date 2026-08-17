@@ -48,6 +48,10 @@ func routes(deps ext.Deps) ext.Extension {
 	hooks := newWebhooks(deps)
 	go hooks.run(context.Background())
 	a := newAPI(deps, hooks)
+	// The MCP endpoint: same tokens, same scopes, agent-shaped. Stateless
+	// streamable HTTP — every POST is self-contained, so it sits behind the
+	// same auth middleware as the JSON API with nothing extra.
+	r.With(tokens.require).Handle("/mcp", newMCPHandler(a))
 	r.Route("/v1", func(r chi.Router) {
 		// Outside the auth group on purpose: the spec is public documentation,
 		// and the client that most needs to read it is the one that hasn't got

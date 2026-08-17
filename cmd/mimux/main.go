@@ -23,7 +23,22 @@ import (
 
 var version = "dev"
 
+// subcommands maps CLI verbs (mimux <verb> [args…]) to their implementations.
+// Empty in the free build; pro-tagged files in this package register theirs
+// (mcp, …) from init(), so the free binary neither has nor mentions them.
+var subcommands = map[string]func(args []string) int{}
+
 func main() {
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		if fn, ok := subcommands[os.Args[1]]; ok {
+			os.Exit(fn(os.Args[2:]))
+		}
+		// An unknown verb must fail, not silently boot the server: booting
+		// touches the DB (including one-time migrations), which is a hostile
+		// response to a typo.
+		fmt.Fprintf(os.Stderr, "mimux: unknown command %q\n", os.Args[1])
+		os.Exit(2)
+	}
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 	if *showVersion {

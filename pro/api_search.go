@@ -69,14 +69,10 @@ func (a *api) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 	switch req.Mode {
 	case "", "local":
-		msgs, err := a.store.SearchLocal(q, scope, req.Account, req.FolderID, limit)
+		out, err := a.localSearch(q, scope, req.Account, req.FolderID, limit)
 		if err != nil {
 			apiError(w, http.StatusInternalServerError, "internal", "Search failed.")
 			return
-		}
-		out := make([]messageJSON, 0, len(msgs))
-		for _, m := range msgs {
-			out = append(out, toMessageJSON(m))
 		}
 		writeList(w, out, "")
 	case "deep":
@@ -96,6 +92,19 @@ func (a *api) handleSearchJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, a.jobs.view(job, a.store))
 }
 
+// localSearch runs a synchronous SQLite search, shared by REST and MCP.
+func (a *api) localSearch(q *search.SearchQuery, scope search.Scope, account string, folderID int64, limit int) ([]messageJSON, error) {
+	msgs, err := a.store.SearchLocal(q, scope, account, folderID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]messageJSON, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, toMessageJSON(m))
+	}
+	return out, nil
+}
+
 // --- deep-search jobs ---
 
 // searchJob is one async IMAP search. ids is only read once status is "done".
@@ -107,6 +116,13 @@ type searchJob struct {
 	mu     sync.Mutex
 	status string // running|done
 	ids    []int64
+}
+
+// snapshot returns the job's result ids and whether it has finished.
+func (j *searchJob) snapshot() ([]int64, bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	return append([]int64(nil), j.ids...), j.status == "done"
 }
 
 // jobTable holds recent jobs in memory.
