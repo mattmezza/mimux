@@ -28,10 +28,11 @@ type api struct {
 	deps  ext.Deps
 	jobs  *jobTable
 	idem  *idemCache
+	hooks *webhooks
 }
 
-func newAPI(deps ext.Deps) *api {
-	return &api{mail: deps.Mail, store: deps.Store, deps: deps, jobs: newJobTable(), idem: newIdemCache()}
+func newAPI(deps ext.Deps, hooks *webhooks) *api {
+	return &api{mail: deps.Mail, store: deps.Store, deps: deps, jobs: newJobTable(), idem: newIdemCache(), hooks: hooks}
 }
 
 // mount registers every v1 route on r, which is already behind tokens.require.
@@ -39,6 +40,8 @@ func newAPI(deps ext.Deps) *api {
 // mutation mail:modify, account status accounts:read. Filters are read under
 // mail:read and written under mail:modify — they govern how mail is handled,
 // so they follow the mail scopes rather than getting one of their own.
+// Webhooks are the exception: webhooks:manage covers reading them too, because
+// an endpoint list is a list of places this mailbox already talks to.
 func (a *api) mount(r chi.Router) {
 	r.With(requireScope("accounts:read")).Get("/accounts", a.handleAccounts)
 
@@ -58,6 +61,17 @@ func (a *api) mount(r chi.Router) {
 		r.Post("/messages/send", a.idem.wrap(a.handleSend))
 		r.Post("/drafts", a.idem.wrap(a.handleCreateDraft))
 		r.Patch("/drafts/{id}", a.handleUpdateDraft)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(requireScope("webhooks:manage"))
+		r.Get("/webhooks", a.handleListWebhooks)
+		r.Post("/webhooks", a.handleCreateWebhook)
+		r.Patch("/webhooks/{id}", a.handlePatchWebhook)
+		r.Delete("/webhooks/{id}", a.handleDeleteWebhook)
+		r.Get("/webhooks/{id}/deliveries", a.handleWebhookDeliveries)
+		r.Post("/webhooks/{id}/deliveries/{did}/replay", a.handleReplayDelivery)
+		r.Post("/webhooks/{id}/test", a.handleTestWebhook)
 	})
 
 	r.Group(func(r chi.Router) {

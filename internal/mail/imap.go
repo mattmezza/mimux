@@ -21,8 +21,8 @@ import (
 
 // Event is pushed to SSE subscribers.
 type Event struct {
-	Type string // "sync-status" | "new-mail" (any list change) | "toast" | search-*
-	Data string // account name
+	Type string // "sync-status" | "new-mail" (any list change) | "message-new" | "toast" | search-*
+	Data string // account name; the store message id for "message-new", text for "toast"
 }
 
 // AccountStatus is the live sync state surfaced in the status bar.

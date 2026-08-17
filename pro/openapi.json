@@ -4,7 +4,7 @@
     "title": "mimux API",
     "version": "v1",
     "summary": "The REST API of the mimux pro layer — mail read, written and moved by a machine.",
-    "description": "mimux is a self-hosted, single-user mail client.\n\n**The product line, in one sentence: a human driving mimux is free, a machine driving mimux is the paid pro layer.**\n\nThe mail client itself — multi-account unified inbox, IMAP IDLE sync, threading, search, compose, drafts, undo-send, scheduled send, filters, calendar invites, notifications, backup/restore, AI compose and translate with your own key — is AGPL-3.0 and always will be. Nothing is ever moved from the free side to the paid side.\n\nThis API is the other half: `pro/`, licensed under the [Elastic Licence 2.0](https://github.com/mattmezza/mimux/blob/main/pro/LICENSE). It is only compiled into the binary built with the `pro` build tag. The free binary does not contain it, and `make verify-free` proves that on every commit. See [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md).\n\n## There is no central API host\n\nmimux is software you run. Every install is its own API. The `servers` entry below is a template: substitute the origin of *your* mimux, e.g. `https://mail.example.com/api`. There is no shared hosted endpoint to point a client at, and there never will be — your mail stays on your machine.\n\n## Conventions\n\n- All field names are `snake_case`.\n- All timestamps are RFC 3339 in UTC (`2026-08-17T09:30:00Z`).\n- Request bodies are JSON and reject unknown fields with `400 invalid_request`, so a typo fails loudly instead of being silently dropped. Bodies are capped at 32 MiB.\n- Every non-2xx response is the same `Error` envelope: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.\n- Collections use `{\"data\": [...], \"next_cursor\": \"...\"}`. `next_cursor` is `\"\"` when there is nothing left; endpoints that are not paginated still return the field, always as `\"\"`.\n\n## Authentication\n\nA personal access token, minted in **Settings → API**, sent as `Authorization: Bearer mimux_pat_…`. Tokens carry scopes; every operation documents the scope it needs both in prose and in the `x-required-scope` extension. Revoking a token in Settings takes effect on the next request — the middleware re-reads the row every time.\n\n## Rate limiting\n\nPer token, token-bucket, refilling continuously to `MIMUX_API_RATE_LIMIT` requests per minute (default 120; set it to 0 to disable). Over budget is `429 rate_limited` with a `Retry-After` header in whole seconds. The limiter is in-process, so it resets when mimux restarts.\n\n## Idempotency\n\n`POST /v1/messages/send`, `POST /v1/drafts` and `POST /v1/filters` accept an `Idempotency-Key` header. A repeat of the same key by the same token on the same path replays the stored response byte-for-byte with `Idempotency-Replayed: true`, so a retried send cannot go out twice.\n\nHonest caveat: **the key store is in memory, per process.** Keys do not survive a restart, they expire after 24 hours, and when 1024 keys accumulate the whole store is dropped at once rather than evicted LRU. Treat it as at-most-once *per process lifetime*, not as a durable guarantee. Only 2xx responses are stored — a failed call is safe to re-execute.\n\n## What is not here yet\n\nWebhooks and the MCP server are planned and not implemented. The `webhooks:manage` scope exists on the token model already, but no endpoint consumes it. This document will grow those paths when they ship; it describes only what the binary actually serves today.",
+    "description": "mimux is a self-hosted, single-user mail client.\n\n**The product line, in one sentence: a human driving mimux is free, a machine driving mimux is the paid pro layer.**\n\nThe mail client itself — multi-account unified inbox, IMAP IDLE sync, threading, search, compose, drafts, undo-send, scheduled send, filters, calendar invites, notifications, backup/restore, AI compose and translate with your own key — is AGPL-3.0 and always will be. Nothing is ever moved from the free side to the paid side.\n\nThis API is the other half: `pro/`, licensed under the [Elastic Licence 2.0](https://github.com/mattmezza/mimux/blob/main/pro/LICENSE). It is only compiled into the binary built with the `pro` build tag. The free binary does not contain it, and `make verify-free` proves that on every commit. See [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md).\n\n## There is no central API host\n\nmimux is software you run. Every install is its own API. The `servers` entry below is a template: substitute the origin of *your* mimux, e.g. `https://mail.example.com/api`. There is no shared hosted endpoint to point a client at, and there never will be — your mail stays on your machine.\n\n## Conventions\n\n- All field names are `snake_case`.\n- All timestamps are RFC 3339 in UTC (`2026-08-17T09:30:00Z`).\n- Request bodies are JSON and reject unknown fields with `400 invalid_request`, so a typo fails loudly instead of being silently dropped. Bodies are capped at 32 MiB.\n- Every non-2xx response is the same `Error` envelope: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.\n- Collections use `{\"data\": [...], \"next_cursor\": \"...\"}`. `next_cursor` is `\"\"` when there is nothing left; endpoints that are not paginated still return the field, always as `\"\"`.\n\n## Authentication\n\nA personal access token, minted in **Settings → API**, sent as `Authorization: Bearer mimux_pat_…`. Tokens carry scopes; every operation documents the scope it needs both in prose and in the `x-required-scope` extension. Revoking a token in Settings takes effect on the next request — the middleware re-reads the row every time.\n\n## Rate limiting\n\nPer token, token-bucket, refilling continuously to `MIMUX_API_RATE_LIMIT` requests per minute (default 120; set it to 0 to disable). Over budget is `429 rate_limited` with a `Retry-After` header in whole seconds. The limiter is in-process, so it resets when mimux restarts.\n\n## Idempotency\n\n`POST /v1/messages/send`, `POST /v1/drafts` and `POST /v1/filters` accept an `Idempotency-Key` header. A repeat of the same key by the same token on the same path replays the stored response byte-for-byte with `Idempotency-Replayed: true`, so a retried send cannot go out twice.\n\nHonest caveat: **the key store is in memory, per process.** Keys do not survive a restart, they expire after 24 hours, and when 1024 keys accumulate the whole store is dropped at once rather than evicted LRU. Treat it as at-most-once *per process lifetime*, not as a durable guarantee. Only 2xx responses are stored — a failed call is safe to re-execute.\n\n## Webhooks\n\nmimux can also POST to you. See the **Webhooks** tag for the outbound events, the signature scheme and a verification snippet, and `/v1/webhooks` for managing endpoints.\n\n## What is not here yet\n\nThe MCP server is planned and not implemented. This document describes only what the binary actually serves today.",
     "termsOfService": "https://mimux.dev",
     "contact": {
       "name": "mimux",
@@ -65,6 +65,10 @@
     {
       "name": "Filters",
       "description": "Auto-filter rules applied to incoming mail by the sync loop."
+    },
+    {
+      "name": "Webhooks",
+      "description": "Two things live under this tag: the endpoints you manage over `/v1/webhooks`, and the outbound events those endpoints receive (listed at the end of this document, under **Webhooks**).\n\nmimux POSTs a small JSON body to your URL when something happens, so an agent does not have to poll. Each endpoint has its own signing secret, shown once, when it is created.\n\n## The request\n\n```http\nPOST /your/url HTTP/1.1\nContent-Type: application/json\nUser-Agent: mimux-webhooks/1\nX-Mimux-Event: message.received\nX-Mimux-Delivery-Id: 4f8c1d0e5b7a2c9f3e1d6a8b0c4f7e21\nX-Mimux-Signature: t=1700000000,v1=79883357e4c4c4abee43cf4b32367d67a1344520479e3e8c85e98406a6d6a2a5\n```\n\nThe body is always the same envelope — `id`, `event`, `created_at`, `data` — where `id` is the same value as the `X-Mimux-Delivery-Id` header. **Payloads are summaries: a message body is never sent.**\n\n## Verifying the signature\n\n`v1` is `HMAC-SHA256(secret, \"<t>.<raw body>\")`, hex-encoded. Verify it against the exact bytes you received, before parsing any JSON, and reject a stale timestamp: `t` is inside the signed string, so a captured delivery cannot be re-stamped and replayed at you later.\n\n```python\nimport hashlib, hmac, time\n\ndef verify(secret: str, header: str, raw_body: bytes) -> bool:\n    parts = dict(p.split('=', 1) for p in header.split(','))\n    t, v1 = parts['t'], parts['v1']\n    if abs(time.time() - int(t)) > 300:            # reject replays\n        return False\n    signed = f'{t}.'.encode() + raw_body            # timestamp, dot, raw body\n    expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()\n    return hmac.compare_digest(expected, v1)       # constant time\n```\n\nAnswer `2xx` once you have accepted the delivery. Answer `410 Gone` if you never want it again.\n\n## Delivery semantics\n\n- **At least once.** A delivery that times out is retried even if you did process it, so deduplicate on `X-Mimux-Delivery-Id` — it is stable across every retry and every replay.\n- Retry ladder: immediately, then after 1m, 5m, 30m, 2h, 8h and 14h. Seven attempts over roughly a day. Timeouts, `5xx`, `429` and the other `4xx` are all retried (a misconfigured receiver is usually misconfigured temporarily); `410 Gone` is not — that delivery dies at once.\n- When one delivery exhausts the whole ladder the **endpoint is auto-disabled**: `active` goes `false` and `auto_disabled_at` is stamped. `PATCH` it back to `active: true` when the receiver is fixed; that clears the stamp.\n- 10 second timeout per attempt, at most 2 redirects followed, `http`/`https` URLs only.\n- Deliveries queued while an endpoint is paused stay queued; they go out when it is switched back on.\n- The last 100 deliveries per endpoint are kept and readable, and any of them can be replayed.\n\n## Honest caveats\n\n- **Only the pro binary delivers.** The free build shows the same Settings UI and stores what you configure there — and never posts anything. The endpoints are inert until you run pro.\n- `message.received` and `message.sent` ride on IMAP sync, which is what bounds them: an account announces nothing until it has completed one successful sync in this process (that is what keeps a first sync from replaying months of mail at you), and nothing whose IMAP `INTERNALDATE` is over a day old.\n- `message.sent` is the Sent-folder copy of an outgoing message, so it fires when that copy syncs back — moments after SMTP accepted it, not at the instant it did.\n- Events are not ordered relative to each other, and nothing that happened while mimux was stopped is replayed when it starts."
     }
   ],
   "paths": {
@@ -875,6 +879,386 @@
           "500": { "$ref": "#/components/responses/InternalError" }
         }
       }
+    },
+    "/v1/webhooks": {
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhooks",
+        "summary": "List webhook endpoints",
+        "description": "Every configured endpoint, newest first. The signing secret is **not** included — it is returned once, by the create call, and never again.\n\nNot paginated: `next_cursor` is always `\"\"`.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The endpoints.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Webhook" } },
+                    "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "createWebhook",
+        "summary": "Create a webhook endpoint",
+        "description": "Registers a URL and generates its signing secret. **The secret is in this response and in no other**: store it now, because nothing returns it again — to change it, delete the endpoint and create another.\n\n`url` must be an absolute `http`/`https` URL; anything else is a `400`. Unknown event names are dropped silently, so check the `events` you get back. An endpoint subscribed to nothing is legal and simply never fires (a test delivery still works — see the test endpoint).\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookCreate" },
+              "example": {
+                "url": "https://example.com/hooks/mimux",
+                "events": ["message.received", "sync.error"],
+                "active": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created. The one and only sighting of the secret.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/WebhookCreated" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "patch": {
+        "tags": ["Webhooks"],
+        "operationId": "updateWebhook",
+        "summary": "Update a webhook endpoint",
+        "description": "Merges the provided fields; absent ones keep their stored value. `events` replaces the whole subscription list rather than adding to it.\n\nSetting `active: true` also clears `auto_disabled_at` — switching an endpoint back on is how you say the receiver is fixed. There is no way to rotate the secret: delete and re-create.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookPatch" },
+              "example": { "active": true, "events": ["message.received"] }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated endpoint.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Webhook" } }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "delete": {
+        "tags": ["Webhooks"],
+        "operationId": "deleteWebhook",
+        "summary": "Delete a webhook endpoint",
+        "description": "Removes the endpoint, its secret and its delivery log. Anything still queued for it is dropped.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "204": { "description": "Deleted." },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/deliveries": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "get": {
+        "tags": ["Webhooks"],
+        "operationId": "listWebhookDeliveries",
+        "summary": "Read the delivery log",
+        "description": "The endpoint's recent deliveries, newest first: what was sent, how it went, and when the next attempt is due. The payload itself is not included — read it from your own receiver, or replay the delivery.\n\nThe log is bounded at the write end: the last 100 deliveries per endpoint are kept, older rows are pruned as new ones arrive. That is why there is no cursor here and `next_cursor` is always `\"\"`.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The log.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookDelivery" } },
+                    "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/deliveries/{did}/replay": {
+      "parameters": [
+        { "$ref": "#/components/parameters/WebhookID" },
+        {
+          "name": "did",
+          "in": "path",
+          "required": true,
+          "description": "The delivery's `id` from the log — the row id, not the `delivery_id` string sent on the wire.",
+          "schema": { "type": "integer", "format": "int64" },
+          "example": 1892
+        }
+      ],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "replayWebhookDelivery",
+        "summary": "Replay a delivery",
+        "description": "Re-queues the delivery for immediate sending with a fresh retry budget. The body and the `delivery_id` are unchanged, so a receiver that already processed it recognises the duplicate — only the signature's timestamp differs, because it is computed per attempt.\n\nUse it after fixing a receiver that was returning `500`, or to re-deliver something you lost. Sending happens in the background; this call returns as soon as the row is queued.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "202": {
+            "description": "Re-queued.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WebhookDelivery" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/test": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "testWebhook",
+        "summary": "Send a test delivery",
+        "description": "Queues a `ping` delivery to this endpoint and sends it immediately — the way to prove the URL, the signature check and your parser all work without waiting for real mail.\n\n`ping` ignores the subscription list on purpose: an endpoint subscribed to nothing still receives its test. It is also not a subscribable event, which is why you will not find it in `events`.\n\nIt goes through the normal machinery, so a `ping` that fails walks the same retry ladder and can auto-disable the endpoint like any other delivery. Watch the outcome in the delivery log.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "202": {
+            "description": "Queued; sending happens in the background.",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WebhookDelivery" } }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  },
+  "webhooks": {
+    "message.received": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onMessageReceived",
+        "summary": "Message received",
+        "description": "A message arrived in an account's **inbox** and was stored locally. Sent, archived and filed copies do not fire this — the Sent copy fires `message.sent`, and everything else fires nothing.\n\nRides on IMAP sync, so it is silent during a first sync and for anything over a day old. The payload is a summary; fetch the body with `GET /v1/messages/{id}` if you need it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/MessageReceivedData" } } }
+                ]
+              },
+              "example": {
+                "id": "4f8c1d0e5b7a2c9f3e1d6a8b0c4f7e21",
+                "event": "message.received",
+                "created_at": "2026-08-17T09:30:00Z",
+                "data": {
+                  "id": 41207,
+                  "account": "work",
+                  "folder": "INBOX",
+                  "folder_id": 3,
+                  "from": { "name": "Ada Lovelace", "address": "ada@example.com" },
+                  "subject": "Re: the analytical engine",
+                  "date": "2026-08-17T09:29:54Z",
+                  "snippet": "I have been thinking about the ordering of operations…",
+                  "message_id": "<CA+1a2b3c4@mail.example.com>"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
+    },
+    "message.sent": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onMessageSent",
+        "summary": "Message sent",
+        "description": "A message left this mailbox: the copy in the account's **Sent** folder was stored. That copy is what fires this, so the event lands moments after SMTP accepted the message rather than at the instant it did — and an account whose Sent folder is not synced never fires it.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/MessageSentData" } } }
+                ]
+              },
+              "example": {
+                "id": "9b3e7a1c2d4f6081b5c9e2a7d3f80416",
+                "event": "message.sent",
+                "created_at": "2026-08-17T09:31:12Z",
+                "data": {
+                  "id": 41208,
+                  "account": "work",
+                  "to": ["ada@example.com"],
+                  "subject": "Re: the analytical engine",
+                  "date": "2026-08-17T09:31:05Z",
+                  "message_id": "<mimux.20260817093105@example.com>"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
+    },
+    "sync.error": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onSyncError",
+        "summary": "Sync failed",
+        "description": "An account's sync went into the error state — bad credentials, an expired OAuth token, a refused connection. This is the same text the status bar shows.\n\nIt fires on the **edge**: once when the account breaks, again only if the reason changes. A recovery is not announced (there is no `sync.ok`); poll `GET /v1/accounts` if you need to know when it clears.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/SyncErrorData" } } }
+                ]
+              },
+              "example": {
+                "id": "1c7d2e8f3a5b90c4d6e1f2a3b4c5d6e7",
+                "event": "sync.error",
+                "created_at": "2026-08-17T09:32:40Z",
+                "data": { "account": "work", "error": "imap login: authentication failed" }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
+    },
+    "search.completed": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onSearchCompleted",
+        "summary": "Deep search finished",
+        "description": "A deep-search job started with `POST /v1/messages/search` (`mode: deep`) has finished. It carries the count, not the results — fetch those with `GET /v1/search/jobs/{id}`, which is also where the job's caveats are documented (in-memory, 32-job ring, no failure state).\n\nThis is the event that saves the most polling: a deep search answers long after its own HTTP response.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/SearchCompletedData" } } }
+                ]
+              },
+              "example": {
+                "id": "5e9f0a1b2c3d4e5f6071829304a5b6c7",
+                "event": "search.completed",
+                "created_at": "2026-08-17T09:33:58Z",
+                "data": { "job_id": "9f2c1ab30d4e5f67", "query": "from:ada has:attachment", "results": 12 }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
+    },
+    "ping": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onPing",
+        "summary": "Test delivery",
+        "description": "Sent only by `POST /v1/webhooks/{id}/test`. Never fired by anything happening in the mailbox, and not subscribable — a test event you had to subscribe to would be a test that could not tell you your subscription was wrong.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/PingData" } } }
+                ]
+              },
+              "example": {
+                "id": "0a1b2c3d4e5f60718293a4b5c6d7e8f9",
+                "event": "ping",
+                "created_at": "2026-08-17T09:28:00Z",
+                "data": { "message": "This is a mimux webhook test delivery." }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
     }
   },
   "components": {
@@ -882,10 +1266,18 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "A mimux personal access token, minted in **Settings → API** and shown exactly once at creation. It always starts with `mimux_pat_`; a bearer value without that prefix is rejected without so much as a hash comparison.\n\n```\nAuthorization: Bearer mimux_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n```\n\nTokens are stored as argon2id hashes, may carry an expiry, and can be revoked from Settings — revocation is honoured on the very next request, because the middleware re-reads the token row every time.\n\n**Scopes** are a space-separated subset of:\n\n| Scope | Grants |\n|---|---|\n| `mail:read` | Read mail: folders, messages, bodies, attachments, search, filters list. |\n| `mail:send` | Send mail and manage drafts. |\n| `mail:modify` | Change mail: read/star flags, labels, moves, archive/spam/trash, create filters. |\n| `accounts:read` | Read the account list. |\n| `webhooks:manage` | Reserved. Webhooks are not implemented; nothing consumes this scope today. |\n\nA token created with no recognised scope falls back to `mail:read`. Call `GET /v1/tokens/self` to find out what the token in your hand actually holds."
+        "description": "A mimux personal access token, minted in **Settings → API** and shown exactly once at creation. It always starts with `mimux_pat_`; a bearer value without that prefix is rejected without so much as a hash comparison.\n\n```\nAuthorization: Bearer mimux_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n```\n\nTokens are stored as argon2id hashes, may carry an expiry, and can be revoked from Settings — revocation is honoured on the very next request, because the middleware re-reads the token row every time.\n\n**Scopes** are a space-separated subset of:\n\n| Scope | Grants |\n|---|---|\n| `mail:read` | Read mail: folders, messages, bodies, attachments, search, filters list. |\n| `mail:send` | Send mail and manage drafts. |\n| `mail:modify` | Change mail: read/star flags, labels, moves, archive/spam/trash, create filters. |\n| `accounts:read` | Read the account list. |\n| `webhooks:manage` | Manage webhook endpoints and their delivery log, including replaying a delivery and sending a test one. Reading them needs it too: a list of endpoints is a list of places this mailbox already talks to. |\n\nA token created with no recognised scope falls back to `mail:read`. Call `GET /v1/tokens/self` to find out what the token in your hand actually holds."
       }
     },
     "parameters": {
+      "WebhookID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The webhook endpoint id. A non-numeric or unknown value is a `404`.",
+        "schema": { "type": "integer", "format": "int64" },
+        "example": 3
+      },
       "MessageID": {
         "name": "id",
         "in": "path",
@@ -1466,6 +1858,145 @@
             "description": "The action's argument where it takes one: the target folder for `move`, the address for `forward`, the label for `label`. Absent when empty."
           }
         }
+      },
+      "Webhook": {
+        "type": "object",
+        "description": "A configured endpoint. The signing secret is deliberately absent — it exists in the create response and nowhere else.",
+        "required": ["id", "url", "events", "active", "created_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "url": { "type": "string", "format": "uri", "description": "Absolute `http`/`https` URL. Anything else is refused on the way in." },
+          "events": {
+            "type": "array",
+            "description": "What this endpoint is subscribed to. Empty is legal and means it never fires (a test delivery still works).",
+            "items": { "$ref": "#/components/schemas/WebhookEventName" }
+          },
+          "active": { "type": "boolean", "description": "`false` means nothing is delivered. Queued deliveries wait rather than being dropped." },
+          "auto_disabled_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Present when the engine switched this endpoint off after a delivery exhausted the retry ladder. `PATCH active: true` clears it."
+          },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "WebhookCreate": {
+        "type": "object",
+        "required": ["url"],
+        "properties": {
+          "url": { "type": "string", "format": "uri", "description": "Absolute `http`/`https` URL." },
+          "events": {
+            "type": "array",
+            "description": "Unknown names are dropped rather than rejected; check what comes back.",
+            "items": { "$ref": "#/components/schemas/WebhookEventName" }
+          },
+          "active": { "type": "boolean", "default": true }
+        }
+      },
+      "WebhookPatch": {
+        "type": "object",
+        "description": "Every field is optional; absent ones keep their stored value. `events` replaces the whole list.",
+        "properties": {
+          "url": { "type": "string", "format": "uri" },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookEventName" } },
+          "active": { "type": "boolean", "description": "Setting this to `true` also clears `auto_disabled_at`." }
+        }
+      },
+      "WebhookCreated": {
+        "type": "object",
+        "required": ["webhook", "secret", "note"],
+        "properties": {
+          "webhook": { "$ref": "#/components/schemas/Webhook" },
+          "secret": { "type": "string", "description": "The HMAC signing secret. Shown here once; no other response ever contains it." },
+          "note": { "type": "string", "description": "The same warning in prose, so a client that dumps this response shows it to a human." }
+        }
+      },
+      "WebhookEventName": {
+        "type": "string",
+        "description": "A subscribable event. `ping` is not one: it is only sent by the test endpoint.",
+        "enum": ["message.received", "message.sent", "sync.error", "search.completed"]
+      },
+      "WebhookDelivery": {
+        "type": "object",
+        "description": "One event queued for one endpoint, plus the outcome so far. Kept for the last 100 deliveries per endpoint.",
+        "required": ["id", "delivery_id", "event", "status", "attempts", "created_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "description": "Row id — what you pass to the replay endpoint." },
+          "delivery_id": { "type": "string", "description": "What the receiver sees as `X-Mimux-Delivery-Id`. Stable across retries and replays; deduplicate on it." },
+          "event": { "type": "string", "description": "Event type, including `ping` for test deliveries." },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "failed", "ok", "dead"],
+            "description": "`pending` queued, `failed` attempted with retries left, `ok` delivered, `dead` given up on (ladder exhausted, or the receiver said `410 Gone`)."
+          },
+          "attempts": { "type": "integer", "description": "Attempts made so far, out of the ladder's seven." },
+          "last_status_code": { "type": "integer", "description": "HTTP status of the last attempt. Absent when the request never got an answer." },
+          "last_error": { "type": "string", "description": "Transport error from the last attempt, truncated. Absent when the last attempt reached the receiver." },
+          "next_attempt_at": { "type": "string", "format": "date-time", "description": "Present while `pending` or `failed`." },
+          "created_at": { "type": "string", "format": "date-time" },
+          "delivered_at": { "type": "string", "format": "date-time", "description": "Present once a `2xx` came back." }
+        }
+      },
+      "WebhookEnvelope": {
+        "type": "object",
+        "description": "The body of every outbound delivery. `data` is shaped by `event`.",
+        "required": ["id", "event", "created_at", "data"],
+        "properties": {
+          "id": { "type": "string", "description": "The delivery id, identical to the `X-Mimux-Delivery-Id` header." },
+          "event": { "type": "string", "example": "message.received" },
+          "created_at": { "type": "string", "format": "date-time", "description": "When the event happened — not when this attempt was made." },
+          "data": { "type": "object" }
+        }
+      },
+      "MessageReceivedData": {
+        "type": "object",
+        "description": "A summary of the message. There is no body field, by design: a webhook is where mail leaves this machine without anyone watching.",
+        "required": ["id", "account", "folder", "folder_id", "from", "subject", "date"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "description": "mimux message id — fetch the full message with `GET /v1/messages/{id}`." },
+          "account": { "type": "string" },
+          "folder": { "type": "string", "description": "IMAP folder name it landed in." },
+          "folder_id": { "type": "integer", "format": "int64" },
+          "from": { "$ref": "#/components/schemas/Address" },
+          "subject": { "type": "string" },
+          "date": { "type": "string", "format": "date-time" },
+          "snippet": { "type": "string", "description": "The same short preview the message list shows. Cheap: it was already stored." },
+          "message_id": { "type": "string", "description": "The RFC 5322 `Message-ID` header." }
+        }
+      },
+      "MessageSentData": {
+        "type": "object",
+        "required": ["id", "account", "to", "subject", "date"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "account": { "type": "string" },
+          "to": { "type": "array", "items": { "type": "string" }, "description": "Recipients as stored on the Sent copy. Bcc is not in it, because it is not in the message." },
+          "subject": { "type": "string" },
+          "date": { "type": "string", "format": "date-time" },
+          "message_id": { "type": "string" }
+        }
+      },
+      "SyncErrorData": {
+        "type": "object",
+        "required": ["account", "error"],
+        "properties": {
+          "account": { "type": "string" },
+          "error": { "type": "string", "description": "The failure as the status bar shows it. Wording comes from the IMAP layer and is not a stable machine-readable code." }
+        }
+      },
+      "SearchCompletedData": {
+        "type": "object",
+        "required": ["job_id", "query", "results"],
+        "properties": {
+          "job_id": { "type": "string", "description": "Pass to `GET /v1/search/jobs/{id}` for the messages." },
+          "query": { "type": "string", "description": "The raw query as submitted." },
+          "results": { "type": "integer", "description": "Number of matches. Zero can also mean every account's IMAP search failed — deep-search jobs have no failure state." }
+        }
+      },
+      "PingData": {
+        "type": "object",
+        "required": ["message"],
+        "properties": { "message": { "type": "string" } }
       }
     }
   }

@@ -5,6 +5,7 @@
 package pro
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -40,7 +41,13 @@ func routes(deps ext.Deps) ext.Extension {
 	})
 
 	tokens := newTokenAuth(deps.Store, deps.Cfg.API.RateLimitPerMinute)
-	a := newAPI(deps)
+	// The webhook delivery engine: subscribes to the mail hub and drains the
+	// delivery queue for as long as the process lives. Started here because
+	// this is the pro layer's only entry point — the free build has the
+	// endpoints table and the Settings UI, and nothing that posts.
+	hooks := newWebhooks(deps)
+	go hooks.run(context.Background())
+	a := newAPI(deps, hooks)
 	r.Route("/v1", func(r chi.Router) {
 		// Outside the auth group on purpose: the spec is public documentation,
 		// and the client that most needs to read it is the one that hasn't got

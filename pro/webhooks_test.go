@@ -1,0 +1,413 @@
+//go:build pro
+
+// SPDX-License-Identifier: LicenseRef-Elastic-2.0
+
+package pro
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/ext"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
+)
+
+// TestMain slows the ambient engine that routes() starts down to a tick nothing
+// in a test run will reach: the tests here drive their own engine explicitly,
+// and a background ticker firing against a closed test store proves nothing.
+func TestMain(m *testing.M) {
+	webhookTick = time.Hour
+	os.Exit(m.Run())
+}
+
+// testEngine is an engine over a fresh store, with a ladder short enough to
+// walk in a test.
+func testEngine(t *testing.T, ladder ...time.Duration) (*webhooks, *store.Store, *mail.Manager) {
+	t.Helper()
+	st := openStore(t)
+	cfg := &config.Config{}
+	m := mail.NewManager(cfg, st)
+	e := newWebhooks(ext.Deps{Mail: m, Store: st, Cfg: cfg})
+	e.tick = 10 * time.Millisecond
+	if len(ladder) > 0 {
+		e.ladder = ladder
+	}
+	return e, st, m
+}
+
+func seedEndpoint(t *testing.T, st *store.Store, url, events string) *store.WebhookEndpoint {
+	t.Helper()
+	ep := &store.WebhookEndpoint{URL: url, Secret: "topsecret", Events: events, Active: true}
+	if err := st.CreateWebhookEndpoint(ep); err != nil {
+		t.Fatal(err)
+	}
+	return ep
+}
+
+// recorder is a webhook receiver that records what it was sent and answers with
+// a scripted status code.
+type recorder struct {
+	mu     sync.Mutex
+	bodies []string
+	heads  []http.Header
+	code   int
+	got    chan struct{}
+}
+
+func newRecorder(code int) *recorder { return &recorder{code: code, got: make(chan struct{}, 16)} }
+
+func (rc *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	rc.mu.Lock()
+	rc.bodies = append(rc.bodies, string(body))
+	rc.heads = append(rc.heads, r.Header.Clone())
+	code := rc.code
+	rc.mu.Unlock()
+	w.WriteHeader(code)
+	select {
+	case rc.got <- struct{}{}:
+	default:
+	}
+}
+
+func (rc *recorder) count() int {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	return len(rc.bodies)
+}
+
+func (rc *recorder) last() (string, http.Header) {
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if len(rc.bodies) == 0 {
+		return "", nil
+	}
+	return rc.bodies[len(rc.bodies)-1], rc.heads[len(rc.heads)-1]
+}
+
+// TestWebhookSignatureVector pins the wire format against a value computed
+// outside this codebase: HMAC-SHA256("topsecret", "1700000000." + body). A
+// receiver written from the docs must keep verifying after any refactor here.
+func TestWebhookSignatureVector(t *testing.T) {
+	const want = "t=1700000000,v1=79883357e4c4c4abee43cf4b32367d67a1344520479e3e8c85e98406a6d6a2a5"
+	if got := signature("topsecret", 1700000000, `{"hello":"world"}`); got != want {
+		t.Errorf("signature =\n%s\nwant\n%s", got, want)
+	}
+	// A different secret, timestamp or body must all change it.
+	if signature("other", 1700000000, `{"hello":"world"}`) == want ||
+		signature("topsecret", 1700000001, `{"hello":"world"}`) == want ||
+		signature("topsecret", 1700000000, `{"hello":"there"}`) == want {
+		t.Error("signature is insensitive to one of its inputs")
+	}
+}
+
+// verify is the check a receiver performs, written the way the docs describe it.
+func verify(t *testing.T, secret, header, body string) {
+	t.Helper()
+	var ts, v1 string
+	for _, part := range strings.Split(header, ",") {
+		k, v, _ := strings.Cut(part, "=")
+		switch k {
+		case "t":
+			ts = v
+		case "v1":
+			v1 = v
+		}
+	}
+	sec, err := strconv.ParseInt(ts, 10, 64)
+	if err != nil || time.Since(time.Unix(sec, 0)) > 5*time.Minute {
+		t.Fatalf("timestamp %q is missing or stale", ts)
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(ts + "." + body))
+	if !hmac.Equal([]byte(v1), []byte(hex.EncodeToString(mac.Sum(nil)))) {
+		t.Fatalf("signature %q does not verify over the body", v1)
+	}
+}
+
+func TestWebhookDeliverySucceeds(t *testing.T) {
+	rc := newRecorder(http.StatusNoContent)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, srv.URL, "message.received")
+	if !e.fire("message.received", map[string]any{"subject": "hi"}) {
+		t.Fatal("fire queued nothing")
+	}
+	e.drain(context.Background())
+
+	if rc.count() != 1 {
+		t.Fatalf("receiver got %d deliveries, want 1", rc.count())
+	}
+	body, head := rc.last()
+	verify(t, ep.Secret, head.Get("X-Mimux-Signature"), body)
+	if head.Get("X-Mimux-Event") != "message.received" || head.Get("X-Mimux-Delivery-Id") == "" {
+		t.Errorf("headers = %v", head)
+	}
+	var got struct {
+		ID, Event, CreatedAt string
+		Data                 map[string]any
+	}
+	if err := json.Unmarshal([]byte(body), &got); err != nil {
+		t.Fatalf("body is not the documented envelope: %v\n%s", err, body)
+	}
+	if got.Event != "message.received" || got.ID != head.Get("X-Mimux-Delivery-Id") || got.Data["subject"] != "hi" {
+		t.Errorf("body = %s", body)
+	}
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 || log[0].Status != store.WebhookOK || log[0].Attempts != 1 || log[0].DeliveredAt.IsZero() {
+		t.Fatalf("delivery not marked ok: %+v", log)
+	}
+}
+
+// TestWebhookRetryLadderAndAutoDisable: a receiver that never recovers gets one
+// attempt per rung, then the delivery dies and the endpoint is switched off so
+// the next event isn't queued into a black hole.
+func TestWebhookRetryLadderAndAutoDisable(t *testing.T) {
+	rc := newRecorder(http.StatusInternalServerError)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, _ := testEngine(t, 0, 0, 0) // three rungs, no waiting
+	ep := seedEndpoint(t, st, srv.URL, "ping")
+	e.queue(ep, "ping", map[string]any{})
+
+	for range 5 { // more drains than rungs: the extra ones must be no-ops
+		e.drain(context.Background())
+	}
+	if rc.count() != 3 {
+		t.Fatalf("receiver got %d attempts, want one per rung (3)", rc.count())
+	}
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 || log[0].Status != store.WebhookDead || log[0].Attempts != 3 {
+		t.Fatalf("delivery did not die at the end of the ladder: %+v", log)
+	}
+	if log[0].LastStatusCode != 500 {
+		t.Errorf("last status code = %d", log[0].LastStatusCode)
+	}
+	got, _ := st.WebhookEndpointByID(ep.ID)
+	if got.Active || !got.AutoDisabled() {
+		t.Fatalf("endpoint was not auto-disabled: %+v", got)
+	}
+	// And a disabled endpoint stops receiving events entirely.
+	if e.fire("ping", map[string]any{}) {
+		t.Error("an auto-disabled endpoint was still queued for")
+	}
+}
+
+// TestWebhook410IsFinal: 410 Gone means the subscription is over — one attempt,
+// no ladder, and the endpoint is left alone (the receiver chose this).
+func TestWebhook410IsFinal(t *testing.T) {
+	rc := newRecorder(http.StatusGone)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, _ := testEngine(t, 0, 0, 0)
+	ep := seedEndpoint(t, st, srv.URL, "ping")
+	e.queue(ep, "ping", map[string]any{})
+	for range 3 {
+		e.drain(context.Background())
+	}
+	if rc.count() != 1 {
+		t.Fatalf("receiver got %d attempts after 410, want 1", rc.count())
+	}
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if log[0].Status != store.WebhookDead || log[0].LastStatusCode != http.StatusGone {
+		t.Fatalf("410 did not kill the delivery immediately: %+v", log[0])
+	}
+	if got, _ := st.WebhookEndpointByID(ep.ID); !got.Active {
+		t.Error("410 on one delivery disabled the whole endpoint")
+	}
+}
+
+// TestWebhookRetriesThenSucceeds: a receiver that comes back is delivered to,
+// with the same delivery id (at-least-once, deduplicated by the receiver).
+func TestWebhookRetriesThenSucceeds(t *testing.T) {
+	rc := newRecorder(http.StatusBadGateway)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, _ := testEngine(t, 0, 0, 0)
+	ep := seedEndpoint(t, st, srv.URL, "ping")
+	e.queue(ep, "ping", map[string]any{})
+	e.drain(context.Background())
+	rc.mu.Lock()
+	rc.code = http.StatusOK
+	rc.mu.Unlock()
+	e.drain(context.Background())
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if log[0].Status != store.WebhookOK || log[0].Attempts != 2 {
+		t.Fatalf("recovery not recorded: %+v", log[0])
+	}
+	rc.mu.Lock()
+	defer rc.mu.Unlock()
+	if rc.heads[0].Get("X-Mimux-Delivery-Id") != rc.heads[1].Get("X-Mimux-Delivery-Id") {
+		t.Error("the retry used a different delivery id, so a receiver cannot deduplicate")
+	}
+	if rc.bodies[0] != rc.bodies[1] {
+		t.Error("the retry sent a different body")
+	}
+}
+
+// TestWebhookTranslatesHubEvents is the hub-event → delivery-row mapping: which
+// folder the new message landed in decides the event, and nothing else fires.
+func TestWebhookTranslatesHubEvents(t *testing.T) {
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, "https://example.test/hook", "message.received message.sent")
+	inbox := seedFolder(t, st, "a1", "INBOX", "inbox")
+	sent := seedFolder(t, st, "a1", "Sent", "sent")
+	archive := seedFolder(t, st, "a1", "Archive", "archive")
+
+	got := seedMsg(t, st, store.Message{Account: "a1", FolderID: inbox, UID: 1, Subject: "Hello",
+		FromName: "Ada", FromAddress: "ada@example.test", Snippet: "the snippet", MessageID: "<1@x>"})
+	out := seedMsg(t, st, store.Message{Account: "a1", FolderID: sent, UID: 2, Subject: "Re: Hello",
+		ToAddresses: "ada@example.test, bob@example.test", MessageID: "<2@x>"})
+	filed := seedMsg(t, st, store.Message{Account: "a1", FolderID: archive, UID: 3, Subject: "Old"})
+
+	seen := map[string]string{}
+	for _, id := range []int64{got, out, filed} {
+		e.translate(mail.Event{Type: "message-new", Data: strconv.FormatInt(id, 10)}, seen)
+	}
+	// Junk ids and unrelated event types must not queue anything either.
+	e.translate(mail.Event{Type: "message-new", Data: "not-a-number"}, seen)
+	e.translate(mail.Event{Type: "message-new", Data: "999999"}, seen)
+	e.translate(mail.Event{Type: "toast", Data: "hi"}, seen)
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 2 {
+		t.Fatalf("queued %d deliveries, want 2 (inbox + sent, not the archived one)", len(log))
+	}
+	// Newest first: the Sent copy, then the received one.
+	if log[0].EventType != "message.sent" || log[1].EventType != "message.received" {
+		t.Fatalf("events = %q, %q", log[0].EventType, log[1].EventType)
+	}
+	var received struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(log[1].Payload), &received); err != nil {
+		t.Fatal(err)
+	}
+	d := received.Data
+	if d["subject"] != "Hello" || d["folder"] != "INBOX" || d["snippet"] != "the snippet" {
+		t.Errorf("message.received payload = %v", d)
+	}
+	if from, _ := d["from"].(map[string]any); from["address"] != "ada@example.test" {
+		t.Errorf("from = %v", d["from"])
+	}
+	// Summaries only: no body field, whatever the message holds.
+	if _, ok := d["body"]; ok {
+		t.Error("message.received payload carries a body")
+	}
+	var sentPayload struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(log[0].Payload), &sentPayload); err != nil {
+		t.Fatal(err)
+	}
+	if to, _ := sentPayload.Data["to"].([]any); len(to) != 2 || to[0] != "ada@example.test" {
+		t.Errorf("message.sent payload to = %v", sentPayload.Data["to"])
+	}
+
+	// An endpoint that didn't subscribe hears nothing.
+	quiet := seedEndpoint(t, st, "https://quiet.test/hook", "sync.error")
+	e.translate(mail.Event{Type: "message-new", Data: strconv.FormatInt(got, 10)}, seen)
+	if log, _ := st.ListWebhookDeliveries(quiet.ID, 10); len(log) != 0 {
+		t.Errorf("unsubscribed endpoint got %d deliveries", len(log))
+	}
+}
+
+// TestWebhookSyncErrorEdges: an account that stays broken must not re-fire on
+// every sync-status broadcast, but a new reason must.
+func TestWebhookSyncErrorEdges(t *testing.T) {
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, "https://example.test/hook", "sync.error")
+	seen := map[string]string{}
+
+	ok := []mail.AccountStatus{{Account: "a1", State: "ok"}}
+	broken := []mail.AccountStatus{{Account: "a1", State: "error", Message: "auth failed"}}
+	otherBreak := []mail.AccountStatus{{Account: "a1", State: "error", Message: "connection refused"}}
+
+	e.syncErrors(ok, seen)
+	if log, _ := st.ListWebhookDeliveries(ep.ID, 10); len(log) != 0 {
+		t.Fatalf("a healthy account fired sync.error: %+v", log)
+	}
+	e.syncErrors(broken, seen)
+	e.syncErrors(broken, seen) // still broken, same reason: no second event
+	e.syncErrors(otherBreak, seen)
+	e.syncErrors(ok, seen)
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 2 {
+		t.Fatalf("queued %d sync.error deliveries, want 2 (one per distinct failure)", len(log))
+	}
+	var p struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(log[1].Payload), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Data["account"] != "a1" || p.Data["error"] != "auth failed" {
+		t.Errorf("sync.error payload = %v", p.Data)
+	}
+}
+
+// TestWebhookEngineRunsOffTheHub is the wiring proof: a broadcast on the mail
+// manager's own hub reaches a real HTTP receiver, through run().
+func TestWebhookEngineRunsOffTheHub(t *testing.T) {
+	rc := newRecorder(http.StatusOK)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, m := testEngine(t)
+	seedEndpoint(t, st, srv.URL, "message.received")
+	inbox := seedFolder(t, st, "a1", "INBOX", "inbox")
+	id := seedMsg(t, st, store.Message{Account: "a1", FolderID: inbox, UID: 1, Subject: "Ping"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.run(ctx)
+	// The engine has to be subscribed before the broadcast: the hub does not
+	// replay. Broadcasting until it lands is the honest way to wait for that.
+	deadline := time.After(2 * time.Second)
+	for {
+		m.Broadcast("message-new", strconv.FormatInt(id, 10))
+		select {
+		case <-rc.got:
+			if _, head := rc.last(); head.Get("X-Mimux-Event") != "message.received" {
+				t.Fatalf("delivered the wrong event: %v", head)
+			}
+			return
+		case <-deadline:
+			t.Fatal("a hub broadcast never reached the receiver")
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+// TestWebhookRefusesNonHTTPURL: the store blocks these on the way in, and the
+// sender blocks them again on the way out.
+func TestWebhookRefusesNonHTTPURL(t *testing.T) {
+	e, _, _ := testEngine(t)
+	ep := &store.WebhookEndpoint{ID: 1, URL: "file:///etc/passwd", Secret: "s"}
+	d := &store.WebhookDelivery{EventType: "ping", DeliveryID: "x", Payload: "{}"}
+	if code, err := e.post(context.Background(), ep, d); err == nil || code != 0 {
+		t.Errorf("post to %q = %d, %v; want a refusal", ep.URL, code, err)
+	}
+}

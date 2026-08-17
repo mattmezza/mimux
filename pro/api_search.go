@@ -174,6 +174,7 @@ func (a *api) startDeepSearch(raw string, q *search.SearchQuery, scope search.Sc
 		job.mu.Lock()
 		job.status, job.ids = "done", ids
 		job.mu.Unlock()
+		a.searchCompleted(job, len(ids))
 		return job
 	}
 
@@ -213,6 +214,18 @@ func (a *api) startDeepSearch(raw string, q *search.SearchQuery, scope search.Sc
 		job.mu.Lock()
 		job.status, job.ids = "done", all
 		job.mu.Unlock()
+		a.searchCompleted(job, len(all))
 	}()
 	return job
+}
+
+// searchCompleted fires the search.completed webhook. A deep search is the one
+// API call that finishes long after its response was written, so it is the one
+// an agent most wants pushed rather than polled.
+func (a *api) searchCompleted(job *searchJob, results int) {
+	if a.hooks.fire("search.completed", map[string]any{
+		"job_id": job.ID, "query": job.Query, "results": results,
+	}) {
+		a.sendSoon() // off the request path: the cached branch runs inline
+	}
 }

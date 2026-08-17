@@ -214,6 +214,33 @@ func (m *Manager) NotifyTest() {
 	go m.notify("", "mimux", "Test notification — notifications are working.", "")
 }
 
+// signalNewMessage announces a just-stored message on the hub, by store id, so
+// a subscriber can react to *which* message arrived instead of only "something
+// changed" (which is all the new-mail event has ever said). The browser uses
+// the id to deep-link the message; pro/webhooks.go turns it into a payload.
+//
+// Not folder-filtered on purpose — a subscriber knows what it cares about, and
+// the id resolves to the folder anyway — but it is backfill-filtered, or a
+// fresh install would announce months of old mail one event at a time. The two
+// guards are the ones notifiable() documents at length: nothing until the
+// account has completed a successful sync in this process, and nothing older
+// than a day (the backstop for a mid-session UIDVALIDITY re-fetch).
+//
+// notifiable() itself is deliberately not reused: it is also inbox-only and
+// skips already-read mail, and both of those are notification policy — a
+// webhook subscriber wants to hear about the Sent copy of a message too.
+func (a *account) signalNewMessage(f *store.Folder, buf *imapclient.FetchMessageBuffer) {
+	if a.getStatus().LastSync.IsZero() ||
+		buf.InternalDate.IsZero() || time.Since(buf.InternalDate) > 24*time.Hour {
+		return
+	}
+	msg, err := a.m.st.MessageByFolderUID(f.ID, uint32(buf.UID))
+	if err != nil || msg == nil {
+		return
+	}
+	a.m.hub.broadcast(Event{Type: "message-new", Data: strconv.FormatInt(msg.ID, 10)})
+}
+
 // maybeNotify is the "tell me about every new message" path, called for each
 // newly-stored message during a sync.
 //

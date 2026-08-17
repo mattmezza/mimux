@@ -1,0 +1,369 @@
+//go:build pro
+
+// SPDX-License-Identifier: LicenseRef-Elastic-2.0
+
+package pro
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/mattmezza/mimux/internal/ext"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
+)
+
+// The delivery engine. Endpoints are configured on the AGPL side (Settings →
+// API, and the JSON API in api_webhooks.go); this file is what actually posts.
+// The free build has the table and the UI and nothing that drains it, which is
+// what the Settings copy says.
+
+// webhookTick is how often due deliveries are drained. A fresh delivery is
+// drained immediately when it is queued, so this interval only governs retries
+// and anything left over from a previous run — which is why 5s (the outbox
+// scheduler's number) is plenty.
+//
+// A var, not a const: the tests drive the engine by hand and must not race with
+// the ambient one that routes() starts.
+var webhookTick = 5 * time.Second
+
+// webhookTimeout bounds one POST, end to end.
+const webhookTimeout = 10 * time.Second
+
+// webhookBatch caps how many deliveries one drain sends, so a backlog can't
+// hold the loop for minutes.
+const webhookBatch = 20
+
+// webhookMaxRedirects is how far a redirect chain is followed. Two hops covers
+// http→https and a path move; anything longer is a misconfigured receiver.
+const webhookMaxRedirects = 2
+
+// retryLadder is the delay before attempt N+1, indexed by the number of
+// attempts already made: 0s, 1m, 5m, 30m, 2h, 8h, 14h. Seven attempts spread
+// over ~24.5h, front-loaded because most failures are a receiver restarting and
+// most of the rest are a receiver that is down for the day.
+//
+// When the ladder runs out the delivery is `dead` AND its endpoint is
+// auto-disabled: a receiver that ignored us for a day is not coming back on its
+// own, and the alternative — keep queueing into a black hole — buries the next
+// real event in a hundred dead rows.
+var retryLadder = []time.Duration{
+	0, time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 8 * time.Hour, 14 * time.Hour,
+}
+
+type webhooks struct {
+	store  *store.Store
+	mail   *mail.Manager
+	client *http.Client
+	tick   time.Duration
+	ladder []time.Duration
+}
+
+func newWebhooks(deps ext.Deps) *webhooks {
+	return &webhooks{
+		store: deps.Store,
+		mail:  deps.Mail,
+		client: &http.Client{
+			Timeout: webhookTimeout,
+			CheckRedirect: func(_ *http.Request, via []*http.Request) error {
+				if len(via) > webhookMaxRedirects {
+					return errors.New("too many redirects")
+				}
+				return nil
+			},
+		},
+		tick:   webhookTick,
+		ladder: retryLadder,
+	}
+}
+
+// run is the engine: translate hub events into delivery rows, drain due rows.
+// One goroutine, started from routes() and living as long as the process —
+// ext.Extension has no shutdown hook and there is nothing to shut down: every
+// piece of state is in SQLite, so a restart resumes mid-ladder.
+func (e *webhooks) run(ctx context.Context) {
+	events, unsubscribe := e.mail.Subscribe()
+	defer unsubscribe()
+	// Per-account "state + message", so a sync.error fires on the edge into
+	// error rather than on every sync-status broadcast while it stays broken.
+	seen := map[string]string{}
+	t := time.NewTicker(e.tick)
+	defer t.Stop()
+	e.drain(ctx) // whatever the last run left mid-ladder
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev := <-events:
+			if e.translate(ev, seen) {
+				e.drain(ctx) // the first attempt of the ladder is "now"
+			}
+		case <-t.C:
+			e.drain(ctx)
+		}
+	}
+}
+
+// translate maps one hub event to zero or more webhook events, and reports
+// whether anything was queued.
+//
+// message-new is the hub's "this message just arrived, here is its id" event;
+// which webhook event it becomes is decided here, by the folder it landed in,
+// so that policy stays out of the AGPL sync loop. sync.error is derived from
+// the sync-status event plus Manager.Status(), which already carries the error
+// text the status bar shows — no new hub event needed for it.
+func (e *webhooks) translate(ev mail.Event, seen map[string]string) bool {
+	switch ev.Type {
+	case "message-new":
+		id, err := strconv.ParseInt(ev.Data, 10, 64)
+		if err != nil {
+			return false
+		}
+		msg, err := e.store.MessageByID(id)
+		if err != nil || msg == nil {
+			return false
+		}
+		f, err := e.store.FolderByID(msg.FolderID)
+		if err != nil || f == nil {
+			return false
+		}
+		switch f.SpecialUse {
+		case "inbox":
+			return e.fire("message.received", receivedData(*msg, f))
+		case "sent":
+			return e.fire("message.sent", sentData(*msg))
+		}
+	case "sync-status":
+		return e.syncErrors(e.mail.Status(), seen)
+	}
+	return false
+}
+
+// syncErrors fires sync.error for each account that has just gone into (or
+// changed its reason for being in) the error state. Takes the statuses rather
+// than reading them, so the edge detection can be tested without a live worker.
+func (e *webhooks) syncErrors(statuses []mail.AccountStatus, seen map[string]string) bool {
+	queued := false
+	for _, st := range statuses {
+		key := st.State + "\x00" + st.Message
+		if seen[st.Account] == key {
+			continue
+		}
+		seen[st.Account] = key
+		if st.State != "error" {
+			continue
+		}
+		if e.fire("sync.error", map[string]any{"account": st.Account, "error": st.Message}) {
+			queued = true
+		}
+	}
+	return queued
+}
+
+// receivedData is the message.received payload: a summary. Never a body —
+// bodies are large, and a webhook is the one place mail leaves this machine
+// without the user watching.
+func receivedData(m store.Message, f *store.Folder) map[string]any {
+	return map[string]any{
+		"id":         m.ID,
+		"account":    m.Account,
+		"folder":     f.Name,
+		"folder_id":  f.ID,
+		"from":       addrJSON{Name: m.FromName, Address: m.FromAddress},
+		"subject":    m.Subject,
+		"date":       m.Date.UTC().Format(time.RFC3339),
+		"snippet":    m.Snippet,
+		"message_id": m.MessageID,
+	}
+}
+
+// sentData is the message.sent payload, read off the copy that lands in the
+// Sent folder.
+func sentData(m store.Message) map[string]any {
+	return map[string]any{
+		"id":         m.ID,
+		"account":    m.Account,
+		"to":         mail.SplitAddrList(m.ToAddresses),
+		"subject":    m.Subject,
+		"date":       m.Date.UTC().Format(time.RFC3339),
+		"message_id": m.MessageID,
+	}
+}
+
+// fire queues one event for every active endpoint subscribed to it.
+func (e *webhooks) fire(event string, data any) bool {
+	eps, err := e.store.ListWebhookEndpoints()
+	if err != nil {
+		slog.Error("webhooks: list endpoints", "err", err)
+		return false
+	}
+	queued := false
+	for i := range eps {
+		if !eps[i].Active || !eps[i].Wants(event) {
+			continue
+		}
+		if e.queue(&eps[i], event, data) != nil {
+			queued = true
+		}
+	}
+	return queued
+}
+
+// queue writes one delivery row and returns it, or nil if it could not be
+// written. The body is rendered once and stored verbatim: every attempt signs
+// and sends exactly these bytes, so a receiver can verify a retry the same way
+// it verified the first try.
+func (e *webhooks) queue(ep *store.WebhookEndpoint, event string, data any) *store.WebhookDelivery {
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	id := hex.EncodeToString(buf)
+	body, err := json.Marshal(map[string]any{
+		"id":         id,
+		"event":      event,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data":       data,
+	})
+	if err != nil {
+		slog.Error("webhooks: encode payload", "event", event, "err", err) // never the payload
+		return nil
+	}
+	d := &store.WebhookDelivery{
+		EndpointID: ep.ID, EventType: event, DeliveryID: id, Payload: string(body),
+	}
+	if err := e.store.EnqueueWebhookDelivery(d); err != nil {
+		slog.Error("webhooks: enqueue", "endpoint", ep.ID, "event", event, "err", err)
+		return nil
+	}
+	return d
+}
+
+// drain sends every delivery whose next attempt has come.
+func (e *webhooks) drain(ctx context.Context) {
+	due, err := e.store.DueWebhookDeliveries(time.Now(), webhookBatch)
+	if err != nil {
+		slog.Error("webhooks: due", "err", err)
+		return
+	}
+	for i := range due {
+		d := &due[i]
+		ep, err := e.store.WebhookEndpointByID(d.EndpointID)
+		if err != nil || ep == nil {
+			continue
+		}
+		// A paused or auto-disabled endpoint keeps its queue: the rows stay
+		// pending and go out when it is switched back on.
+		if !ep.Active {
+			continue
+		}
+		e.attempt(ctx, ep, d)
+	}
+}
+
+// attempt makes one delivery attempt and records the outcome.
+//
+// Retry policy: 2xx is done. 410 Gone is the one refusal that means "stop" —
+// it is the standard "this subscription is over" answer, and it is what the
+// push-notification path already honours. Everything else — timeouts, 5xx,
+// 429, and the other 4xx, because a misconfigured receiver is usually
+// misconfigured temporarily — walks the ladder and then dies.
+func (e *webhooks) attempt(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) {
+	code, err := e.post(ctx, ep, d)
+	d.Attempts++
+	d.LastStatusCode = code
+	d.LastError = ""
+	if err != nil {
+		d.LastError = truncate(err.Error(), 300)
+	}
+	exhausted := false
+	switch {
+	case code >= 200 && code < 300:
+		d.Status, d.DeliveredAt = store.WebhookOK, time.Now().UTC()
+	case code == http.StatusGone:
+		d.Status = store.WebhookDead
+		d.LastError = "endpoint replied 410 Gone"
+	case d.Attempts >= len(e.ladder):
+		d.Status, exhausted = store.WebhookDead, true
+	default:
+		d.Status = store.WebhookFailed
+		d.NextAttemptAt = time.Now().Add(e.ladder[d.Attempts])
+	}
+	if err := e.store.SaveWebhookDelivery(d); err != nil {
+		slog.Error("webhooks: save delivery", "endpoint", ep.ID, "err", err)
+	}
+	if exhausted {
+		if err := e.store.AutoDisableWebhookEndpoint(ep.ID, time.Now()); err != nil {
+			slog.Error("webhooks: auto-disable", "endpoint", ep.ID, "err", err)
+		} else {
+			slog.Warn("webhooks: endpoint auto-disabled after a delivery exhausted every retry",
+				"endpoint", ep.ID, "event", d.EventType)
+		}
+	}
+	// Logged: which endpoint, which event, how it went. Never the payload, the
+	// secret or the signature.
+	if d.Status != store.WebhookOK {
+		slog.Warn("webhooks: delivery failed", "endpoint", ep.ID, "event", d.EventType,
+			"status", d.Status, "code", code, "attempts", d.Attempts)
+	}
+}
+
+// post sends one attempt and returns the response status (0 when the request
+// never got an answer).
+func (e *webhooks) post(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) (int, error) {
+	// The store refuses anything else on the way in; this is the second lock on
+	// the same door, because this is the line that actually dials out.
+	if !strings.HasPrefix(ep.URL, "http://") && !strings.HasPrefix(ep.URL, "https://") {
+		return 0, errors.New("refusing to POST to a non-http(s) URL")
+	}
+	ctx, cancel := context.WithTimeout(ctx, webhookTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, strings.NewReader(d.Payload))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "mimux-webhooks/1")
+	req.Header.Set("X-Mimux-Event", d.EventType)
+	req.Header.Set("X-Mimux-Delivery-Id", d.DeliveryID)
+	req.Header.Set("X-Mimux-Signature", signature(ep.Secret, time.Now().Unix(), d.Payload))
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	// Read a little of the body so the connection can be reused, and discard
+	// it: a webhook receiver's reply is not ours to keep.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
+	return resp.StatusCode, nil
+}
+
+// signature builds the X-Mimux-Signature header: `t=<unix>,v1=<hex>` where the
+// hex is HMAC-SHA256(secret, "<t>.<body>"). The timestamp is inside the signed
+// string, so a receiver that rejects an old t cannot be fooled by re-stamping a
+// captured delivery.
+func signature(secret string, t int64, body string) string {
+	ts := strconv.FormatInt(t, 10)
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(ts + "." + body))
+	return "t=" + ts + ",v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+
+// truncate caps a stored error string, cutting on runes so a multi-byte
+// character can't be sliced in half on its way into the log.
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
+}
