@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mimux API reference</title>
+    <meta
+      name="description"
+      content="REST API reference for mimux — the self-hosted mail client. A human driving mimux is free; a machine driving it is the pro layer."
+    />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Cpath d='M2.5 5.5h11v6h-11z' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3Cpath d='M2.5 5.5 8 9.2l5.5-3.7' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        /* Paint the dark ground before Scalar boots, so a slow first load
+           doesn't flash white at someone reading in the dark. */
+        background: #0d0d0d;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Scalar's standalone bundle auto-mounts by finding this element. Everything
+      is local: ./scalar.js is vendored in the repo and ./openapi.json is copied
+      out of pro/ at build time. No CDN, no network at runtime, no backend.
+    -->
+    <script
+      id="api-reference"
+      data-url="./openapi.json"
+      data-configuration='{
+        "darkMode": true,
+        "theme": "default",
+        "layout": "modern",
+        "hideModels": false,
+        "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" },
+        "metaData": {
+          "title": "mimux API reference",
+          "description": "REST API of the mimux pro layer."
+        }
+      }'
+    ></script>
+    <script src="./scalar.js"></script>
+  </body>
+</html>

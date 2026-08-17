@@ -42,9 +42,15 @@ func routes(deps ext.Deps) ext.Extension {
 	tokens := newTokenAuth(deps.Store, deps.Cfg.API.RateLimitPerMinute)
 	a := newAPI(deps)
 	r.Route("/v1", func(r chi.Router) {
-		r.Use(tokens.require)
-		r.Get("/tokens/self", handleTokenSelf)
-		a.mount(r)
+		// Outside the auth group on purpose: the spec is public documentation,
+		// and the client that most needs to read it is the one that hasn't got
+		// a working token yet.
+		r.Get("/openapi.json", handleOpenAPI)
+		r.Group(func(r chi.Router) {
+			r.Use(tokens.require)
+			r.Get("/tokens/self", handleTokenSelf)
+			a.mount(r)
+		})
 	})
 	return ext.Extension{Pattern: "/api", Handler: r}
 }

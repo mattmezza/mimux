@@ -1,0 +1,1472 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "mimux API",
+    "version": "v1",
+    "summary": "The REST API of the mimux pro layer — mail read, written and moved by a machine.",
+    "description": "mimux is a self-hosted, single-user mail client.\n\n**The product line, in one sentence: a human driving mimux is free, a machine driving mimux is the paid pro layer.**\n\nThe mail client itself — multi-account unified inbox, IMAP IDLE sync, threading, search, compose, drafts, undo-send, scheduled send, filters, calendar invites, notifications, backup/restore, AI compose and translate with your own key — is AGPL-3.0 and always will be. Nothing is ever moved from the free side to the paid side.\n\nThis API is the other half: `pro/`, licensed under the [Elastic Licence 2.0](https://github.com/mattmezza/mimux/blob/main/pro/LICENSE). It is only compiled into the binary built with the `pro` build tag. The free binary does not contain it, and `make verify-free` proves that on every commit. See [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md).\n\n## There is no central API host\n\nmimux is software you run. Every install is its own API. The `servers` entry below is a template: substitute the origin of *your* mimux, e.g. `https://mail.example.com/api`. There is no shared hosted endpoint to point a client at, and there never will be — your mail stays on your machine.\n\n## Conventions\n\n- All field names are `snake_case`.\n- All timestamps are RFC 3339 in UTC (`2026-08-17T09:30:00Z`).\n- Request bodies are JSON and reject unknown fields with `400 invalid_request`, so a typo fails loudly instead of being silently dropped. Bodies are capped at 32 MiB.\n- Every non-2xx response is the same `Error` envelope: `{\"error\": {\"code\": \"...\", \"message\": \"...\"}}`.\n- Collections use `{\"data\": [...], \"next_cursor\": \"...\"}`. `next_cursor` is `\"\"` when there is nothing left; endpoints that are not paginated still return the field, always as `\"\"`.\n\n## Authentication\n\nA personal access token, minted in **Settings → API**, sent as `Authorization: Bearer mimux_pat_…`. Tokens carry scopes; every operation documents the scope it needs both in prose and in the `x-required-scope` extension. Revoking a token in Settings takes effect on the next request — the middleware re-reads the row every time.\n\n## Rate limiting\n\nPer token, token-bucket, refilling continuously to `MIMUX_API_RATE_LIMIT` requests per minute (default 120; set it to 0 to disable). Over budget is `429 rate_limited` with a `Retry-After` header in whole seconds. The limiter is in-process, so it resets when mimux restarts.\n\n## Idempotency\n\n`POST /v1/messages/send`, `POST /v1/drafts` and `POST /v1/filters` accept an `Idempotency-Key` header. A repeat of the same key by the same token on the same path replays the stored response byte-for-byte with `Idempotency-Replayed: true`, so a retried send cannot go out twice.\n\nHonest caveat: **the key store is in memory, per process.** Keys do not survive a restart, they expire after 24 hours, and when 1024 keys accumulate the whole store is dropped at once rather than evicted LRU. Treat it as at-most-once *per process lifetime*, not as a durable guarantee. Only 2xx responses are stored — a failed call is safe to re-execute.\n\n## What is not here yet\n\nWebhooks and the MCP server are planned and not implemented. The `webhooks:manage` scope exists on the token model already, but no endpoint consumes it. This document will grow those paths when they ship; it describes only what the binary actually serves today.",
+    "termsOfService": "https://mimux.dev",
+    "contact": {
+      "name": "mimux",
+      "url": "https://mimux.dev",
+      "email": "mattmezza@gmail.com"
+    },
+    "license": {
+      "name": "Elastic Licence 2.0 (the pro layer this API belongs to)",
+      "url": "https://github.com/mattmezza/mimux/blob/main/pro/LICENSE"
+    }
+  },
+  "externalDocs": {
+    "description": "mimux",
+    "url": "https://mimux.dev"
+  },
+  "servers": [
+    {
+      "url": "{your-mimux-host}/api",
+      "description": "Your own mimux install. mimux is self-hosted: there is no shared or central API host, so this URL is a template you fill in with the origin you serve mimux from.",
+      "variables": {
+        "your-mimux-host": {
+          "default": "https://mail.example.com",
+          "description": "Scheme and host of your mimux instance, without a trailing slash — e.g. https://mail.example.com, or http://localhost:8080 in development. The API is always mounted under /api on the same origin as the web client."
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Meta",
+      "description": "Unauthenticated service endpoints, and the introspection endpoint for the calling token."
+    },
+    {
+      "name": "Accounts",
+      "description": "The configured mail accounts and their live sync state. Credentials are never exposed here — the response is a field-picked view, not a marshalled config object."
+    },
+    {
+      "name": "Folders",
+      "description": "Each account's folder tree, as the client builds it from IMAP folder names."
+    },
+    {
+      "name": "Messages",
+      "description": "Reading, listing and mutating stored mail."
+    },
+    {
+      "name": "Search",
+      "description": "mimux's query language, run against the local SQLite index or against the IMAP servers themselves."
+    },
+    {
+      "name": "Drafts",
+      "description": "Server-stored drafts, the same rows the compose form uses."
+    },
+    {
+      "name": "Filters",
+      "description": "Auto-filter rules applied to incoming mail by the sync loop."
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": ["Meta"],
+        "operationId": "getHealth",
+        "summary": "Liveness probe",
+        "description": "Unauthenticated on purpose: a health probe that needs a credential is a health probe nobody wires up. It exposes a count of configured accounts and nothing else — no mail, no addresses, no account names.\n\nNote the path: this one lives at `/api/health`, **not** under `/api/v1`.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "mimux is up.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Health" },
+                "example": { "ok": true, "accounts": 2 }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/openapi.json": {
+      "get": {
+        "tags": ["Meta"],
+        "operationId": "getOpenAPI",
+        "summary": "This document",
+        "description": "Serves the OpenAPI description of the running binary, embedded at compile time. Unauthenticated: it is public documentation, and a client that cannot yet authenticate is exactly the client that needs to read it.",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The OpenAPI 3.1 document.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "An OpenAPI 3.1 document."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/tokens/self": {
+      "get": {
+        "tags": ["Meta"],
+        "operationId": "getTokenSelf",
+        "summary": "Describe the calling token",
+        "description": "Returns the label and scopes of the token that authenticated the request.\n\n**Scope: none.** Scope-free by design — it tells a client what its own credential may do, which is exactly what a client holding a too-narrow token needs in order to find that out.",
+        "x-required-scope": null,
+        "responses": {
+          "200": {
+            "description": "The calling token.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/TokenSelf" },
+                "example": { "label": "Home Assistant", "scopes": ["mail:read", "mail:modify"] }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/accounts": {
+      "get": {
+        "tags": ["Accounts"],
+        "operationId": "listAccounts",
+        "summary": "List accounts",
+        "description": "Every configured account, with its live sync state and stored-mail counters.\n\nNot paginated: `next_cursor` is always `\"\"`.\n\n**Scope: `accounts:read`.**",
+        "x-required-scope": "accounts:read",
+        "responses": {
+          "200": {
+            "description": "The configured accounts.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Account" }
+                    },
+                    "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+                  }
+                },
+                "example": {
+                  "data": [
+                    {
+                      "name": "personal",
+                      "email": "me@example.com",
+                      "state": "ok",
+                      "last_sync": "2026-08-17T09:31:04Z",
+                      "messages": 41208,
+                      "unread": 12,
+                      "folders": 17
+                    }
+                  ],
+                  "next_cursor": ""
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/folders": {
+      "get": {
+        "tags": ["Folders"],
+        "operationId": "listFolders",
+        "summary": "List folder trees",
+        "description": "Returns one entry per account, each holding that account's folder tree. IMAP delimiters are turned into nesting, so `Work/Clients/Acme` becomes three levels. Intermediate path segments that have no folder of their own carry only a `label` — no `id`, and they cannot be listed or moved to.\n\nNot paginated: `next_cursor` is always `\"\"`.\n\nHonest caveat: an `account` that does not exist is not a 404 — it returns an entry with an empty `folders` array.\n\n**Scope: `mail:read`.**",
+        "x-required-scope": "mail:read",
+        "parameters": [
+          {
+            "name": "account",
+            "in": "query",
+            "required": false,
+            "description": "Narrow to a single account by name. Omitted, every configured account is returned.",
+            "schema": { "type": "string" },
+            "example": "personal"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Folder trees, one entry per account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AccountFolders" }
+                    },
+                    "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+                  }
+                },
+                "example": {
+                  "data": [
+                    {
+                      "account": "personal",
+                      "folders": [
+                        { "label": "INBOX", "id": 1, "name": "INBOX", "special_use": "inbox", "unread": 12 },
+                        {
+                          "label": "Work",
+                          "children": [
+                            { "label": "Clients", "id": 8, "name": "Work/Clients" }
+                          ]
+                        }
+                      ]
+                    }
+                  ],
+                  "next_cursor": ""
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/messages": {
+      "get": {
+        "tags": ["Messages"],
+        "operationId": "listMessages",
+        "summary": "List messages",
+        "description": "Messages newest-first, from the local store — this never touches IMAP.\n\n**Scope selection**, in order: `folder` if given, else the inbox of `account`, else the unified inbox (every account's inbox folder).\n\n**Pagination is by conversation, not by row.** A page holds every message of the `limit` conversations whose newest message falls in its band, so a page boundary can never cut a thread in half — which also means a page can contain *more* than `limit` messages. Additionally, the first page (no `cursor`) keeps every unread conversation however old it is, so a client that only reads page one still sees all its unread mail.\n\n**Cursor semantics.** `next_cursor` is an opaque string; pass it back as `cursor` for the next page. Structurally it is `<rfc3339-date>_<message-id>` of the newest message of the last conversation delivered, which makes it stable against the list mutating underneath you — a sync inserting at the top or an archive removing from the middle cannot make you skip or repeat rows the way an offset would. Stop when `next_cursor` comes back `\"\"`.\n\n**Filters are applied to each fetched page, not to the query.** `unread`, `starred`, `since`, `from`, `to` and `subject` are evaluated after the page is read, so a filtered response can hold far fewer than `limit` items — including zero — while more matches still exist further down. Keep following `next_cursor` until it is empty. For anything more expressive, use `POST /v1/messages/search`, which speaks the full query language.\n\nEach item is annotated with `thread_id` and `thread_size` (whole-conversation size, which may exceed what is on the page). Those two fields appear only here — search results do not carry them.\n\n**Scope: `mail:read`.**",
+        "x-required-scope": "mail:read",
+        "parameters": [
+          {
+            "name": "folder",
+            "in": "query",
+            "description": "Folder id to list. Takes precedence over `account`. Unknown id is a 404.",
+            "schema": { "type": "integer", "format": "int64" },
+            "example": 1
+          },
+          {
+            "name": "account",
+            "in": "query",
+            "description": "Account name; lists that account's inbox. Ignored when `folder` is given. An account with no inbox folder is a 404.",
+            "schema": { "type": "string" },
+            "example": "personal"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Conversations per page. Out of range is a 400 — it is not clamped.",
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 100 }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "The `next_cursor` from the previous page. Omit for the first page.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "unread",
+            "in": "query",
+            "description": "`true`/`1` keeps only unread messages; `false`/`0` keeps only read ones. Any other value (including `yes`) is ignored and the filter is not applied.",
+            "schema": { "type": "string", "enum": ["true", "1", "false", "0"] }
+          },
+          {
+            "name": "starred",
+            "in": "query",
+            "description": "`true`/`1` keeps only starred messages; `false`/`0` keeps only unstarred ones. Same lenient parsing as `unread`.",
+            "schema": { "type": "string", "enum": ["true", "1", "false", "0"] }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Keep messages dated at or after this RFC 3339 instant. Honest caveat: a value that does not parse as RFC 3339 is silently ignored rather than rejected.",
+            "schema": { "type": "string", "format": "date-time" },
+            "example": "2026-08-01T00:00:00Z"
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "description": "Case-insensitive substring of the sender's display name and address, joined by a space.",
+            "schema": { "type": "string" },
+            "example": "alice"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "description": "Case-insensitive substring of the To and Cc address lists, joined by a space.",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "description": "Case-insensitive substring of the subject.",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of messages.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageList" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/messages/{id}": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "get": {
+        "tags": ["Messages"],
+        "operationId": "getMessage",
+        "summary": "Get one message",
+        "description": "Full metadata plus the body forms you ask for, plus the attachment manifest.\n\nThe body is fetched from IMAP (through the client's body cache). If that fails — the account is offline, the message is gone from the server — the request still succeeds: `body` is omitted and `body_error` explains. That is deliberate, so an agent can always read metadata even while sync is broken.\n\nThe `html` form is the same sanitized document the reading pane renders, with one difference: external images are left in place, because the caller is a machine reading JSON rather than a browser that would leak a read receipt. Active content is still stripped.\n\n`attachments` is always present, `[]` when the message has none — or when listing them failed, which is not reported separately.\n\n`thread_id` and `thread_size` are not set on this endpoint.\n\n**Scope: `mail:read`.**",
+        "x-required-scope": "mail:read",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "query",
+            "description": "Which body forms to include.",
+            "schema": { "type": "string", "enum": ["text", "html", "both"], "default": "text" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The message.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageDetail" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      },
+      "patch": {
+        "tags": ["Messages"],
+        "operationId": "patchMessage",
+        "summary": "Change read, star, labels or folder",
+        "description": "Applies every field present in the body, in order: read, starred, labels added, labels removed, folder move. Omitted fields are left alone.\n\nWrites land in the local store immediately and the IMAP side effect follows in the background — the same optimistic pattern as the web client, minus its 11-second undo window: an API caller that asks for a move means it, so the server-side move fires at once. A background IMAP failure is logged, not returned; flag writes are also retried by the sync loop's dirty sweep.\n\n`folder_id` must belong to the same account as the message; cross-account moves are a 400. Moving to the folder the message is already in is a no-op.\n\nThe response is the message re-read from the store after all changes, without `thread_id`/`thread_size`.\n\n**Scope: `mail:modify`.**",
+        "x-required-scope": "mail:modify",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/MessagePatch" },
+              "examples": {
+                "markRead": { "summary": "Mark read and star", "value": { "read": true, "starred": true } },
+                "label": { "summary": "Retag", "value": { "labels_add": ["todo"], "labels_remove": ["inbox-zero"] } },
+                "move": { "summary": "Move to a folder", "value": { "folder_id": 8 } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The message after the change.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Message" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "delete": {
+        "tags": ["Messages"],
+        "operationId": "deleteMessage",
+        "summary": "Move to Trash",
+        "description": "Moves the message to the account's `trash` special-use folder. **Nothing is erased** — this is the client's Delete, which is a move. There is no API for permanent deletion.\n\nStore first, IMAP move in the background, no undo window. An account without a trash folder is a 400 and the message stays put.\n\n**Scope: `mail:modify`.**",
+        "x-required-scope": "mail:modify",
+        "responses": {
+          "200": {
+            "description": "Moved.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MoveResult" },
+                "example": { "status": "ok", "folder_id": 4 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/messages/{id}/archive": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "post": {
+        "tags": ["Messages"],
+        "operationId": "archiveMessage",
+        "summary": "Move to Archive",
+        "description": "Moves the message to the account's `archive` special-use folder. Store first, IMAP move in the background, no undo window. An account without an archive folder is a 400 and the message stays put.\n\nTakes no request body.\n\n**Scope: `mail:modify`.**",
+        "x-required-scope": "mail:modify",
+        "responses": {
+          "200": {
+            "description": "Moved.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MoveResult" },
+                "example": { "status": "ok", "folder_id": 3 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/messages/{id}/spam": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "post": {
+        "tags": ["Messages"],
+        "operationId": "spamMessage",
+        "summary": "Move to Spam",
+        "description": "Moves the message to the account's `spam` special-use folder. Store first, IMAP move in the background, no undo window. An account without a spam folder is a 400 and the message stays put.\n\nTakes no request body.\n\n**Scope: `mail:modify`.**",
+        "x-required-scope": "mail:modify",
+        "responses": {
+          "200": {
+            "description": "Moved.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MoveResult" },
+                "example": { "status": "ok", "folder_id": 5 }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/messages/{id}/attachments/{n}": {
+      "parameters": [
+        { "$ref": "#/components/parameters/MessageID" },
+        {
+          "name": "n",
+          "in": "path",
+          "required": true,
+          "description": "Zero-based attachment index, exactly the `index` field from `GET /v1/messages/{id}`. Indices are positional within that response and are not stable across re-fetches of a rewritten message.",
+          "schema": { "type": "integer", "minimum": 0 }
+        }
+      ],
+      "get": {
+        "tags": ["Messages"],
+        "operationId": "getAttachment",
+        "summary": "Download an attachment",
+        "description": "Streams the raw attachment bytes with its real media type (falling back to `application/octet-stream`), `Content-Disposition: attachment` carrying the filename, and `X-Content-Type-Options: nosniff`.\n\nThis one reaches IMAP, so it fails when the account is offline: `502 upstream`.\n\n**Scope: `mail:read`.**",
+        "x-required-scope": "mail:read",
+        "responses": {
+          "200": {
+            "description": "The attachment bytes.",
+            "headers": {
+              "Content-Disposition": {
+                "description": "`attachment; filename=\"...\"`. Any double quotes in the filename are stripped.",
+                "schema": { "type": "string" }
+              },
+              "X-Content-Type-Options": {
+                "description": "Always `nosniff`.",
+                "schema": { "type": "string" }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": { "type": "string", "format": "binary" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "No such message, or `n` is negative or beyond the attachment count.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": { "code": "not_found", "message": "Message has 2 attachments." } }
+              }
+            }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "502": { "$ref": "#/components/responses/Upstream" }
+        }
+      }
+    },
+    "/v1/messages/search": {
+      "post": {
+        "tags": ["Search"],
+        "operationId": "searchMessages",
+        "summary": "Search mail",
+        "description": "Runs a query in mimux's own search language.\n\n**Query language.** Whitespace-separated terms, ANDed; there is no OR. Double quotes keep a phrase together. A leading `-` negates a term, but only when what follows is a real operator — `-word` is just a word. Operators: `from:`, `to:`, `cc:`, `subject:`, `body:`, `in:`, `label:`, `is:unread|read|starred`, `has:attachment|link`, `before:YYYY-MM-DD`, `after:YYYY-MM-DD`, `larger:`/`smaller:` with a size like `5mb`, `100kb`, `512`. Anything else — including an operator with an unparseable value — degrades to a bare free-text term rather than erroring. A query that parses to zero terms is a `400 invalid_request`.\n\n**`mode: \"local\"`** (the default) searches the synced SQLite index synchronously and returns results in the collection envelope. `next_cursor` is always `\"\"` — local search is not paginated, it is capped by `limit`.\n\n**`mode: \"deep\"`** asks the IMAP servers themselves, which is slow, so it returns `202` with a job you poll at `GET /v1/search/jobs/{id}`. See that endpoint for the job lifecycle and its caveats.\n\n`scope` defaults by what else you sent: `folder` if `folder_id` is set, else `account` if `account` is set, else `all`. (The web client defaults to `account`; the API defaults to `all`, so a bare query means \"everywhere\".)\n\nResults do not carry `thread_id`/`thread_size`.\n\n**Scope: `mail:read`** — deep search included, because it only reads.",
+        "x-required-scope": "mail:read",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SearchRequest" },
+              "examples": {
+                "local": {
+                  "summary": "Local index",
+                  "value": { "query": "from:alice has:attachment after:2026-01-01" }
+                },
+                "deep": {
+                  "summary": "Ask the IMAP servers",
+                  "value": { "query": "\"quarterly report\"", "mode": "deep", "scope": "account", "account": "work" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Local search results.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MessageList" }
+              }
+            }
+          },
+          "202": {
+            "description": "Deep search accepted; poll the job.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SearchJob" },
+                "example": {
+                  "id": "9f2c1ab30d4e5f67",
+                  "status": "running",
+                  "query": "\"quarterly report\"",
+                  "started_at": "2026-08-17T09:31:04Z"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/search/jobs/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "The job id returned by a deep search.",
+          "schema": { "type": "string" },
+          "example": "9f2c1ab30d4e5f67"
+        }
+      ],
+      "get": {
+        "tags": ["Search"],
+        "operationId": "getSearchJob",
+        "summary": "Poll a deep-search job",
+        "description": "Returns the job; `results` appears once `status` is `done`.\n\n**Honest caveats on the job lifecycle — this part is deliberately minimal:**\n\n- There are only two statuses, `running` and `done`. **There is no failure state.** Deep search fans out per account with a per-account timeout; a folder whose IMAP search errors or times out simply contributes nothing. A job whose every account failed still finishes `done` with an empty `results`, indistinguishable from a query that genuinely matched nothing.\n- There is no progress indicator, no result count while running, and no way to cancel.\n- **Jobs live in memory only, in a ring of the 32 most recent.** They vanish on restart, and job 33 evicts job 1. Polling either afterwards is a `404`, whose message says so.\n- An identical query repeated within 10 minutes is answered from the result cache and comes back `done` immediately, without touching IMAP.\n- Envelopes for hits are cached into the local store as a side effect, so a deep search makes those messages available to local search afterwards.\n\nPoll at a sane interval; there is no long-poll or webhook (webhooks do not exist yet).\n\n**Scope: `mail:read`.**",
+        "x-required-scope": "mail:read",
+        "responses": {
+          "200": {
+            "description": "The job.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SearchJob" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "No such job — unknown id, evicted from the 32-job ring, or lost to a restart.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": {
+                  "error": {
+                    "code": "not_found",
+                    "message": "No such search job (jobs are kept in memory and expire on restart)."
+                  }
+                }
+              }
+            }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" }
+        }
+      }
+    },
+    "/v1/messages/send": {
+      "post": {
+        "tags": ["Messages"],
+        "operationId": "sendMessage",
+        "summary": "Send a message, now or later",
+        "description": "Builds and sends a message over the account's SMTP, or — when `schedule_at` is set — enqueues it in the outbox for the scheduler to send at that time.\n\n**Sending account resolution**, in order, with no guessing: explicit `account`; else the account owning the `from` address; else the account of the message named by `in_reply_to`; else the only configured account if there is exactly one. Anything ambiguous is a `400`.\n\n**Threading.** `in_reply_to` takes a mimux **message id** (an integer), not a `Message-ID` header value. The `In-Reply-To` and `References` headers are derived from that message exactly the way the compose form derives them.\n\n**Attachments** are inline base64 in the request body, capped at 25 MiB in total; the whole request body is capped at 32 MiB.\n\nSend it with an `Idempotency-Key` header — a retry after a timeout is exactly the case this endpoint exists to survive. See the API description for what that guarantee is and is not.\n\n**Scope: `mail:send`.**",
+        "x-required-scope": "mail:send",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/SendRequest" },
+              "examples": {
+                "simple": {
+                  "summary": "Send now",
+                  "value": {
+                    "to": ["bob@example.com"],
+                    "subject": "Deploy is green",
+                    "body": "All checks passed."
+                  }
+                },
+                "reply": {
+                  "summary": "Reply, scheduled",
+                  "value": {
+                    "in_reply_to": 41207,
+                    "to": ["alice@example.com"],
+                    "subject": "Re: quarterly report",
+                    "body": "**Numbers attached.**",
+                    "mode": "markdown",
+                    "schedule_at": "2026-08-18T08:00:00Z",
+                    "attachments": [
+                      { "filename": "q3.csv", "content_type": "text/csv", "data": "YSxiLGMK" }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sent immediately.",
+            "headers": { "Idempotency-Replayed": { "$ref": "#/components/headers/IdempotencyReplayed" } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/SendResult" },
+                "example": { "status": "sent", "message_id": "<20260817093104.abc123@mail.example.com>" }
+              }
+            }
+          },
+          "202": {
+            "description": "Queued for `schedule_at`. Cancelling or editing a scheduled message is only possible in the web client today; there is no API for the outbox.",
+            "headers": { "Idempotency-Replayed": { "$ref": "#/components/headers/IdempotencyReplayed" } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ScheduledResult" },
+                "example": { "status": "scheduled", "outbox_id": 12, "send_at": "2026-08-18T08:00:00Z" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "`in_reply_to` names no message.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": { "code": "not_found", "message": "in_reply_to: no message with that id." } }
+              }
+            }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" },
+          "502": {
+            "description": "SMTP refused or was unreachable. The underlying error text is included verbatim — this is a single-user install and the operator owns both ends of that conversation.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": {
+                  "error": { "code": "send_failed", "message": "Send failed: dial tcp: connection refused" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/drafts": {
+      "post": {
+        "tags": ["Drafts"],
+        "operationId": "createDraft",
+        "summary": "Create a draft",
+        "description": "Stores a draft — the same row the compose form autosaves into, so a draft created here opens in the web client.\n\nNote the shape difference against `POST /v1/messages/send`: recipients here are **single comma-separated strings**, not arrays, because that is how the compose form stores them.\n\n`in_reply_to` takes a mimux message id and is resolved to that message's `Message-ID` header on the way in; it also fills `account` when you left it blank. `kind` defaults to `new`.\n\nHonest caveat: there is no `GET /v1/drafts` or `DELETE /v1/drafts/{id}` yet. You can create and update; listing and deleting are web-client-only.\n\n**Scope: `mail:send`** — a draft is unsent mail, so it follows the sending scope rather than `mail:modify`.",
+        "x-required-scope": "mail:send",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DraftCreate" },
+              "example": {
+                "to": "bob@example.com, carol@example.com",
+                "subject": "Draft subject",
+                "body": "Half a thought.",
+                "mode": "plain"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "headers": { "Idempotency-Replayed": { "$ref": "#/components/headers/IdempotencyReplayed" } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Draft" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": {
+            "description": "`in_reply_to` names no message.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" }
+              }
+            }
+          },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/drafts/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "Draft id.",
+          "schema": { "type": "integer", "format": "int64" }
+        }
+      ],
+      "patch": {
+        "tags": ["Drafts"],
+        "operationId": "updateDraft",
+        "summary": "Update a draft",
+        "description": "Merges the provided fields into an existing draft. Fields you leave out keep their stored value; a field set to `\"\"` clears it. `kind` and `in_reply_to` cannot be changed after creation.\n\nNot idempotency-keyed — a repeated PATCH is naturally idempotent.\n\n**Scope: `mail:send`.**",
+        "x-required-scope": "mail:send",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/DraftPatch" },
+              "example": { "subject": "Draft subject, revised" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The draft after the merge.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Draft" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/filters": {
+      "get": {
+        "tags": ["Filters"],
+        "operationId": "listFilters",
+        "summary": "List filter rules",
+        "description": "Every stored rule, in no guaranteed order beyond what the store returns (rules carry a `position` that decides evaluation order).\n\nNot paginated: `next_cursor` is always `\"\"`.\n\n**Scope: `mail:read`** — filters govern how mail is handled, so they follow the mail scopes rather than getting one of their own.",
+        "x-required-scope": "mail:read",
+        "responses": {
+          "200": {
+            "description": "The rules.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["data", "next_cursor"],
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/Filter" } },
+                    "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      },
+      "post": {
+        "tags": ["Filters"],
+        "operationId": "createFilter",
+        "summary": "Create a filter rule",
+        "description": "Validates and stores a rule. Any `id` in the body is ignored and overwritten by the assigned one.\n\nValidation is strict and happens before the write: a name is required, at least one condition and at least one action are required, condition fields and operators must be known, values must be non-empty, and a `regex` condition must actually compile. Failures come back as `400 invalid_request` with the validator's own message.\n\nRules apply to incoming mail during sync. Creating one does not re-run it over existing mail.\n\nHonest caveat: there is no update or delete endpoint for filters yet — creating and listing is the whole surface.\n\n**Scope: `mail:modify`.**",
+        "x-required-scope": "mail:modify",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Filter" },
+              "example": {
+                "name": "Newsletters",
+                "enabled": true,
+                "conditions": [{ "field": "from", "op": "contains", "value": "news@" }],
+                "actions": [{ "type": "move", "arg": "Newsletters" }, { "type": "mark_read" }]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created, with its assigned id.",
+            "headers": { "Idempotency-Replayed": { "$ref": "#/components/headers/IdempotencyReplayed" } },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Filter" }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A mimux personal access token, minted in **Settings → API** and shown exactly once at creation. It always starts with `mimux_pat_`; a bearer value without that prefix is rejected without so much as a hash comparison.\n\n```\nAuthorization: Bearer mimux_pat_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX\n```\n\nTokens are stored as argon2id hashes, may carry an expiry, and can be revoked from Settings — revocation is honoured on the very next request, because the middleware re-reads the token row every time.\n\n**Scopes** are a space-separated subset of:\n\n| Scope | Grants |\n|---|---|\n| `mail:read` | Read mail: folders, messages, bodies, attachments, search, filters list. |\n| `mail:send` | Send mail and manage drafts. |\n| `mail:modify` | Change mail: read/star flags, labels, moves, archive/spam/trash, create filters. |\n| `accounts:read` | Read the account list. |\n| `webhooks:manage` | Reserved. Webhooks are not implemented; nothing consumes this scope today. |\n\nA token created with no recognised scope falls back to `mail:read`. Call `GET /v1/tokens/self` to find out what the token in your hand actually holds."
+      }
+    },
+    "parameters": {
+      "MessageID": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "The mimux message id — a local integer, not the RFC 5322 `Message-ID` header. A non-numeric value is a `404`.",
+        "schema": { "type": "integer", "format": "int64" },
+        "example": 41207
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "description": "Any client-chosen string. Repeating it replays the stored 2xx response with `Idempotency-Replayed: true` instead of performing the action again. Keys are scoped to the calling token and the exact method and path, so two clients cannot collide on a generic key. In-memory, per process — see the API description for what that does and does not guarantee.",
+        "schema": { "type": "string" },
+        "example": "5c7e0e6f-38a1-4f0f-9b64-0d2a2d61bd21"
+      }
+    },
+    "headers": {
+      "RetryAfter": {
+        "description": "Whole seconds to wait before the next request from this token will be admitted.",
+        "required": true,
+        "schema": { "type": "integer", "minimum": 1 },
+        "example": 3
+      },
+      "IdempotencyReplayed": {
+        "description": "Present and set to `true` only when this response was replayed from the idempotency store rather than freshly produced.",
+        "schema": { "type": "string", "enum": ["true"] }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "`invalid_request` — a malformed body (including an unknown JSON field), a parameter out of range, or a request the current state cannot satisfy, such as archiving in an account that has no archive folder.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": { "code": "invalid_request", "message": "limit must be 1-500." } }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "`unauthorized` — no `Authorization: Bearer` header, a value that is not a `mimux_pat_` token, or a token that is unknown, revoked or expired. The two cases are not distinguished in the message on purpose.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "examples": {
+              "missing": {
+                "summary": "No credential",
+                "value": {
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "Missing or malformed Authorization header. Send: Authorization: Bearer <token>."
+                  }
+                }
+              },
+              "rejected": {
+                "summary": "Credential rejected",
+                "value": { "error": { "code": "unauthorized", "message": "Unknown, revoked or expired token." } }
+              }
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "`insufficient_scope` — the token authenticated but does not carry the scope this operation needs. The message names the missing scope, so you know which box to tick in Settings → API.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": { "code": "insufficient_scope", "message": "This token is missing the mail:modify scope." }
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "`not_found` — no such resource, or a path id that is not an integer.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": { "code": "not_found", "message": "No message with id 41207." } }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "`rate_limited` — this token has spent its per-minute budget. `Retry-After` says how long to wait. The bucket refills continuously, so the wait is usually under a second.",
+        "headers": { "Retry-After": { "$ref": "#/components/headers/RetryAfter" } },
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": { "code": "rate_limited", "message": "Too many requests for this token. Retry in 3s." }
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "`internal` — mimux failed on its own side. Details are logged, never returned.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": { "error": { "code": "internal", "message": "Couldn't list messages." } }
+          }
+        }
+      },
+      "Upstream": {
+        "description": "`upstream` — the IMAP server could not be reached or refused. Usually means the account is offline; retry once sync recovers.",
+        "content": {
+          "application/json": {
+            "schema": { "$ref": "#/components/schemas/Error" },
+            "example": {
+              "error": { "code": "upstream", "message": "Couldn't fetch the attachment." }
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "description": "The envelope of every non-2xx response, so a client can parse failures without special-casing per endpoint.",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "Stable machine-readable code. Branch on this, not on the message.",
+                "enum": [
+                  "invalid_request",
+                  "unauthorized",
+                  "insufficient_scope",
+                  "not_found",
+                  "rate_limited",
+                  "upstream",
+                  "send_failed",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "description": "Human-readable explanation. Wording may change between versions."
+              }
+            }
+          }
+        }
+      },
+      "NextCursor": {
+        "type": "string",
+        "description": "Opaque cursor for the next page, or `\"\"` when the collection is exhausted. Endpoints that are not paginated always return `\"\"`."
+      },
+      "Health": {
+        "type": "object",
+        "required": ["ok", "accounts"],
+        "properties": {
+          "ok": { "type": "boolean", "const": true },
+          "accounts": {
+            "type": "integer",
+            "description": "Number of accounts with a running sync worker."
+          }
+        }
+      },
+      "TokenSelf": {
+        "type": "object",
+        "required": ["label", "scopes"],
+        "properties": {
+          "label": { "type": "string", "description": "The name given to this token in Settings → API." },
+          "scopes": {
+            "type": ["array", "null"],
+            "description": "The scopes this token carries. `null` for the pathological case of a token whose scope string is empty.",
+            "items": { "$ref": "#/components/schemas/Scope" }
+          }
+        }
+      },
+      "Scope": {
+        "type": "string",
+        "enum": ["mail:read", "mail:send", "mail:modify", "accounts:read", "webhooks:manage"]
+      },
+      "Account": {
+        "type": "object",
+        "description": "A configured account. Credentials — passwords, OAuth secrets, server hostnames — are never included.",
+        "required": ["name", "email", "messages", "unread", "folders"],
+        "properties": {
+          "name": { "type": "string", "description": "The account's name, used wherever an `account` parameter is accepted." },
+          "email": { "type": "string", "format": "email" },
+          "state": {
+            "type": "string",
+            "description": "Live sync state. Absent when the account has no running worker.",
+            "enum": ["ok", "syncing", "error"]
+          },
+          "message": {
+            "type": "string",
+            "description": "Detail accompanying `state`, typically the error when `state` is `error`. Absent when empty."
+          },
+          "last_sync": {
+            "type": "string",
+            "format": "date-time",
+            "description": "Last *successful* sync, UTC. Absent until the account has synced once."
+          },
+          "messages": { "type": "integer", "format": "int64", "description": "Messages stored locally." },
+          "unread": { "type": "integer", "format": "int64" },
+          "folders": { "type": "integer", "format": "int64" }
+        }
+      },
+      "AccountFolders": {
+        "type": "object",
+        "required": ["account", "folders"],
+        "properties": {
+          "account": { "type": "string" },
+          "folders": { "type": "array", "items": { "$ref": "#/components/schemas/Folder" } }
+        }
+      },
+      "Folder": {
+        "type": "object",
+        "description": "A node of the folder tree. A node that exists only as a path segment (an IMAP parent that holds no mail of its own) carries `label` and `children` and nothing else — in particular no `id`, so it cannot be listed or moved to.",
+        "required": ["label"],
+        "properties": {
+          "label": { "type": "string", "description": "The last path segment, as displayed." },
+          "id": { "type": "integer", "format": "int64", "description": "Folder id. Absent on path-only nodes." },
+          "name": { "type": "string", "description": "The full IMAP folder name, e.g. `Work/Clients/Acme`." },
+          "special_use": {
+            "type": "string",
+            "description": "The folder's role, when it has one. Drives archive/spam/trash moves.",
+            "examples": ["inbox", "sent", "drafts", "archive", "trash", "spam"]
+          },
+          "unread": { "type": "integer", "description": "Unread count. Absent when zero." },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/Folder" } }
+        }
+      },
+      "Address": {
+        "type": "object",
+        "required": ["address"],
+        "properties": {
+          "name": { "type": "string", "description": "Display name. Absent when the header had none." },
+          "address": { "type": "string", "description": "The bare address." }
+        }
+      },
+      "Message": {
+        "type": "object",
+        "description": "A message as stored locally. Bodies and attachments are not here — fetch `GET /v1/messages/{id}` for those.",
+        "required": [
+          "id",
+          "account",
+          "folder_id",
+          "from",
+          "to",
+          "subject",
+          "date",
+          "size",
+          "is_read",
+          "is_starred",
+          "has_attachment",
+          "snippet"
+        ],
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "description": "mimux's own id. This is what every `{id}` path and `in_reply_to` field takes." },
+          "account": { "type": "string" },
+          "folder_id": { "type": "integer", "format": "int64" },
+          "message_id": { "type": "string", "description": "The RFC 5322 `Message-ID` header. Absent when the message had none." },
+          "in_reply_to": { "type": "string", "description": "The `In-Reply-To` header value. Absent when the message had none." },
+          "from": { "$ref": "#/components/schemas/Address" },
+          "to": {
+            "type": ["array", "null"],
+            "description": "Recipient addresses, split from the stored header list. `null` — not `[]` — when there were none.",
+            "items": { "type": "string" }
+          },
+          "cc": { "type": "array", "items": { "type": "string" }, "description": "Absent when empty." },
+          "subject": { "type": "string" },
+          "date": { "type": "string", "format": "date-time", "description": "The message date, normalised to UTC." },
+          "size": { "type": "integer", "format": "int64", "description": "Bytes, as reported by IMAP." },
+          "is_read": { "type": "boolean" },
+          "is_starred": { "type": "boolean" },
+          "has_attachment": { "type": "boolean" },
+          "snippet": { "type": "string", "description": "Short preview extracted at sync time." },
+          "labels": { "type": "array", "items": { "type": "string" }, "description": "Absent when the message has none." },
+          "thread_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Id of the conversation's root message. **Set only by `GET /v1/messages`** — absent from single-message responses and from search results."
+          },
+          "thread_size": {
+            "type": "integer",
+            "description": "Messages in the whole conversation, which may exceed how many of them are on this page. Same restriction as `thread_id`."
+          }
+        }
+      },
+      "MessageDetail": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Message" },
+          {
+            "type": "object",
+            "required": ["attachments"],
+            "properties": {
+              "body": {
+                "type": "object",
+                "description": "Present only when the body was fetched successfully. Which sub-fields appear depends on the `body` query parameter.",
+                "properties": {
+                  "text": { "type": "string", "description": "Plain-text body. Absent when not requested or empty." },
+                  "html": {
+                    "type": "string",
+                    "description": "Sanitized HTML body — active content stripped, external images left intact. Absent when not requested or empty."
+                  }
+                }
+              },
+              "body_error": {
+                "type": "string",
+                "description": "Present instead of `body` when the body could not be fetched, typically because the account is offline. The request still succeeds with 200 and full metadata."
+              },
+              "attachments": {
+                "type": "array",
+                "description": "Always present; `[]` when the message has no attachments, and also `[]` if listing them failed.",
+                "items": { "$ref": "#/components/schemas/Attachment" }
+              }
+            }
+          }
+        ]
+      },
+      "Attachment": {
+        "type": "object",
+        "required": ["index", "filename", "media_type", "size"],
+        "properties": {
+          "index": {
+            "type": "integer",
+            "description": "Zero-based position in this list. Pass it as `{n}` to the attachment download endpoint."
+          },
+          "filename": { "type": "string" },
+          "media_type": { "type": "string", "examples": ["application/pdf"] },
+          "size": { "type": "integer", "description": "Bytes, as reported by IMAP." }
+        }
+      },
+      "MessageList": {
+        "type": "object",
+        "required": ["data", "next_cursor"],
+        "properties": {
+          "data": { "type": "array", "items": { "$ref": "#/components/schemas/Message" } },
+          "next_cursor": { "$ref": "#/components/schemas/NextCursor" }
+        }
+      },
+      "MessagePatch": {
+        "type": "object",
+        "description": "Every field is optional; only what is present is applied. Unknown fields are rejected with a 400.",
+        "properties": {
+          "read": { "type": "boolean", "description": "Set or clear the read flag." },
+          "starred": { "type": "boolean", "description": "Set or clear the star." },
+          "labels_add": { "type": "array", "items": { "type": "string" }, "description": "Labels to add, applied before `labels_remove`." },
+          "labels_remove": { "type": "array", "items": { "type": "string" } },
+          "folder_id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Move the message here. Must belong to the same account as the message."
+          }
+        }
+      },
+      "MoveResult": {
+        "type": "object",
+        "required": ["status", "folder_id"],
+        "properties": {
+          "status": { "type": "string", "const": "ok" },
+          "folder_id": { "type": "integer", "format": "int64", "description": "The folder the message now lives in." }
+        }
+      },
+      "SendRequest": {
+        "type": "object",
+        "description": "Unknown fields are rejected with a 400.",
+        "required": ["to"],
+        "properties": {
+          "account": { "type": "string", "description": "Send from this account by name. Highest-priority way to resolve the sender." },
+          "from": {
+            "type": "string",
+            "description": "The From address. Used to resolve the account when `account` is absent; must belong to a configured account. Defaults to the resolved account's own address."
+          },
+          "to": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1,
+            "description": "Recipients. At least one is required."
+          },
+          "cc": { "type": "array", "items": { "type": "string" } },
+          "bcc": { "type": "array", "items": { "type": "string" } },
+          "subject": { "type": "string" },
+          "body": { "type": "string", "description": "Interpreted according to `mode`." },
+          "mode": {
+            "type": "string",
+            "enum": ["plain", "html", "markdown"],
+            "default": "plain",
+            "description": "`markdown` is rendered to HTML with a plain-text alternative, the same way the compose form does it."
+          },
+          "in_reply_to": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A mimux **message id** to reply to — not a header value. Its `Message-ID` and `References` become this message's threading headers, and it can resolve the sending account."
+          },
+          "attachments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/SendAttachment" },
+            "description": "Combined decoded size is capped at 25 MiB."
+          },
+          "schedule_at": {
+            "type": ["string", "null"],
+            "format": "date-time",
+            "description": "Send at this instant instead of now, via the outbox. Answers 202 rather than 200. A time in the past is not rejected — the scheduler picks it up on its next tick."
+          }
+        }
+      },
+      "SendAttachment": {
+        "type": "object",
+        "required": ["filename", "data"],
+        "properties": {
+          "filename": { "type": "string", "description": "Required and non-empty." },
+          "content_type": { "type": "string", "description": "Media type. Left to the message builder when empty." },
+          "data": { "type": "string", "format": "byte", "description": "Standard base64 with padding." }
+        }
+      },
+      "SendResult": {
+        "type": "object",
+        "required": ["status", "message_id"],
+        "properties": {
+          "status": { "type": "string", "const": "sent" },
+          "message_id": {
+            "type": "string",
+            "description": "The RFC 5322 `Message-ID` header generated for the sent message — a header value, not a mimux id."
+          }
+        }
+      },
+      "ScheduledResult": {
+        "type": "object",
+        "required": ["status", "outbox_id", "send_at"],
+        "properties": {
+          "status": { "type": "string", "const": "scheduled" },
+          "outbox_id": { "type": "integer", "format": "int64", "description": "Outbox row id. There is no API to read, edit or cancel the outbox yet." },
+          "send_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Draft": {
+        "type": "object",
+        "required": ["id", "account", "to", "subject", "body", "updated_at"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "account": { "type": "string" },
+          "to": { "type": "string", "description": "Comma-separated addresses, stored as one string." },
+          "cc": { "type": "string", "description": "Absent when empty." },
+          "bcc": { "type": "string", "description": "Absent when empty." },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "mode": { "type": "string", "enum": ["plain", "html", "markdown"], "description": "Absent when empty." },
+          "kind": { "type": "string", "description": "How the draft was started. Absent when empty.", "examples": ["new", "reply", "forward"] },
+          "updated_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DraftCreate": {
+        "type": "object",
+        "description": "Unknown fields are rejected with a 400. Recipients are comma-separated strings here, unlike `SendRequest`.",
+        "properties": {
+          "account": { "type": "string", "description": "Filled from `in_reply_to`'s message when left blank." },
+          "to": { "type": "string" },
+          "cc": { "type": "string" },
+          "bcc": { "type": "string" },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "mode": { "type": "string", "enum": ["plain", "html", "markdown"], "default": "plain" },
+          "kind": { "type": "string", "default": "new", "examples": ["new", "reply", "forward"] },
+          "in_reply_to": {
+            "type": "integer",
+            "format": "int64",
+            "description": "A mimux message id, resolved to that message's `Message-ID` header for threading when the draft is eventually sent."
+          }
+        }
+      },
+      "DraftPatch": {
+        "type": "object",
+        "description": "Only the fields present are changed. `kind` and `in_reply_to` are not patchable; sending an unknown field is a 400.",
+        "properties": {
+          "account": { "type": "string" },
+          "to": { "type": "string" },
+          "cc": { "type": "string" },
+          "bcc": { "type": "string" },
+          "subject": { "type": "string" },
+          "body": { "type": "string" },
+          "mode": { "type": "string", "enum": ["plain", "html", "markdown"] }
+        }
+      },
+      "SearchRequest": {
+        "type": "object",
+        "description": "Unknown fields are rejected with a 400.",
+        "required": ["query"],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "A query in mimux's search language. Must parse to at least one term."
+          },
+          "scope": {
+            "type": "string",
+            "enum": ["all", "account", "folder"],
+            "description": "Where to search. Defaults to `folder` if `folder_id` is set, else `account` if `account` is set, else `all`. An unrecognised value falls back to `account`."
+          },
+          "account": { "type": "string", "description": "Required in practice for `scope: account`." },
+          "folder_id": { "type": "integer", "format": "int64", "description": "Required in practice for `scope: folder`." },
+          "mode": {
+            "type": "string",
+            "enum": ["local", "deep"],
+            "default": "local",
+            "description": "`local` searches the synced index and answers 200. `deep` searches the IMAP servers and answers 202 with a job. Any other value is a 400."
+          },
+          "limit": {
+            "type": "integer",
+            "default": 100,
+            "maximum": 500,
+            "description": "Local search only. Zero or negative means the default; anything above 500 is silently clamped to 500 rather than rejected."
+          }
+        }
+      },
+      "SearchJob": {
+        "type": "object",
+        "description": "An asynchronous deep search. Held in memory in a 32-job ring — see `GET /v1/search/jobs/{id}` for the caveats.",
+        "required": ["id", "status", "query", "started_at"],
+        "properties": {
+          "id": { "type": "string", "description": "16 hex characters." },
+          "status": {
+            "type": "string",
+            "enum": ["running", "done"],
+            "description": "There is no failure status: a job whose IMAP searches all errored still ends `done`, with empty `results`."
+          },
+          "query": { "type": "string", "description": "The raw query as submitted." },
+          "started_at": { "type": "string", "format": "date-time" },
+          "results": {
+            "type": "array",
+            "description": "Present only once `status` is `done`. Messages carry no `thread_id`/`thread_size`.",
+            "items": { "$ref": "#/components/schemas/Message" }
+          }
+        }
+      },
+      "Filter": {
+        "type": "object",
+        "description": "An auto-filter rule. All conditions must match (AND); there is no OR. A rule with no conditions never matches, which is why at least one is required.",
+        "required": ["name", "conditions", "actions"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64", "description": "Assigned on create; ignored if you send one." },
+          "account": { "type": "string", "description": "Restrict to one account. Empty means every account." },
+          "name": { "type": "string", "description": "Required, non-blank." },
+          "position": { "type": "integer", "description": "Evaluation order, ascending." },
+          "enabled": { "type": "boolean" },
+          "conditions": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/FilterCondition" }
+          },
+          "actions": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "$ref": "#/components/schemas/FilterAction" }
+          }
+        }
+      },
+      "FilterCondition": {
+        "type": "object",
+        "required": ["field", "op", "value"],
+        "properties": {
+          "field": { "type": "string", "enum": ["from", "to", "subject", "body"] },
+          "op": {
+            "type": "string",
+            "enum": ["contains", "regex"],
+            "description": "`contains` is case-insensitive substring. `regex` is Go's RE2 syntax and must compile at write time."
+          },
+          "value": { "type": "string", "description": "Required, non-blank." }
+        }
+      },
+      "FilterAction": {
+        "type": "object",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["forward", "move", "mark_read", "star", "delete", "label", "notify"],
+            "description": "`notify` takes no argument — what a notification says and where it goes is configured once in Settings → Notifications, not per rule."
+          },
+          "arg": {
+            "type": "string",
+            "description": "The action's argument where it takes one: the target folder for `move`, the address for `forward`, the label for `label`. Absent when empty."
+          }
+        }
+      }
+    }
+  }
+}

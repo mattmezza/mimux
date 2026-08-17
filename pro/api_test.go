@@ -590,3 +590,29 @@ func TestScopesPerRouteGroup(t *testing.T) {
 		t.Errorf("GET /v1/messages with mail:read = %d, want 200", rec.Code)
 	}
 }
+
+func TestOpenAPISpecIsPublic(t *testing.T) {
+	ta := newTestAPI(t)
+	// No Authorization header: the spec must still come back.
+	r := httptest.NewRequest(http.MethodGet, "/v1/openapi.json", nil)
+	rec := httptest.NewRecorder()
+	ta.h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("openapi.json = %d: %s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("content-type = %q", ct)
+	}
+	var spec map[string]any
+	decodeBody(t, rec, &spec)
+	if spec["openapi"] == nil {
+		t.Fatalf("spec has no openapi version key")
+	}
+	// The authenticated neighbours must not have been opened up by proximity.
+	r = httptest.NewRequest(http.MethodGet, "/v1/tokens/self", nil)
+	rec = httptest.NewRecorder()
+	ta.h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated tokens/self = %d, want 401", rec.Code)
+	}
+}
