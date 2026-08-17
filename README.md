@@ -1,5 +1,7 @@
 # mimux
 
+![mimux](.github/cover.png)
+
 A fast, keyboard-driven email client you run yourself. Point it at the mailboxes
 you already have, and read, search, triage and send from one unified inbox in the
 browser or as an installed app on your phone. Your mail, your credentials and
