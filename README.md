@@ -230,8 +230,9 @@ Nothing in it is held back, time-limited, or behind a licence key, and nothing
 will be moved out of it later.
 
 **The paid layer is automation only** — a REST API, an MCP server for AI agents,
-webhooks, and AI compose. The rule is simple: if a *human* drives mimux, that is
-free; if something *else* drives it, that is the paid part. It does not exist
+and webhooks. The rule is simple: if a *human* drives mimux, that is free; if
+something *else* drives it, that is the paid part. AI compose is human-driven, so
+it stays free. It does not exist
 yet; this line is published in advance so its arrival is a plan being executed
 rather than a surprise.
 

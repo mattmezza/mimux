@@ -14,7 +14,7 @@ single fact is what makes the arrangement below work; see
 | Path | Licence | What it is |
 |------|---------|------------|
 | `cmd/`, `internal/`, `web/` | **AGPL-3.0-only** | The mimux mail client. The whole thing. |
-| `pro/` | **Elastic Licence 2.0** (`pro/LICENSE`) | The commercial automation layer: REST API, MCP server, webhooks, AI compose. |
+| `pro/` | **Elastic Licence 2.0** (`pro/LICENSE`) | The commercial automation layer: REST API, MCP server, webhooks. |
 | `www/` | **AGPL-3.0-only** | Landing page and docs for mimux.dev. |
 | Everything else at the root | **AGPL-3.0-only** | Build files, CI, docs. |
 
@@ -34,11 +34,11 @@ This line was published before `pro/` existed, and it does not move.
 inbox, IMAP IDLE sync, threading, search (local and server-side), compose with
 rich text and Markdown, drafts, undo-send, scheduled send, filters and rules,
 calendar invites, keyboard shortcuts, PWA install, Web Push and ntfy
-notifications, backup and restore. If a human uses mimux to read and write mail,
-it is free.
+notifications, backup and restore, AI compose and translate (bring your own
+key). If a human uses mimux to read and write mail, it is free.
 
-**Paid, ELv2 — automation only.** The REST API, the MCP server, webhooks, and AI
-compose. If something *other than a human* drives mimux, that is the paid layer.
+**Paid, ELv2 — automation only.** The REST API, the MCP server, and webhooks. If
+something *other than a human* drives mimux, that is the paid layer.
 
 Nothing is ever moved from the free side to the paid side. The client does not
 become a demo, features are not held back to seed a future tier, and no part of

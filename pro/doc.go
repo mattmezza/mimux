@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LicenseRef-Elastic-2.0
 //
 // Package pro is the mimux commercial automation layer: REST API, MCP server,
-// webhooks, AI compose.
+// webhooks.
 //
 // Everything in this directory is licensed under the Elastic Licence 2.0
 // (pro/LICENSE), NOT the AGPL-3.0 that covers the rest of the repository. See
