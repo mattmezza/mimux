@@ -46,32 +46,13 @@ func identities(accounts []config.Account) []Identity {
 
 func htmlEsc(s string) string { return html.EscapeString(s) }
 
-// bareEmail strips a "Name <addr>" wrapper down to the address.
-func bareEmail(a string) string {
-	if i := strings.LastIndex(a, "<"); i >= 0 {
-		return strings.TrimSpace(strings.TrimSuffix(a[i+1:], ">"))
-	}
-	return strings.TrimSpace(a)
-}
+// bareEmail moved down to internal/config (BareEmail) with accountForAddress.
+func bareEmail(a string) string { return config.BareEmail(a) }
 
-// accountForAddress finds the account that owns a from-address — its primary
-// Email or one of its aliases — matched case-insensitively on the bare address.
+// accountForAddress moved down to internal/config (AccountForAddress) so the
+// pro API's send endpoint resolves identities the same way compose does.
 func (s *Server) accountForAddress(addr string) (config.Account, bool) {
-	want := strings.ToLower(bareEmail(addr))
-	if want == "" {
-		return config.Account{}, false
-	}
-	for _, a := range s.cfg.Accounts {
-		if strings.ToLower(a.Email) == want {
-			return a, true
-		}
-		for _, al := range a.Aliases {
-			if strings.ToLower(bareEmail(al.Email)) == want {
-				return a, true
-			}
-		}
-	}
-	return config.Account{}, false
+	return config.AccountForAddress(s.cfg.Accounts, addr)
 }
 
 // composeView is the compose partial's template data.

@@ -36,8 +36,8 @@ var templateFuncs = template.FuncMap{
 	"absTime":        absTime,
 	"untilTime":      untilTime,
 	"outSnippet":     outSnippet,
-	"folderLabel":    folderLabel,
-	"folderTree":     folderTree,
+	"folderLabel":    store.FolderLabel,
+	"folderTree":     store.FolderTree,
 	"messageLabels":  mail.MessageLabels,
 	"splitAddrs":     mail.SplitAddrList,
 	"labelToken":     mail.LabelToken,
@@ -442,27 +442,9 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// conversationOf returns the whole conversation containing message id. The
-// closure is over Message-IDs across every folder, not the list window: the
-// list is inbox-scoped and capped, so Sent replies and older read members would
-// otherwise be missing. nil when the message can't be placed.
-func (s *Server) conversationOf(id int64) *mail.Thread {
-	var msgs []store.Message
-	if seed, err := s.store.MessageByID(id); err == nil && seed != nil {
-		msgs, _ = s.store.ThreadMessages(seed)
-	}
-	for _, t := range mail.BuildThreads(msgs) {
-		for _, m := range t.Messages {
-			// Match by membership, not RootID: the newest message of the full
-			// conversation is often a Sent reply, not the clicked list row.
-			if m.ID == id {
-				tt := t
-				return &tt
-			}
-		}
-	}
-	return nil
-}
+// conversationOf moved down to internal/mail (Manager.Conversation) so the pro
+// API can serve the same whole-conversation view.
+func (s *Server) conversationOf(id int64) *mail.Thread { return s.mail.Conversation(id) }
 
 // handleThreadRows renders a thread's messages as indented list sub-rows (the
 // inline disclosure under a thread row) — same conversation the pane shows.
@@ -1058,65 +1040,8 @@ func sseData(s string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
 }
 
-// folderNode is one node in the "Move to…" picker tree: a folder-name path
-// segment that may itself be a real, selectable folder (Folder != nil) and/or
-// the parent of deeper folders (Children).
-type folderNode struct {
-	Label    string
-	Folder   *store.Folder
-	Children []*folderNode
-}
-
-// folderTree turns a flat, single-account folder list into a nested tree by
-// splitting each name on the IMAP hierarchy delimiter ('/' or '.', matching
-// folderLabel). Special-use folders (Inbox, Sent, …) stay as flat top-level
-// leaves. Intermediate segments with no folder of their own become
-// non-selectable branches. Input order is preserved (folders arrive sorted).
-func folderTree(folders []store.Folder) []*folderNode {
-	var roots []*folderNode
-	find := func(nodes *[]*folderNode, label string) *folderNode {
-		for _, n := range *nodes {
-			if n.Label == label {
-				return n
-			}
-		}
-		n := &folderNode{Label: label}
-		*nodes = append(*nodes, n)
-		return n
-	}
-	for i := range folders {
-		f := folders[i]
-		var segs []string
-		if f.SpecialUse != "" {
-			segs = []string{folderLabel(f)}
-		} else {
-			segs = strings.FieldsFunc(f.Name, func(r rune) bool { return r == '/' || r == '.' })
-		}
-		if len(segs) == 0 {
-			segs = []string{f.Name}
-		}
-		cur := &roots
-		var node *folderNode
-		for _, s := range segs {
-			node = find(cur, s)
-			cur = &node.Children
-		}
-		fc := f
-		node.Folder = &fc
-	}
-	return roots
-}
-
-func folderLabel(f store.Folder) string {
-	if f.SpecialUse != "" {
-		return strings.ToUpper(f.SpecialUse[:1]) + f.SpecialUse[1:]
-	}
-	name := f.Name
-	if i := strings.LastIndexAny(name, "/."); i >= 0 {
-		name = name[i+1:]
-	}
-	return name
-}
+// The folder tree/label helpers moved down to internal/store (FolderTree,
+// FolderLabel) so the pro API can shape the same tree — see templateFuncs.
 
 // absTime is relTime's exact twin: the full timestamp behind a "4h" label, for
 // a native title tooltip. Local() because dates are stored (and read back) as

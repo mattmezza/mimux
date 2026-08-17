@@ -204,27 +204,10 @@ func (s *Server) handleServerSearch(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "search_server_status", map[string]any{"Accounts": accounts})
 }
 
-// searchAccounts resolves which account names participate in a server search.
+// searchAccounts moved down to internal/mail (Manager.SearchAccounts) so the
+// pro API's async search jobs resolve scope identically.
 func (s *Server) searchAccounts(scope search.Scope, account string, folderID int64) []string {
-	switch scope {
-	case search.ScopeFolder:
-		if f, _ := s.store.FolderByID(folderID); f != nil {
-			return []string{f.Account}
-		}
-		return nil
-	case search.ScopeAccount:
-		if account != "" {
-			return []string{account}
-		}
-		if f, _ := s.store.FolderByID(folderID); f != nil {
-			return []string{f.Account}
-		}
-	}
-	out := make([]string, 0, len(s.cfg.Accounts))
-	for _, a := range s.cfg.Accounts {
-		out = append(out, a.Name)
-	}
-	return out
+	return s.mail.SearchAccounts(scope, account, folderID)
 }
 
 // runServerSearch fans out one goroutine per account (each capped at 10s),

@@ -254,3 +254,33 @@ const (
 	// plausibly click next. Anything older is fetched on open and cached then.
 	DefaultBodyCache = 200
 )
+
+// BareEmail strips a "Name <addr>" wrapper down to the address.
+func BareEmail(a string) string {
+	if i := strings.LastIndex(a, "<"); i >= 0 {
+		return strings.TrimSpace(strings.TrimSuffix(a[i+1:], ">"))
+	}
+	return strings.TrimSpace(a)
+}
+
+// AccountForAddress finds the account that owns a from-address — its primary
+// Email or one of its aliases — matched case-insensitively on the bare
+// address. Moved down from internal/server so compose routing and the pro
+// API's send endpoint resolve identities identically.
+func AccountForAddress(accounts []Account, addr string) (Account, bool) {
+	want := strings.ToLower(BareEmail(addr))
+	if want == "" {
+		return Account{}, false
+	}
+	for _, a := range accounts {
+		if strings.ToLower(a.Email) == want {
+			return a, true
+		}
+		for _, al := range a.Aliases {
+			if strings.ToLower(BareEmail(al.Email)) == want {
+				return a, true
+			}
+		}
+	}
+	return Account{}, false
+}

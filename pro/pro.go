@@ -40,10 +40,11 @@ func routes(deps ext.Deps) ext.Extension {
 	})
 
 	tokens := newTokenAuth(deps.Store, deps.Cfg.API.RateLimitPerMinute)
+	a := newAPI(deps)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(tokens.require)
-		// Every stage-2 endpoint goes here, behind requireScope(...).
 		r.Get("/tokens/self", handleTokenSelf)
+		a.mount(r)
 	})
 	return ext.Extension{Pattern: "/api", Handler: r}
 }
