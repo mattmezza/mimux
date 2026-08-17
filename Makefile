@@ -56,6 +56,12 @@ build-pro: css-build ## Build the commercial binary (AGPL client + ELv2 pro)
 docker: ## Build Docker image locally
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
 
+# account/ is its own module and its own deployable (see account/README.md).
+# Building it here proves it compiles and links nothing from this module.
+.PHONY: build-account
+build-account: ## Build the account.mimux.dev licence service
+	cd account && CGO_ENABLED=0 go build -o ../bin/mimux-account .
+
 .PHONY: docs
 docs: ## Build the API docs site into docs/dist
 	@sh scripts/docs.sh
@@ -109,6 +115,15 @@ release: ## Create a GitHub release (usage: make release name=v0.1)
 	git push origin $(name)
 	gh release create $(name) --generate-notes --title "$(name)"
 	@echo "Release $(name) created. GitHub Actions will build and push the Docker image."
+
+.PHONY: release-account
+release-account: ## Release the account service (usage: make release-account name=account-v0.1)
+	@if [ -z "$(name)" ]; then echo "Usage: make release-account name=account-vX.Y"; exit 1; fi
+	@case "$(name)" in account-v*) ;; *) echo "Account release tags start with account-v (got $(name))"; exit 1;; esac
+	git tag -a $(name) -m "Release $(name)"
+	git push origin $(name)
+	gh release create $(name) --generate-notes --title "$(name)"
+	@echo "Release $(name) created. GitHub Actions will build and push the account image."
 
 ##@ Setup
 .PHONY: setup
