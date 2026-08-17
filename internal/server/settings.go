@@ -7,11 +7,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/mattmezza/sm/internal/account"
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
-	"github.com/mattmezza/sm/internal/translate"
+	"github.com/mattmezza/mimux/internal/account"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
+	"github.com/mattmezza/mimux/internal/translate"
 )
 
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {

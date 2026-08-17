@@ -8,12 +8,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/oauth2"
 
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
-const oauthStateCookie = "sm_oauth_state"
+const oauthStateCookie = "mimux_oauth_state"
 
 // handleOAuthStart redirects to the provider consent screen. The state param
 // carries "<account>:<nonce>"; the nonce is also set in a short-lived cookie

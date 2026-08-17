@@ -1,10 +1,10 @@
-# SM — Simple Mail
+# mimux
 
 ## Project Overview
 
-Build **SM** (Simple Mail), a self-hosted, privacy-first web-based email client. It is a PWA served by a Go backend, styled with Tailwind CSS, and driven by htmx + Alpine.js (no React, no heavy JS frameworks). It connects to multiple email accounts via IMAP/SMTP and runs as a single Docker container.
+Build **mimux**, a self-hosted, privacy-first web-based email client. It is a PWA served by a Go backend, styled with Tailwind CSS, and driven by htmx + Alpine.js (no React, no heavy JS frameworks). It connects to multiple email accounts via IMAP/SMTP and runs as a single Docker container.
 
-The repo lives at **github.com/mattmezza/sm**. The project must be production-quality from day one: clean code, tested, documented, CI/CD baked in, and a joy to use.
+The repo lives at **github.com/mattmezza/mimux**. The project must be production-quality from day one: clean code, tested, documented, CI/CD baked in, and a joy to use.
 
 ---
 
@@ -48,9 +48,9 @@ The repo lives at **github.com/mattmezza/sm**. The project must be production-qu
 ### Directory structure
 
 ```
-sm/
+mimux/
 ├── cmd/
-│   └── sm/
+│   └── mimux/
 │       └── main.go              # Entrypoint
 ├── internal/
 │   ├── server/                  # HTTP server, routes, middleware
@@ -317,7 +317,7 @@ Implement via Alpine.js `x-on:keydown.window` with a central keybinding manager.
 
 ### Philosophy
 
-SM should look and feel like a premium, modern email client. Think: Linear meets Superhuman meets Arc — clean, fast, opinionated. Not a 2005 webmail clone. Every interaction should feel instant. Every screen should be beautiful enough to screenshot.
+mimux should look and feel like a premium, modern email client. Think: Linear meets Superhuman meets Arc — clean, fast, opinionated. Not a 2005 webmail clone. Every interaction should feel instant. Every screen should be beautiful enough to screenshot.
 
 ### Design tokens
 
@@ -384,9 +384,9 @@ Every view must handle these states:
 
 ### Logo
 
-Simple, geometric, memorable. The letters "SM" stylized — consider:
+Simple, geometric, memorable. The letters "mimux" stylized — consider:
 - A minimal envelope shape where the flap forms an "S" and the body forms an "M"
-- Or just clean sans-serif "SM" in a rounded square, indigo-on-zinc
+- Or just clean sans-serif "mimux" in a rounded square, indigo-on-zinc
 - SVG, works at 16px (favicon) through 512px (PWA splash)
 - Generate multiple sizes for PWA manifest
 
@@ -413,7 +413,7 @@ base_url = "https://mail.example.com"
 secret = "change-me-to-a-random-64-char-string"
 
 [db]
-path = "./data/sm.db"
+path = "./data/mimux.db"
 
 [[accounts]]
 name = "Personal"
@@ -478,30 +478,30 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=css /build/web/static/css/dist.css web/static/css/dist.css
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o sm ./cmd/sm
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w -X main.version=${VERSION}" -o mimux ./cmd/mimux
 
 # Stage 3: Final image
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=go /build/sm /usr/local/bin/sm
+COPY --from=go /build/mimux /usr/local/bin/mimux
 VOLUME /data
 EXPOSE 8080
-ENTRYPOINT ["sm"]
+ENTRYPOINT ["mimux"]
 ```
 
 ### docker-compose.yml
 
 ```yaml
 services:
-  sm:
-    image: ghcr.io/mattmezza/sm:latest
+  mimux:
+    image: ghcr.io/mattmezza/mimux:latest
     ports:
       - "8080:8080"
     volumes:
       - ./data:/data
-      - ./config.toml:/etc/sm/config.toml:ro
+      - ./config.toml:/etc/mimux/config.toml:ro
     environment:
-      - SM_CONFIG=/etc/sm/config.toml
+      - MIMUX_CONFIG=/etc/mimux/config.toml
       - TZ=Europe/Zurich
     restart: unless-stopped
 ```
@@ -524,7 +524,7 @@ Runs on every push and PR:
 Runs **only** on GitHub Release creation (triggered by `make release`):
 - Waits for CI to pass on the tagged commit
 - Multi-platform Docker build (linux/amd64, linux/arm64)
-- Push to `ghcr.io/mattmezza/sm:<tag>` and `ghcr.io/mattmezza/sm:latest`
+- Push to `ghcr.io/mattmezza/mimux:<tag>` and `ghcr.io/mattmezza/mimux:latest`
 - Attach the Go binary (linux/amd64, linux/arm64, darwin/arm64) to the GitHub Release
 
 Trigger: `on: release: types: [published]`
@@ -539,8 +539,8 @@ Every command a developer needs. `make help` prints a formatted table of all tar
 .DEFAULT_GOAL := help
 
 VERSION ?= dev
-BINARY  := sm
-IMAGE   := ghcr.io/mattmezza/sm
+BINARY  := mimux
+IMAGE   := ghcr.io/mattmezza/mimux
 
 ##@ Development
 .PHONY: dev
@@ -549,7 +549,7 @@ dev: ## Run with hot reload (requires air)
 
 .PHONY: run
 run: ## Build and run locally
-	go run ./cmd/sm
+	go run ./cmd/mimux
 
 .PHONY: css
 css: ## Build Tailwind CSS (watch mode)
@@ -574,7 +574,7 @@ check: lint test ## Run all checks
 ##@ Build
 .PHONY: build
 build: css-build ## Build binary
-	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(BINARY) ./cmd/sm
+	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(BINARY) ./cmd/mimux
 
 .PHONY: docker
 docker: ## Build Docker image locally
@@ -601,7 +601,7 @@ setup: ## Install development dependencies
 
 .PHONY: help
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mSM — Simple Mail\033[0m\n\nUsage: make \033[36m<target>\033[0m\n"} \
+	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mmimux\033[0m\n\nUsage: make \033[36m<target>\033[0m\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
 		/^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 ```

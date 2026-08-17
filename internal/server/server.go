@@ -15,13 +15,13 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/mattmezza/sm/internal/ai"
-	"github.com/mattmezza/sm/internal/auth"
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/filter"
-	"github.com/mattmezza/sm/internal/mail"
-	"github.com/mattmezza/sm/internal/store"
-	"github.com/mattmezza/sm/web"
+	"github.com/mattmezza/mimux/internal/ai"
+	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/filter"
+	"github.com/mattmezza/mimux/internal/mail"
+	"github.com/mattmezza/mimux/internal/store"
+	"github.com/mattmezza/mimux/web"
 )
 
 type Server struct {

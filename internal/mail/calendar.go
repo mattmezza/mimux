@@ -13,8 +13,8 @@ import (
 	"github.com/emersion/go-message"
 	emmail "github.com/emersion/go-message/mail"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // CalPerson is an organizer or attendee reference from an iCalendar object.
@@ -356,7 +356,7 @@ func partStatVerb(partstat string) string {
 func BuildReplyICS(ev CalEvent, partstat, myEmail, myName string, now time.Time) ([]byte, error) {
 	cal := ical.NewCalendar()
 	cal.Props.SetText(ical.PropVersion, "2.0")
-	cal.Props.SetText(ical.PropProductID, "-//SM//Calendar//EN")
+	cal.Props.SetText(ical.PropProductID, "-//mimux//Calendar//EN")
 	cal.Props.SetText(ical.PropMethod, "REPLY")
 
 	e := ical.NewEvent()

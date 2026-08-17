@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-cmd = "go build -o ./tmp/sm ./cmd/sm"
-bin = "./tmp/sm"
+cmd = "go build -o ./tmp/mimux ./cmd/mimux"
+bin = "./tmp/mimux"
 include_ext = ["go", "html", "css", "js", "toml", "sql", "json"]
 exclude_dir = ["tmp", "bin", "data", "node_modules", ".git"]
 exclude_regex = ["dist\\.css$"]

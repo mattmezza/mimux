@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/mattmezza/sm/internal/filter"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/filter"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func openStore(t *testing.T) *store.Store {

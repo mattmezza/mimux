@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestHighlightEscaping(t *testing.T) {

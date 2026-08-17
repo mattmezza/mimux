@@ -9,8 +9,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"github.com/mattmezza/sm/internal/config"
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func readRouter(s *Server) http.Handler {
@@ -24,7 +24,7 @@ func postMarkRead(t *testing.T, r http.Handler, id int64, path string, thread bo
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/messages/"+strconv.FormatInt(id, 10)+"/"+path, nil)
 	if thread {
-		req.Header.Set("X-SM-Thread", "1")
+		req.Header.Set("X-Mimux-Thread", "1")
 	}
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -87,7 +87,7 @@ func TestMarkReadSurvivesSyncWhenIMAPPushFails(t *testing.T) {
 
 // TestThreadReadUnread verifies the thread-level read/unread endpoint marks
 // EVERY message in the thread (not just the row's latest), while a request
-// without the X-SM-Thread header keeps single-message (per-message toggle)
+// without the X-Mimux-Thread header keeps single-message (per-message toggle)
 // semantics.
 func TestThreadReadUnread(t *testing.T) {
 	var inbox int64

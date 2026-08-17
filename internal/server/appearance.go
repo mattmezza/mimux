@@ -6,7 +6,7 @@ import (
 	"net/http"
 	svgtmpl "text/template"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // --- app icon -------------------------------------------------------------
@@ -119,8 +119,8 @@ func iconURL(c store.AppConfig, purpose string) string {
 // won't rasterize SVG (iOS, and Chrome's WebAPK minting on older Android).
 // Settings says so out loud rather than pretending otherwise.
 var manifestTmpl = svgtmpl.Must(svgtmpl.New("manifest").Parse(`{
-  "name": "SM — Simple Mail",
-  "short_name": "SM",
+  "name": "mimux",
+  "short_name": "mimux",
   "description": "Self-hosted, privacy-first email client",
   "start_url": "/",
   "display": "standalone",

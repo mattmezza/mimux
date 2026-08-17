@@ -22,12 +22,12 @@ RUN go mod download
 COPY . .
 COPY --from=css /build/web/static/css/dist.css web/static/css/dist.css
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w -X main.version=${VERSION}" -o sm ./cmd/sm
+    go build -ldflags="-s -w -X main.version=${VERSION}" -o mimux ./cmd/mimux
 
 # Stage 3: Final image (per target arch — just ca-certs + the binary).
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
-COPY --from=go /build/sm /usr/local/bin/sm
+COPY --from=go /build/mimux /usr/local/bin/mimux
 VOLUME /data
 EXPOSE 8083
-ENTRYPOINT ["sm"]
+ENTRYPOINT ["mimux"]

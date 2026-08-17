@@ -7,7 +7,7 @@ import (
 
 	"github.com/emersion/go-imap/v2/imapclient"
 
-	"github.com/mattmezza/sm/internal/config"
+	"github.com/mattmezza/mimux/internal/config"
 )
 
 // TestSubmitTimesOut simulates a wedged worker (nothing ever drains a.cmds)

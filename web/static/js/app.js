@@ -1,4 +1,4 @@
-// SM app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
+// mimux app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
 
 // The active quick filter, read from its canonical DOM reflection (the
 // :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.
@@ -53,7 +53,7 @@ document.addEventListener("htmx:configRequest", (e) => {
   // pending flag either). POSTs (manual toggle) are unaffected.
   if (activeFilter() === "unread" && (e.detail.verb || "").toLowerCase() === "get"
       && /^\/(messages|t)\/\d+/.test(e.detail.path || "")) {
-    e.detail.headers["X-SM-No-Auto-Read"] = "1";
+    e.detail.headers["X-Mimux-No-Auto-Read"] = "1";
   }
 });
 
@@ -215,25 +215,25 @@ function resolveTheme(mode) {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 }
 function applyTheme() {
-  var t = resolveTheme(localStorage.getItem("sm.theme") || "system");
+  var t = resolveTheme(localStorage.getItem("mimux.theme") || "system");
   document.documentElement.dataset.theme = t;
   document.documentElement.style.colorScheme = t;
 }
 window.setTheme = function (mode) {
-  try { localStorage.setItem("sm.theme", mode); } catch (_) {}
+  try { localStorage.setItem("mimux.theme", mode); } catch (_) {}
   applyTheme();
 };
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
-  if ((localStorage.getItem("sm.theme") || "system") === "system") applyTheme();
+  if ((localStorage.getItem("mimux.theme") || "system") === "system") applyTheme();
 });
 
 // --- Alpine UI state (sidebar collapse, per-account tree open/closed, quick
 // filter) persisted in localStorage so it survives reloads. Referenced by
-// x-data="smUI" on the page roots. Registered on alpine:init so it's available
+// x-data="mimuxUI" on the page roots. Registered on alpine:init so it's available
 // regardless of script load order (a bare global raced Alpine's boot). ---
 document.addEventListener("alpine:init", () => {
-  Alpine.data("smUI", function () {
-  const KEY = "sm.ui";
+  Alpine.data("mimuxUI", function () {
+  const KEY = "mimux.ui";
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (_) {}
   // A ?filter= in the URL (bookmarked/shared) wins over the saved preference.
@@ -331,7 +331,7 @@ function toastUndo(label, id, folderId) {
   toast(label, {
     onUndo: () => {
       postAction(`/messages/${id}/undo-move`, { body: { folder: folderId } })
-        .then(() => document.body.dispatchEvent(new Event("sm:refresh")))
+        .then(() => document.body.dispatchEvent(new Event("mimux:refresh")))
         .catch(() => toast("Couldn't undo — try again."));
     },
   });
@@ -360,23 +360,23 @@ document.addEventListener("click", (e) => {
 // The one bit of logic is requirement (2): when the last account finishes, the
 // message list must be refreshed BEFORE the spinner goes, so it never vanishes
 // ahead of the mail it was promising.
-let smSyncing = document.body.classList.contains("sm-syncing");
+let mimuxSyncing = document.body.classList.contains("mimux-syncing");
 let smAwaitList = false; // spinner is on borrowed time, waiting for the list
 function setSyncing(on) {
   if (on) {
-    smSyncing = true;
+    mimuxSyncing = true;
     smAwaitList = false; // something started again: the pending hide is void
-    document.body.classList.add("sm-syncing");
+    document.body.classList.add("mimux-syncing");
     return;
   }
-  if (!smSyncing) return;
-  smSyncing = false;
+  if (!mimuxSyncing) return;
+  mimuxSyncing = false;
   if (!document.getElementById("message-list")) {
-    document.body.classList.remove("sm-syncing"); // no list to wait for
+    document.body.classList.remove("mimux-syncing"); // no list to wait for
     return;
   }
   smAwaitList = true;
-  document.body.dispatchEvent(new Event("sm:refresh"));
+  document.body.dispatchEvent(new Event("mimux:refresh"));
 }
 document.body.addEventListener("htmx:afterSwap", (e) => {
   // Any #message-list swap settles the debt, not just the one we asked for: a
@@ -384,7 +384,7 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
   // on the newly inserted content, so this bubbles up to body.
   if (smAwaitList && e.target.id === "message-list") {
     smAwaitList = false;
-    document.body.classList.remove("sm-syncing");
+    document.body.classList.remove("mimux-syncing");
   }
 });
 
@@ -406,14 +406,14 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
     es = new EventSource("/events");
     es.addEventListener("open", () => {
       if (opened) {
-        document.body.dispatchEvent(new Event("sm:refresh"));
+        document.body.dispatchEvent(new Event("mimux:refresh"));
         refreshUnreadTitle();
       }
       opened = true;
     });
-    es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("sm:refresh")); refreshUnreadTitle(); });
+    es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("mimux:refresh")); refreshUnreadTitle(); });
     // data is "1"/"0": is ANY account syncing, computed server-side (handleEvents).
-    es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("sm:sync")); refreshUnreadTitle(); });
+    es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("mimux:sync")); refreshUnreadTitle(); });
     es.addEventListener("toast", (e) => toast(e.data));
     es.addEventListener("search-started", (e) => searchAcctState(JSON.parse(e.data).account, "start"));
     es.addEventListener("search-results", (e) => appendServerResults(JSON.parse(e.data)));
@@ -436,7 +436,7 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
     // readyState 2 = CLOSED: EventSource gave up (or the resumed machine's
     // socket died in a way it noticed). It will never retry on its own.
     if (!es || es.readyState === 2) connect();
-    document.body.dispatchEvent(new Event("sm:refresh"));
+    document.body.dispatchEvent(new Event("mimux:refresh"));
     refreshUnreadTitle();
   });
 })();
@@ -549,7 +549,7 @@ document.addEventListener("htmx:afterSwap", (e) => {
   syncSearchFolder();
   // Navigating the list (folder switch, search, g i / 0 / 1-9) with a message
   // open on mobile would leave the fullscreen reading pane sitting on top of
-  // the new list. Background refreshes (sm:refresh from new-mail, undo,
+  // the new list. Background refreshes (mimux:refresh from new-mail, undo,
   // pull-to-refresh) request from the list element itself — those must keep
   // the open message. On desktop the pane is a normal column, nothing to do.
   if (e.detail?.requestConfig?.elt?.id !== "message-list" &&
@@ -820,7 +820,7 @@ window.toggleThreadMessage = toggleThreadMessage;
 // --- resizable message-list column: drag #list-resizer to set --list-w on the
 // stable #main-content (so the width survives htmx list swaps), persisted. ---
 (function initListResize() {
-  const KEY = "sm.listw";
+  const KEY = "mimux.listw";
   const MIN = 240, MAX = 700;
   const main = () => document.getElementById("main-content");
   function clamp(px) {
@@ -931,7 +931,7 @@ window.toggleThreadMessage = toggleThreadMessage;
     // /refresh flips every account to "syncing" before it answers, so the
     // spinner is already up over SSE by the time this resolves.
     postAction("/refresh")
-      .then(() => document.body.dispatchEvent(new Event("sm:refresh")))
+      .then(() => document.body.dispatchEvent(new Event("mimux:refresh")))
       .catch(() => {})
       .then(() => { busy = false; hide(); });
   }
@@ -1032,10 +1032,10 @@ window.applyBodyTheme = function (frame) {
   const { dark, remember } = bodyThemePrefs();
   let wantDark = dark;
   if (remember) {
-    const saved = localStorage.getItem("sm.msgtheme." + msgIdFromFrame(frame));
+    const saved = localStorage.getItem("mimux.msgtheme." + msgIdFromFrame(frame));
     if (saved) wantDark = saved === "dark";
   }
-  doc.documentElement.classList.toggle("sm-dark", wantDark);
+  doc.documentElement.classList.toggle("mimux-dark", wantDark);
   fitBodyWidth(frame);
   setupBodyZoom(frame);
   watchBodyScroll(frame);
@@ -1123,10 +1123,10 @@ window.toggleStarBtn = function (btn) {
 window.toggleBodyTheme = function (frame) {
   const doc = frame && frame.contentDocument;
   if (!doc) return;
-  const isDark = doc.documentElement.classList.toggle("sm-dark");
+  const isDark = doc.documentElement.classList.toggle("mimux-dark");
   if (bodyThemePrefs().remember) {
     const id = msgIdFromFrame(frame);
-    if (id) localStorage.setItem("sm.msgtheme." + id, isDark ? "dark" : "light");
+    if (id) localStorage.setItem("mimux.msgtheme." + id, isDark ? "dark" : "light");
   }
 };
 
@@ -1389,8 +1389,8 @@ function needsAttachmentReminder(form) {
 function onComposeResponse(event) {
   const xhr = event.detail.xhr;
   if (!xhr || xhr.status !== 204) return;
-  const outboxId = xhr.getResponseHeader("SM-Outbox-Id");
-  const scheduled = xhr.getResponseHeader("SM-Scheduled");
+  const outboxId = xhr.getResponseHeader("Mimux-Outbox-Id");
+  const scheduled = xhr.getResponseHeader("Mimux-Scheduled");
   forceCloseCompose();
   if (outboxId) {
     toast("Sending…", {
@@ -1573,7 +1573,7 @@ function postAction(path, opts) {
 }
 
 function postMarkRead(id, read, thread) {
-  return postAction(`/messages/${id}/${read ? "read" : "unread"}`, thread ? { headers: { "X-SM-Thread": "1" } } : undefined);
+  return postAction(`/messages/${id}/${read ? "read" : "unread"}`, thread ? { headers: { "X-Mimux-Thread": "1" } } : undefined);
 }
 
 // markRead flips the row right away (a slow link shouldn't make the UI feel
@@ -1669,7 +1669,7 @@ function syncThreadRow(pane) {
 function markThreadRead(read, btn) {
   if (!window.htmx) return;
   // Same button rendered in a row's right-click menu: there is no thread in the
-  // pane to walk, so mark the whole thread server-side (X-SM-Thread, like the
+  // pane to walk, so mark the whole thread server-side (X-Mimux-Thread, like the
   // row gestures do) and flip the row.
   const ctx = btn && btn.closest("#row-ctx-menu");
   if (ctx) {
@@ -1711,7 +1711,7 @@ function toggleRowRead(row) {
   if (!id) return;
   const makeRead = row.hasAttribute("data-unread"); // unread -> read, else -> unread
   if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }
-  // X-SM-Thread tells the server this is a thread-level toggle: EVERY message in
+  // X-Mimux-Thread tells the server this is a thread-level toggle: EVERY message in
   // the thread gets marked, not just the row's latest (the row id is the thread
   // root). Otherwise a refresh leaves the thread partially unread.
   markRead(id, makeRead, true);
@@ -2622,23 +2622,23 @@ function toggleHelp() {
   if (el) el.hidden = !el.hidden;
   return true;
 }
-document.addEventListener("sm:help", toggleHelp);
+document.addEventListener("mimux:help", toggleHelp);
 
 function toggleAbout() {
   const el = document.getElementById("about-overlay");
   if (el) el.hidden = !el.hidden;
   return true;
 }
-document.addEventListener("sm:about", toggleAbout);
+document.addEventListener("mimux:about", toggleAbout);
 
-// Opens (never toggles) — the same sm:accounts event also drives the overlay's
+// Opens (never toggles) — the same mimux:accounts event also drives the overlay's
 // hx-get, so a second dispatch while it's open would refetch, not close. Escape
 // and the backdrop close it.
 function openAccounts() {
   const el = document.getElementById("accounts-overlay");
   if (el) el.hidden = false;
 }
-document.addEventListener("sm:accounts", openAccounts);
+document.addEventListener("mimux:accounts", openAccounts);
 
 document.addEventListener("keydown", (e) => {
   // Ctrl+Enter sends from the compose body field (submit syncs the editor).

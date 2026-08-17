@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func testStore(t *testing.T) *store.Store {

@@ -1,4 +1,4 @@
-// Package search parses SM's query language into a SearchQuery and builds the
+// Package search parses mimux's query language into a SearchQuery and builds the
 // local SQLite WHERE clause. IMAP-criteria mapping lives in internal/mail
 // (it needs go-imap types); this package stays dependency-free so the parser
 // and SQL builder are trivially testable.

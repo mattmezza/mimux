@@ -1,8 +1,8 @@
 .DEFAULT_GOAL := help
 
 VERSION ?= dev
-BINARY  := sm
-IMAGE   := ghcr.io/mattmezza/sm
+BINARY  := mimux
+IMAGE   := ghcr.io/mattmezza/mimux
 
 ##@ Development
 .PHONY: dev
@@ -11,7 +11,7 @@ dev: ## Run with hot reload (requires air)
 
 .PHONY: run
 run: ## Build and run locally
-	go run ./cmd/sm
+	go run ./cmd/mimux
 
 .PHONY: css
 css: ## Build Tailwind CSS (watch mode)
@@ -36,7 +36,7 @@ check: lint test ## Run all checks
 ##@ Build
 .PHONY: build
 build: css-build ## Build binary
-	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(BINARY) ./cmd/sm
+	CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=$(VERSION)" -o bin/$(BINARY) ./cmd/mimux
 
 .PHONY: docker
 docker: ## Build Docker image locally
@@ -58,10 +58,10 @@ setup: ## Install development dependencies
 	go install github.com/air-verse/air@latest
 	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 	npm install
-	@echo "Done. Run 'make dev' — SM boots with zero config; add accounts from Settings → Accounts."
+	@echo "Done. Run 'make dev' — mimux boots with zero config; add accounts from Settings → Accounts."
 
 .PHONY: help
 help: ## Show this help
-	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mSM — Simple Mail\033[0m\n\nUsage: make \033[36m<target>\033[0m\n"} \
+	@awk 'BEGIN {FS = ":.*##"; printf "\n\033[1mmimux\033[0m\n\nUsage: make \033[36m<target>\033[0m\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
 		/^[a-zA-Z_-]+:.*##/ {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)

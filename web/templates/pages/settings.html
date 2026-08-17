@@ -1,14 +1,14 @@
-{{define "title"}}Settings — SM{{end}}
+{{define "title"}}Settings — mimux{{end}}
 {{define "content"}}
 <div class="h-dvh flex flex-col min-h-0"
      x-data="{
        tabs: ['appearance','reading','composing','quick-actions','notifications','syncing','search','accounts','signatures','templates','integrations','backup'],
        tab: 'appearance',
        init() {
-         const h = (location.hash.slice(1) || localStorage.getItem('sm.settingsTab') || '').trim();
+         const h = (location.hash.slice(1) || localStorage.getItem('mimux.settingsTab') || '').trim();
          if (this.tabs.includes(h)) this.tab = h;
          this.$watch('tab', (t) => {
-           localStorage.setItem('sm.settingsTab', t);
+           localStorage.setItem('mimux.settingsTab', t);
            history.replaceState(null, '', '#' + t);
          });
        }
@@ -85,7 +85,7 @@
             <script>
               (function () {
                 var s = document.getElementById("theme-select");
-                if (s) s.value = localStorage.getItem("sm.theme") || "system";
+                if (s) s.value = localStorage.getItem("mimux.theme") || "system";
               })();
             </script>
 
@@ -423,12 +423,12 @@
                    x-data="pushUI('{{.VAPIDKey}}')" x-init="refresh()">
             <h2 class="text-sm font-semibold text-zinc-100">Notifications</h2>
             <p class="text-xs text-zinc-500">
-              Off until you turn them on. SM only ever notifies about new mail arriving in an inbox —
+              Off until you turn them on. mimux only ever notifies about new mail arriving in an inbox —
               never your own sent mail, and never the backlog it downloads on a first sync.
             </p>
 
             <label class="block space-y-1">
-              <span class="text-sm text-zinc-200">When should SM notify me?</span>
+              <span class="text-sm text-zinc-200">When should mimux notify me?</span>
               <select name="notify_scope"
                 class="block rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
                 {{range .NotifyScopes}}<option value="{{.ID}}" {{if eq $.Prefs.NotifyScope .ID}}selected{{end}}>{{.Label}}</option>{{end}}
@@ -442,7 +442,7 @@
             <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200 font-medium">This device (Web Push)</legend>
               <p class="text-xs text-zinc-500">
-                Notifications from SM itself, even when it isn't open. Each browser and device
+                Notifications from mimux itself, even when it isn't open. Each browser and device
                 subscribes separately.
               </p>
 
@@ -453,7 +453,7 @@
               <template x-if="state === 'insecure'">
                 <p class="text-xs text-amber-400/90">
                   This page is not served over HTTPS, and browsers only allow push notifications on a
-                  secure connection. Put SM behind a reverse proxy with a real certificate, then come
+                  secure connection. Put mimux behind a reverse proxy with a real certificate, then come
                   back. ntfy below works either way.
                 </p>
               </template>
@@ -462,7 +462,7 @@
                 <p class="text-xs text-amber-400/90">
                   On iPhone and iPad, push notifications only work for a web app installed to the
                   Home Screen — never in a normal Safari tab. Tap Share → <strong>Add to Home
-                  Screen</strong>, open SM from that icon, and enable notifications there. (iOS 16.4
+                  Screen</strong>, open mimux from that icon, and enable notifications there. (iOS 16.4
                   or later.) Or use ntfy below, which needs none of this.
                 </p>
               </template>
@@ -504,7 +504,7 @@
             <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200 font-medium">ntfy</legend>
               <p class="text-xs text-zinc-500">
-                An alternative that needs no browser permission and no installed app: SM posts to an
+                An alternative that needs no browser permission and no installed app: mimux posts to an
                 <a href="https://ntfy.sh" class="text-indigo-400 hover:underline" rel="noreferrer">ntfy</a>
                 topic and the ntfy app on your phone shows it. Pick a long, unguessable topic name —
                 anyone who knows it can read your notifications, so use a self-hosted ntfy if the
@@ -513,7 +513,7 @@
               <label class="block space-y-1">
                 <span class="text-sm text-zinc-200">Topic URL</span>
                 <input type="url" name="ntfy_url" value="{{.Prefs.NtfyURL}}"
-                  placeholder="https://ntfy.sh/sm-9f3c2a-mail"
+                  placeholder="https://ntfy.sh/mimux-9f3c2a-mail"
                   class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                 <span class="block text-xs text-zinc-500">Leave blank to disable. Save settings before testing.</span>
               </label>
@@ -638,7 +638,7 @@
           <section x-show="tab === 'accounts'" x-cloak class="space-y-6">
             <div class="space-y-3">
               <h2 class="text-sm font-semibold text-zinc-100">Accounts</h2>
-              <p class="text-xs text-zinc-500">Add, edit and remove the email accounts SM syncs. Changes take effect immediately — no restart needed.</p>
+              <p class="text-xs text-zinc-500">Add, edit and remove the email accounts mimux syncs. Changes take effect immediately — no restart needed.</p>
               {{template "accounts_manager" (dict "CSRF" .CSRF "Accounts" .AccountViews "Presets" .Presets)}}
             </div>
             <script>

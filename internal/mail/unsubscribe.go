@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mattmezza/sm/internal/store"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // UnsubKind identifies how a message's List-Unsubscribe header can be acted on.

@@ -1,8 +1,8 @@
-// SM service worker: network-first for everything (always fresh when online),
+// mimux service worker: network-first for everything (always fresh when online),
 // with the cache as an offline-only fallback. This deliberately avoids serving
 // stale JS/CSS/templates — a cache-first strategy previously pinned old assets
 // in already-open browsers and broke the app after updates.
-const CACHE = "sm-v7";
+const CACHE = "mimux-v8";
 // The icon is deliberately NOT precached: it is served from /icon.svg?v=<hash>
 // of the user's colour settings, so a precached URL would be a stale mark the
 // moment they change one. The network-first fetch handler below caches it on
@@ -64,7 +64,7 @@ self.addEventListener("push", (e) => {
       const visible = wins.some((c) => c.visibilityState === "visible");
       await self.registration.showNotification(title, {
         body: d.body || "",
-        tag: "sm-" + (d.account || ""),
+        tag: "mimux-" + (d.account || ""),
         data: { url },
         renotify: !visible,
         silent: visible,

@@ -80,7 +80,7 @@ Content-Type: text/plain; charset=utf-8
 Hello world, 3 < 5 and 5 > 3.
 `)
 	out, _ := parseBody([]byte(raw)).render(false)
-	if !strings.Contains(out, `class="sm-plain"`) {
+	if !strings.Contains(out, `class="mimux-plain"`) {
 		t.Errorf("plain text should render in a <pre>: %q", out)
 	}
 }
