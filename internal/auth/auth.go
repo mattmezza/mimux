@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -57,6 +58,19 @@ func VerifyPassword(password, encoded string) bool {
 // --- tokens ---
 
 func NewToken() string { return base64.RawURLEncoding.EncodeToString(randBytes(32)) }
+
+// APITokenPrefix marks a mimux personal access token (Settings → API). It is
+// deliberately public and fixed: the API can reject a bearer credential that
+// isn't ours before spending an argon2id verification on it, and secret
+// scanners can recognise one that leaks.
+const APITokenPrefix = "mimux_pat_"
+
+// NewAPIToken mints an API token secret: the prefix plus 32 random bytes in
+// base62 (alphanumeric, so it survives being pasted anywhere). Only
+// HashPassword(secret) is ever stored — VerifyPassword checks a presented one.
+func NewAPIToken() string {
+	return APITokenPrefix + new(big.Int).SetBytes(randBytes(32)).Text(62)
+}
 
 func randBytes(n int) []byte {
 	b := make([]byte, n)

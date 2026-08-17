@@ -24,6 +24,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	// VAPIDPublicKey generates the pair on first call — invisible, one-off, and
 	// it never prompts the user for anything.
 	pushDevices, _ := s.store.ListPushSubs()
+	apiTokens, _ := s.store.ListAPITokens()
 	s.render(w, "settings", map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Prefs":        prefs,
@@ -44,6 +45,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"IconMark":     iconMark(s.store.GetAppConfig()),
 		"Signatures":   sigs,
 		"Templates":    tpls,
+		"APITokens":    apiTokens,
+		"APIScopes":    store.APIScopes,
 		"Identities":   s.identityLinks(),
 		"DBSize":       s.dbSizeHuman(),
 		"MessageCount": msgCount,

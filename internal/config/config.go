@@ -13,6 +13,7 @@
 //	MIMUX_BASE_URL public URL             (default http://localhost:<port>)
 //	MIMUX_SECRET   session/CSRF secret    (default: generated once, persisted next
 //	                                        to the DB so sessions survive restarts)
+//	MIMUX_API_RATE_LIMIT  API requests per token per minute (default 120, 0 = off)
 //
 // The pre-rename SM_* names still work for one release — see Env.
 package config
@@ -35,6 +36,7 @@ import (
 type Config struct {
 	Server Server
 	DB     DB
+	API    API
 	// Accounts is a runtime snapshot of the DB-backed accounts, refreshed by the
 	// server whenever the account list changes. It is NOT parsed from any file —
 	// it exists so the HTTP layer and compose selector can read the current
@@ -52,6 +54,19 @@ type Server struct {
 type DB struct {
 	Path string
 }
+
+// API holds the machine-facing surface's bootstrap knobs. The endpoints are the
+// pro layer's (see pro/), but their configuration is ordinary bootstrap config
+// and lives here with the rest — the free build simply has nothing reading it.
+type API struct {
+	// RateLimitPerMinute is the per-token request budget. 0 disables limiting.
+	RateLimitPerMinute int
+}
+
+// DefaultAPIRateLimit is the per-token request budget when MIMUX_API_RATE_LIMIT
+// is unset: generous for a single user's own automation, low enough that a
+// runaway script cannot pin the mailbox.
+const DefaultAPIRateLimit = 120
 
 // Account is one email account. It lives in the DB now (see internal/store);
 // this type stays the in-memory representation the mail engine and templates use.
@@ -166,6 +181,14 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Server: Server{Host: "0.0.0.0", Port: 8083},
 		DB:     DB{Path: "./data/mimux.db"},
+		API:    API{RateLimitPerMinute: DefaultAPIRateLimit},
+	}
+	if v := Env("API_RATE_LIMIT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("config: MIMUX_API_RATE_LIMIT %q: want a non-negative integer", v)
+		}
+		cfg.API.RateLimitPerMinute = n
 	}
 	if v := Env("DB"); v != "" {
 		cfg.DB.Path = v

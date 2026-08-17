@@ -1339,8 +1339,11 @@ document.addEventListener("click", (e) => {
   const btn = e.target.closest?.("[data-copy-addr]");
   if (!btn || !navigator.clipboard) return;
   const addr = btn.dataset.copyAddr;
+  // data-copy-label names the thing in the toast instead of echoing the value —
+  // used by the API token panel, which must not shout a secret across the page.
+  const what = btn.dataset.copyLabel || addr;
   navigator.clipboard.writeText(addr).then(
-    () => toast(`Copied ${addr}`),
+    () => toast(`Copied ${what}`),
     () => toast("Couldn't copy to the clipboard."),
   );
 });

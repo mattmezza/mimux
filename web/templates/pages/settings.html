@@ -2,7 +2,7 @@
 {{define "content"}}
 <div class="h-dvh flex flex-col min-h-0"
      x-data="{
-       tabs: ['appearance','reading','composing','quick-actions','notifications','syncing','search','accounts','signatures','templates','integrations','backup'],
+       tabs: ['appearance','reading','composing','quick-actions','notifications','syncing','search','accounts','signatures','templates','api','integrations','backup'],
        tab: 'appearance',
        init() {
          const h = (location.hash.slice(1) || localStorage.getItem('mimux.settingsTab') || '').trim();
@@ -52,6 +52,7 @@
             {id:'accounts', label:'Accounts'},
             {id:'signatures', label:'Signatures'},
             {id:'templates', label:'Templates'},
+            {id:'api', label:'API'},
             {id:'integrations', label:'Integrations'},
             {id:'backup', label:'Backup & restore'}
           ]" :key="t.id">
@@ -725,6 +726,12 @@
                 }));
               });
             </script>
+          </section>
+
+          <section x-show="tab === 'api'" x-cloak class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">API tokens</h2>
+            <p class="text-xs text-zinc-500">Personal access tokens for the mimux API. Send one as <code>Authorization: Bearer &lt;token&gt;</code>. Scopes decide what it may do, and a token can be revoked here at any time.</p>
+            {{template "api_tokens" (dict "CSRF" .CSRF "Tokens" .APITokens "Scopes" .APIScopes "NewSecret" "")}}
           </section>
 
           <section x-show="tab === 'integrations'" x-cloak class="space-y-6"
