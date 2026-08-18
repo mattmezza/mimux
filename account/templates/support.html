@@ -1,0 +1,100 @@
+{{define "content"}}
+<p class="kicker">Support</p>
+<h1>Where to send it.</h1>
+<p class="lede">
+  One address for anything to do with a licence or a payment, GitHub for
+  anything to do with the software. The two most common requests answer
+  themselves in less time than an email takes, so they come first.
+</p>
+
+<div class="plans">
+  <div class="card">
+    <h2>Lost or missing key</h2>
+    <ul>
+      <li>Instant and self-service &mdash; no reply to wait for</li>
+      <li>Keys are only ever emailed to the address that bought them, and never
+        shown in a browser</li>
+      <li>Three requests an hour, per address and per network</li>
+    </ul>
+    <a class="btn" href="/retrieve">Have it sent again</a>
+  </div>
+
+  <div class="card">
+    <h2>Billing, card, cancellation</h2>
+    <ul>
+      <li>Stripe&rsquo;s billing portal handles the card on file, invoices and
+        cancelling</li>
+      <li>Ask for it on the same page with <strong>Manage subscription</strong>;
+        the link is emailed to the purchase address</li>
+      <li>There is no login here &mdash; this service holds no password of
+        yours, so the mailbox is the proof</li>
+    </ul>
+    <a class="btn btn-secondary" href="/retrieve">Manage subscription</a>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Email support@mimux.dev</h2>
+  <p>
+    Licences, payments, invoices, and anything above that did not do what it
+    should have: <a href="mailto:support@mimux.dev">support@mimux.dev</a>.
+  </p>
+  <p>Include these, so the first reply can be the useful one:</p>
+  <ul>
+    <li>The licence id (<code>lic_…</code>, listed in the mail
+      <a href="/retrieve">/retrieve</a> sends) or the address you paid with</li>
+    <li>The version: <code>mimux -version</code></li>
+    <li>For a licence problem, what <code>mimux licence status</code> prints
+      &mdash; it says which key is in use, where it was read from, and what the
+      build makes of it</li>
+  </ul>
+  <p class="small muted">
+    No ticketing system, no queue position, no promised response time. Email
+    support is the thing a pro licence buys; GitHub issues are read as time
+    allows.
+  </p>
+</div>
+
+<h2>Bugs and feature requests</h2>
+<p>
+  These go to
+  <a href="https://github.com/mattmezza/mimux/issues">GitHub issues</a>, not to
+  the support address &mdash; a bug in the open is a bug other people can find.
+  Read
+  <a href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>
+  first: the policy is issues yes, pull requests usually no, and it lists what a
+  report needs (the version, how you run it, which IMAP provider, and the output
+  of <code>make diagnose</code>, which is sanitised).
+</p>
+
+<h2>Security reports</h2>
+<p>
+  Not in a public issue. Open a
+  <a href="https://github.com/mattmezza/mimux/security/advisories/new">private
+  GitHub security advisory</a>, or email <a href="mailto:security@mimux.dev">security@mimux.dev</a>
+  if you would rather not use GitHub.
+  <a href="https://github.com/mattmezza/mimux/blob/main/SECURITY.md">SECURITY.md</a>
+  has the scope, the known design tradeoffs that are decisions rather than bugs,
+  and what to expect back.
+</p>
+
+<h2>What the licence covers</h2>
+<p>
+  Short version, since it is what most licence mail turns out to be about. A
+  <strong>perpetual</strong> key never expires and covers every release up to the
+  version watermarked into it; a later release needs a new purchase and the build
+  you bought keeps working regardless. An <strong>annual</strong> key runs for a
+  year and renews, with a 14-day grace period after expiry so a failed card is a
+  nuisance rather than an outage. With no key at all there is a 14-day trial from
+  the first boot of a pro build.
+</p>
+<p>
+  Whatever the state of the licence, only the automation layer stops &mdash; the
+  REST API and the MCP server. Sync, send, search and the mail client itself are
+  AGPL code that has no idea a licence exists, and never stop.
+  <a href="https://docs.mimux.dev">The docs</a> have the detail;
+  <a href="https://mimux.dev/pricing/">the pricing page</a> has the comparison.
+</p>
+
+<p><a href="/">&larr; Back to the plans</a></p>
+{{end}}

@@ -49,7 +49,7 @@ func newTestApp(t *testing.T) (*app, *[]sentMail) {
 // only executing them catches a field that isn't there.
 func TestPagesRender(t *testing.T) {
 	a, _ := newTestApp(t)
-	for _, path := range []string{"/", "/success", "/cancel", "/retrieve", "/healthz"} {
+	for _, path := range []string{"/", "/success", "/cancel", "/retrieve", "/support", "/healthz"} {
 		w := httptest.NewRecorder()
 		a.routes().ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusOK {

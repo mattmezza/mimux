@@ -182,6 +182,8 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /cancel", a.page("cancel"))
 	mux.HandleFunc("GET /retrieve", a.page("retrieve"))
 	mux.HandleFunc("POST /retrieve", a.handleRetrieve)
+	// Linked from emails, the marketing site and GitHub: keep this path stable.
+	mux.HandleFunc("GET /support", a.page("support"))
 	mux.HandleFunc("POST /stripe/webhook", a.handleWebhook)
 	// The house fonts, served from the embedded FS. No StripPrefix: the sub-FS
 	// is rooted at static/, so the request path /fonts/x.woff2 already names
@@ -276,7 +278,7 @@ key compiled into the binary and never contacts us. Nothing about your usage
 is reported anywhere.
 
 Lost it again? https://account.mimux.dev/retrieve
-Questions? support@mimux.dev
+Questions? support@mimux.dev, or https://account.mimux.dev/support
 `
 
 func licenceEmail(p licencePayload, key string) string {
@@ -308,12 +310,13 @@ func portalEmail(url string) string {
 		"The link is single-use and expires shortly; request another from\n" +
 		"https://account.mimux.dev/retrieve if it has gone stale.\n\n" +
 		"Cancelling stops the renewal. Your key keeps working until the term\n" +
-		"you already paid for runs out — there is no remote kill switch.\n"
+		"you already paid for runs out — there is no remote kill switch.\n\n" +
+		"Questions? support@mimux.dev, or https://account.mimux.dev/support\n"
 }
 
 func (a *app) parseTemplates() error {
 	a.tmpl = map[string]*template.Template{}
-	for _, name := range []string{"index", "success", "cancel", "retrieve"} {
+	for _, name := range []string{"index", "success", "cancel", "retrieve", "support"} {
 		t, err := template.ParseFS(templatesFS, "templates/layout.html", "templates/"+name+".html")
 		if err != nil {
 			return fmt.Errorf("template %s: %w", name, err)
