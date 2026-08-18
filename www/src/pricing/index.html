@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pricing — mimux. Free client, flat-priced automation.</title>
-  <meta name="description" content="The mimux mail client is free and AGPL-3.0 forever. The automation layer — REST API, MCP server, webhooks — is €49/year or €99 once, per instance, with a 14-day free trial.">
+  <meta name="description" content="The mimux mail client is free and AGPL-3.0 forever. The automation layer — REST API, MCP server, CLI, webhooks — is €49/year or €99 once, per instance, with a 14-day free trial.">
 
   <link rel="canonical" href="https://mimux.dev/pricing/">
 
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/bricolage-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -105,6 +105,11 @@
             "@type": "Question",
             "name": "Why is the automation layer paid at all?",
             "acceptedAnswer": { "@type": "Answer", "text": "Email integration is never finished — providers change auth, protocols drift, and someone has to maintain the integration for years. The licence funds that maintenance. The split is principled: a human driving mimux is free; a machine driving it is paid." }
+          },
+          {
+            "@type": "Question",
+            "name": "Is there a GraphQL API?",
+            "acceptedAnswer": { "@type": "Answer", "text": "Not yet — it is on the roadmap. When it ships it will be part of pro like every other machine interface, at the same price." }
           }
         ]
       }
@@ -129,7 +134,7 @@
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
         <li><a href="/features/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Features</a></li>
-        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Agents</a></li>
+        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Automation</a></li>
         <li><a href="/pricing/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Pricing</a></li>
         <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
         <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
@@ -151,7 +156,7 @@
           </summary>
           <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
             <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Agents</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Automation</a>
             <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Pricing</a>
             <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
             <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
@@ -205,6 +210,7 @@
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in the client</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>REST API with OpenAPI spec</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>MCP server for AI agents</li>
+            <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>CLI for shells and scripts</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Signed webhooks with delivery log</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Scoped API tokens</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>All updates while active</li>
@@ -336,6 +342,10 @@
             <summary>Why is the automation layer paid at all?</summary>
             <p class="faq-a">Because email integration is never finished. Providers change auth, protocols drift, and someone has to keep the integration working for years. The licence funds that maintenance. The split is principled: a human driving mimux is free; a machine driving it is paid — and the line is published, so it can't quietly move.</p>
           </details>
+          <details class="faq">
+            <summary>Is there a GraphQL API?</summary>
+            <p class="faq-a">Not yet — it's on the roadmap. When it ships it will be part of pro like every other machine interface, at the same price. Nothing about the licence changes.</p>
+          </details>
         </div>
       </div>
     </section>
@@ -380,7 +390,7 @@
           <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
           <ul class="space-y-2.5 text-ink-600">
             <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Automation &amp; APIs</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>

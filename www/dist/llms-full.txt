@@ -1,9 +1,9 @@
 # mimux — the self-hosted inbox your agents can act on
 
-> A fast, keyboard-driven email client you run yourself — one Go binary, one
-> SQLite file, no third party in the middle. The client is free and AGPL-3.0
-> forever. mimux pro adds an automation layer — REST API, MCP server, signed
-> webhooks — so AI agents can act on an inbox that lives on your own hardware.
+> A self-hosted email gateway: connect any IMAP mailbox and reach it through
+> every interface — a fast, free web client (AGPL-3.0) for humans, and a paid
+> automation layer (REST API, MCP server, CLI, signed webhooks; GraphQL on the
+> roadmap) for scripts and AI agents. One Go binary, on your own hardware.
 
 Canonical site: <https://mimux.dev/>. This document mirrors the site's content
 for language-model consumption.
@@ -61,7 +61,7 @@ everything.
   (OpenRouter, Google Translate). Off by default; keys stay in your database.
 - **Backup = cp**: all state in one SQLite file.
 
-## mimux pro — the automation layer for agents
+## mimux pro — the automation layer for agents and scripts
 
 If something other than a human drives mimux, that is the paid layer:
 
@@ -71,8 +71,11 @@ If something other than a human drives mimux, that is the paid layer:
 - **MCP server** at `/api/mcp` (streamable HTTP, plus a stdio bridge): the
   mailbox becomes tools — search, read, move, label, draft — for Claude or any
   MCP-capable client.
+- **CLI**: search, read, file and draft from the shell — plain text or JSON
+  output, so the inbox pipes into jq, an LLM, or the next script in the chain.
 - **Signed webhooks**: new mail and rule matches pushed to n8n, Home Assistant
   or your own scripts, with signatures, retries with backoff, and a delivery log.
+- **GraphQL endpoint**: on the roadmap; part of pro when it ships, same price.
 - **Guardrails by architecture**: agents draft, but sending is a separate,
   explicit call (two-step send); API tokens carry scopes and the tool list an
   agent sees is filtered by them; everything runs on your server, so mail never

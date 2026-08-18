@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Email for AI agents — MCP server, REST API &amp; webhooks — mimux</title>
-  <meta name="description" content="Give your AI agents a mailbox on your own hardware. mimux pro adds an MCP server, a REST API and signed webhooks over your self-hosted inbox — with scoped tokens and two-step sending.">
+  <meta name="description" content="Give your AI agents a mailbox on your own hardware. mimux pro adds an MCP server, a REST API, a CLI and signed webhooks over your self-hosted inbox — with scoped tokens and two-step sending.">
 
   <link rel="canonical" href="https://mimux.dev/agents/">
 
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="mimux">
   <meta property="og:url" content="https://mimux.dev/agents/">
   <meta property="og:title" content="Email for AI agents — MCP server, REST API &amp; webhooks — mimux">
-  <meta property="og:description" content="Give your AI agents a mailbox on your own hardware: MCP server, REST API and signed webhooks over your self-hosted inbox, with scoped tokens and two-step sending.">
+  <meta property="og:description" content="Give your AI agents a mailbox on your own hardware: MCP server, REST API, CLI and signed webhooks over your self-hosted inbox, with scoped tokens and two-step sending.">
   <meta property="og:locale" content="en_US">
   <meta property="og:image" content="https://mimux.dev/img/og.png">
   <meta property="og:image:type" content="image/png">
@@ -21,7 +21,7 @@
   <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Email for AI agents — MCP server, REST API &amp; webhooks — mimux">
-  <meta name="twitter:description" content="Give your AI agents a mailbox on your own hardware: MCP server, REST API and signed webhooks over your self-hosted inbox.">
+  <meta name="twitter:description" content="Give your AI agents a mailbox on your own hardware: MCP server, REST API, CLI and signed webhooks over your self-hosted inbox.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
   <meta name="theme-color" content="#f6f1e7">
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/bricolage-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -75,7 +75,7 @@
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
         <li><a href="/features/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Features</a></li>
-        <li><a href="/agents/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Agents</a></li>
+        <li><a href="/agents/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Automation</a></li>
         <li><a href="/pricing/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Pricing</a></li>
         <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
         <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
@@ -97,7 +97,7 @@
           </summary>
           <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
             <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Agents</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Automation</a>
             <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Pricing</a>
             <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
             <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
@@ -119,8 +119,8 @@
         <p class="mt-5 text-lg text-ink-600 max-w-2xl leading-relaxed">
           Your agents can search the web and run code. They still can't read your mail —
           unless you hand your inbox to a SaaS intermediary. mimux pro closes that gap on
-          hardware you own: a REST API, an MCP server and signed webhooks over the
-          self-hosted inbox you already run.
+          hardware you own: a REST API, an MCP server, a CLI and signed webhooks over
+          the self-hosted inbox you already run.
         </p>
         <div class="mt-8 flex flex-wrap items-center gap-3">
           <a href="/pricing/" class="btn btn-primary">Start the 14-day trial</a>
@@ -152,7 +152,7 @@
         <figure class="panel" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>mcp.json</span>
             <button type="button" data-copy='{"mcpServers":{"mimux":{"url":"https://mail.example.com/api/mcp","headers":{"Authorization":"Bearer mx_your_token"}}}}'
-                    class="font-mono text-[11px] text-ink-600 hover:text-ink-950 transition-colors cursor-pointer">copy</button>
+                    class="font-mono text-[11px] text-screen-300 hover:text-screen-50 transition-colors cursor-pointer">copy</button>
           </figcaption>
           <pre class="code"><code>{
   <span class="k">"mcpServers"</span>: {
@@ -174,7 +174,7 @@
         <figure class="panel order-last lg:order-first" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>terminal</span>
             <button type="button" data-copy='curl -H "Authorization: Bearer mx_your_token" https://mail.example.com/api/v1/messages?q=is:unread'
-                    class="font-mono text-[11px] text-ink-600 hover:text-ink-950 transition-colors cursor-pointer">copy</button>
+                    class="font-mono text-[11px] text-screen-300 hover:text-screen-50 transition-colors cursor-pointer">copy</button>
           </figcaption>
           <pre class="code"><code><span class="c"># everything the client can do, over plain HTTP</span>
 <span class="p">$</span> <span class="w">curl -H</span> <span class="s">"Authorization: Bearer mx_your_token"</span> <span class="w">\</span>
@@ -201,6 +201,35 @@
       </div>
     </section>
 
+    <!-- ================================ CLI ================================ -->
+    <section id="cli" aria-labelledby="cli-h" class="border-t border-ink-950/15">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div data-reveal>
+          <p class="kicker">CLI</p>
+          <h2 id="cli-h" class="display mt-3 text-3xl sm:text-4xl">Your inbox, in your shell.</h2>
+          <p class="mt-4 text-ink-600 leading-relaxed">
+            The same gateway, one binary away from your prompt. Search, read, file and
+            draft from the terminal — which means from cron, from CI, and from every
+            shell script you already own.
+          </p>
+          <p class="mt-4 text-ink-600 leading-relaxed">
+            Output is plain text or JSON, so it pipes: into <code class="font-mono text-sm text-ink-950">jq</code>,
+            into an LLM, into whatever comes next. Drafting and sending stay separate
+            here too — a script can prepare mail, but sending is its own explicit step.
+          </p>
+        </div>
+        <figure class="panel" data-reveal data-reveal="100">
+          <figcaption class="panel-bar"><span>terminal</span><span>mimux cli</span></figcaption>
+          <pre class="code"><code><span class="p">$</span> <span class="w">mimux search "is:unread from:billing"</span>
+<span class="c">3 messages · ids 8269 8270 8271</span>
+<span class="p">$</span> <span class="w">mimux read 8271 --json | jq .subject</span>
+<span class="s">"Invoice #2451"</span>
+<span class="p">$</span> <span class="w">mimux draft reply 8271 -m "Paid today."</span>
+<span class="c"># draft saved — sending is a separate, explicit step</span></code></pre>
+        </figure>
+      </div>
+    </section>
+
     <!-- ================================ Webhooks ================================ -->
     <section id="webhooks" aria-labelledby="webhooks-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
@@ -216,12 +245,12 @@
         </div>
         <figure class="panel" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>delivery log</span><span>endpoint: n8n.local</span></figcaption>
-          <ul class="text-sm font-mono divide-y divide-ink-950/10">
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-800">message.received · #8271</span><span class="text-[11px] text-ok-400 shrink-0">200 · 84ms</span></li>
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-800">rule.matched · invoices</span><span class="text-[11px] text-ok-400 shrink-0">200 · 61ms</span></li>
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-600">message.received · #8270</span><span class="text-[11px] text-ink-500 shrink-0">retry 2 · 503</span></li>
+          <ul class="text-sm font-mono divide-y divide-white/10">
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-screen-100">message.received · #8271</span><span class="text-[11px] text-ok-300 shrink-0">200 · 84ms</span></li>
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-screen-100">rule.matched · invoices</span><span class="text-[11px] text-ok-300 shrink-0">200 · 61ms</span></li>
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-screen-300">message.received · #8270</span><span class="text-[11px] text-screen-400 shrink-0">retry 2 · 503</span></li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">
+          <div class="px-4 py-2.5 border-t border-white/10 bg-screen-800 font-mono text-[10px] text-screen-400">
             signed · X-Mimux-Signature · retries with backoff
           </div>
         </figure>
@@ -292,6 +321,16 @@
       </div>
     </section>
 
+    <!-- ================================ GraphQL note ================================ -->
+    <section aria-label="GraphQL roadmap note" class="border-t border-ink-950/15 bg-paper-200/60">
+      <div class="mx-auto max-w-3xl px-5 lg:px-8 py-8 text-center">
+        <p class="font-mono text-xs text-ink-600">
+          <span class="text-accent-600 uppercase tracking-wider">Next on the roadmap:</span>
+          a GraphQL endpoint over the same gateway — part of pro when it ships, same price.
+        </p>
+      </div>
+    </section>
+
     <!-- ================================ CTA ================================ -->
     <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-ink-950/15">
       <div aria-hidden="true" class="absolute inset-0 -z-10"
@@ -332,7 +371,7 @@
           <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
           <ul class="space-y-2.5 text-ink-600">
             <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Automation &amp; APIs</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>

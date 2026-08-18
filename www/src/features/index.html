@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/bricolage-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -75,7 +75,7 @@
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
         <li><a href="/features/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Features</a></li>
-        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Agents</a></li>
+        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Automation</a></li>
         <li><a href="/pricing/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Pricing</a></li>
         <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
         <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
@@ -97,7 +97,7 @@
           </summary>
           <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
             <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Agents</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Automation</a>
             <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Pricing</a>
             <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
             <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
@@ -144,22 +144,22 @@
         </div>
         <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>accounts</span><span>3 connected</span></div>
-          <ul class="text-sm divide-y divide-ink-950/10">
+          <ul class="text-sm divide-y divide-white/10">
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">work@fastmail.com</span></span>
-              <span class="font-mono text-[10px] text-ink-500">IDLE · 12 unread</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-screen-100">work@fastmail.com</span></span>
+              <span class="font-mono text-[10px] text-screen-400">IDLE · 12 unread</span>
             </li>
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">me@gmail.com</span></span>
-              <span class="font-mono text-[10px] text-ink-500">OAuth2 · 3 unread</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-screen-100">me@gmail.com</span></span>
+              <span class="font-mono text-[10px] text-screen-400">OAuth2 · 3 unread</span>
             </li>
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">ops@myserver.io</span></span>
-              <span class="font-mono text-[10px] text-ink-500">IDLE · clear</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-screen-100">ops@myserver.io</span></span>
+              <span class="font-mono text-[10px] text-screen-400">IDLE · clear</span>
             </li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">
-            unified view <span class="text-accent-600">0</span> · per-account <span class="text-accent-600">1</span>–<span class="text-accent-600">9</span>
+          <div class="px-4 py-2.5 border-t border-white/10 bg-screen-800 font-mono text-[10px] text-screen-400">
+            unified view <span class="text-accent-300">0</span> · per-account <span class="text-accent-300">1</span>–<span class="text-accent-300">9</span>
           </div>
         </figure>
       </div>
@@ -198,15 +198,15 @@
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <figure class="panel order-last lg:order-first" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>search</span><span>deep search: streaming</span></div>
-          <div class="px-4 py-3 border-b border-ink-950/15 font-mono text-sm text-ink-800">
-            <span class="text-accent-600">/</span> rack quote <span class="text-ink-500">from:vendor</span>
+          <div class="px-4 py-3 border-b border-white/10 font-mono text-sm text-screen-100">
+            <span class="text-accent-300">/</span> rack quote <span class="text-screen-400">from:vendor</span>
           </div>
-          <ul class="text-sm divide-y divide-ink-950/10">
-            <li class="px-4 py-3"><span class="block truncate text-ink-800">Re: quotes for the server rack</span><span class="block truncate text-xs text-ink-500">local index · 2 ms</span></li>
-            <li class="px-4 py-3"><span class="block truncate text-ink-800">Rack PDU options + pricing</span><span class="block truncate text-xs text-ink-500">local index · 2 ms</span></li>
-            <li class="px-4 py-3"><span class="block truncate text-ink-600">Quote #Q-2207 — 42U enclosure</span><span class="block truncate text-xs text-accent-600">found on server · streamed just now</span></li>
+          <ul class="text-sm divide-y divide-white/10">
+            <li class="px-4 py-3"><span class="block truncate text-screen-100">Re: quotes for the server rack</span><span class="block truncate text-xs text-screen-400">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-screen-100">Rack PDU options + pricing</span><span class="block truncate text-xs text-screen-400">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-screen-300">Quote #Q-2207 — 42U enclosure</span><span class="block truncate text-xs text-accent-300">found on server · streamed just now</span></li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">searching 3 accounts on the server…</div>
+          <div class="px-4 py-2.5 border-t border-white/10 bg-screen-800 font-mono text-[10px] text-screen-400">searching 3 accounts on the server…</div>
         </figure>
         <div data-reveal>
           <p class="kicker">Search</p>
@@ -243,16 +243,16 @@
         </div>
         <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>compose — markdown</span><span>draft saved 3s ago</span></div>
-          <div class="px-4 py-3 text-sm font-mono leading-relaxed text-ink-800">
-            <p class="text-ink-500"># To: vendor@rackworks.io</p>
+          <div class="px-4 py-3 text-sm font-mono leading-relaxed text-screen-100">
+            <p class="text-screen-400"># To: vendor@rackworks.io</p>
             <p class="mt-2">Thanks — option **B** works for us.</p>
             <p class="mt-2">Could you confirm:</p>
             <p>- lead time for the 42U enclosure</p>
             <p>- shipping to Zurich</p>
           </div>
-          <div class="flex items-center justify-between px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80">
-            <span class="font-mono text-[10px] text-ink-500">sending in <span class="text-accent-600">8s</span>…</span>
-            <span class="font-mono text-[10px] text-accent-600">undo</span>
+          <div class="flex items-center justify-between px-4 py-2.5 border-t border-white/10 bg-screen-800">
+            <span class="font-mono text-[10px] text-screen-400">sending in <span class="text-accent-300">8s</span>…</span>
+            <span class="font-mono text-[10px] text-accent-300">undo</span>
           </div>
         </figure>
       </div>
@@ -265,22 +265,22 @@
           <div class="panel-bar"><span>filters</span><span>runs on incoming mail</span></div>
           <div class="px-4 py-4 text-sm space-y-3">
             <div class="flex flex-wrap items-center gap-2 font-mono text-xs">
-              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">from contains @billing</span>
-              <span class="text-ink-500">and</span>
-              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">subject contains invoice</span>
+              <span class="rounded-md border border-white/12 bg-white/10 px-2 py-1 text-screen-100">from contains @billing</span>
+              <span class="text-screen-400">and</span>
+              <span class="rounded-md border border-white/12 bg-white/10 px-2 py-1 text-screen-100">subject contains invoice</span>
             </div>
-            <div class="flex items-center gap-2 font-mono text-xs text-ink-500">
-              <span aria-hidden="true" class="text-accent-600">↳</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">move to Accounting</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">mark read</span>
+            <div class="flex items-center gap-2 font-mono text-xs text-screen-400">
+              <span aria-hidden="true" class="text-accent-300">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-300">move to Accounting</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-300">mark read</span>
             </div>
-            <div class="flex flex-wrap items-center gap-2 font-mono text-xs pt-2 border-t border-ink-950/15">
-              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">from is alerts@uptime.io</span>
+            <div class="flex flex-wrap items-center gap-2 font-mono text-xs pt-2 border-t border-white/10">
+              <span class="rounded-md border border-white/12 bg-white/10 px-2 py-1 text-screen-100">from is alerts@uptime.io</span>
             </div>
-            <div class="flex items-center gap-2 font-mono text-xs text-ink-500">
-              <span aria-hidden="true" class="text-accent-600">↳</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">notify</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">star</span>
+            <div class="flex items-center gap-2 font-mono text-xs text-screen-400">
+              <span aria-hidden="true" class="text-accent-300">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-300">notify</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-300">star</span>
             </div>
           </div>
         </figure>
@@ -390,7 +390,7 @@
           <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
           <ul class="space-y-2.5 text-ink-600">
             <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Automation &amp; APIs</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>

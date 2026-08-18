@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>mimux — self-hosted email client with an API for AI agents</title>
-  <meta name="description" content="A fast, keyboard-driven email client you run yourself — one Go binary, one SQLite file, zero config. Free and AGPL-3.0. Add the pro layer and your AI agents get a REST API, MCP server and webhooks on your own hardware.">
+  <title>mimux — one inbox, every interface. Self-hosted email with APIs</title>
+  <meta name="description" content="mimux turns any IMAP mailbox into every interface you need: a fast, free web client for you — and a REST API, MCP server, CLI and webhooks for your automations and AI agents. One Go binary on your hardware.">
 
   <link rel="canonical" href="https://mimux.dev/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="mimux">
   <meta property="og:url" content="https://mimux.dev/">
-  <meta property="og:title" content="mimux — self-hosted email client with an API for AI agents">
-  <meta property="og:description" content="A fast, keyboard-driven email client you run yourself. One Go binary, one SQLite file, zero config. Free and AGPL-3.0 — and your agents get a REST API, MCP server and webhooks.">
+  <meta property="og:title" content="mimux — one inbox, every interface. Self-hosted email with APIs">
+  <meta property="og:description" content="Connect any IMAP mailbox: a fast, free web client for you — REST API, MCP server, CLI and webhooks for your machines. Self-hosted, one Go binary.">
   <meta property="og:locale" content="en_US">
   <meta property="og:image" content="https://mimux.dev/img/og.png">
   <meta property="og:image:type" content="image/png">
@@ -20,8 +20,8 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="mimux — self-hosted email client with an API for AI agents">
-  <meta name="twitter:description" content="A fast, keyboard-driven email client you run yourself. One Go binary, one SQLite file, zero config. Free and AGPL-3.0.">
+  <meta name="twitter:title" content="mimux — one inbox, every interface. Self-hosted email with APIs">
+  <meta name="twitter:description" content="Connect any IMAP mailbox: a free web client for you — REST API, MCP, CLI and webhooks for your machines. Self-hosted.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
   <meta name="theme-color" content="#f6f1e7">
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/bricolage-var.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -55,7 +55,7 @@
         "@type": "SoftwareApplication",
         "@id": "https://mimux.dev/#app",
         "name": "mimux",
-        "description": "A fast, keyboard-driven, self-hosted email client. One Go binary, one SQLite file, zero configuration. The client is free and AGPL-3.0; a paid automation layer adds a REST API, MCP server and webhooks for AI agents.",
+        "description": "A self-hosted email gateway: connect any IMAP mailbox and get a fast, free web client plus a paid automation layer — REST API, MCP server, CLI and signed webhooks — for scripts and AI agents. One Go binary, one SQLite file, zero configuration.",
         "applicationCategory": "EmailClient",
         "operatingSystem": "Docker, Linux, macOS, Windows (self-hosted); any modern browser",
         "url": "https://mimux.dev/",
@@ -63,7 +63,7 @@
         "codeRepository": "https://github.com/mattmezza/mimux",
         "offers": [
           { "@type": "Offer", "name": "mimux client", "price": "0", "priceCurrency": "EUR", "description": "The complete mail client. Free and AGPL-3.0, forever." },
-          { "@type": "Offer", "name": "mimux pro — annual", "price": "49", "priceCurrency": "EUR", "url": "https://account.mimux.dev", "description": "REST API, MCP server and webhooks. Per instance, per year." },
+          { "@type": "Offer", "name": "mimux pro — annual", "price": "49", "priceCurrency": "EUR", "url": "https://account.mimux.dev", "description": "REST API, MCP server, CLI and webhooks. Per instance, per year." },
           { "@type": "Offer", "name": "mimux pro — perpetual", "price": "99", "priceCurrency": "EUR", "url": "https://account.mimux.dev", "description": "One payment, covers all builds released within one year of purchase, runs forever." }
         ],
         "author": { "@id": "https://mimux.dev/#org" }
@@ -97,7 +97,7 @@
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
         <li><a href="/features/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Features</a></li>
-        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Agents</a></li>
+        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Automation</a></li>
         <li><a href="/pricing/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Pricing</a></li>
         <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
         <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
@@ -119,7 +119,7 @@
           </summary>
           <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
             <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Agents</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Automation</a>
             <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Pricing</a>
             <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
             <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
@@ -139,23 +139,22 @@
       <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28 grid lg:grid-cols-[1.05fr_1fr] gap-14 lg:gap-16 items-center">
         <div>
           <p class="rubber">Open source · AGPL-3.0 · Self-hosted</p>
-          <h1 class="display mt-7 text-[2.9rem] leading-[1.02] sm:text-6xl lg:text-[4.7rem]">
-            Your mail. Your&nbsp;server. Your&nbsp;agents.
+          <h1 class="display mt-7 text-[2.7rem] leading-[1.04] sm:text-6xl lg:text-[4.4rem]">
+            One inbox. Every&nbsp;interface.
           </h1>
           <p class="mt-6 text-lg text-ink-600 max-w-xl text-pretty leading-relaxed">
-            mimux is a fast, keyboard-driven email client you run yourself. Point it at the
-            mailboxes you already have and triage everything from one unified inbox — then
-            hand your AI agents a scoped API to the same mail, on your hardware,
-            with no SaaS in the middle.
+            mimux connects to the mailboxes you already have and serves them out however
+            the job needs: a fast, keyboard-driven web app for you — free, forever — and
+            a REST API, MCP server, CLI and webhooks for your scripts, pipelines and AI
+            agents. All of it on your hardware, none of it through a SaaS.
           </p>
           <div class="mt-8 flex flex-wrap items-center gap-3">
             <a href="#install" class="btn btn-primary">Install in one command</a>
-            <a href="/agents/" class="btn btn-secondary">See the agent layer</a>
+            <a href="#interfaces" class="btn btn-secondary">See the interfaces</a>
           </div>
           <p class="mt-6 font-mono text-xs text-ink-500">
-            docker compose up <span aria-hidden="true" class="text-accent-600">→</span> one Go binary
-            <span aria-hidden="true" class="text-accent-600">→</span> one SQLite file
-            <span aria-hidden="true" class="text-accent-600">→</span> zero config
+            IMAP in <span aria-hidden="true" class="text-accent-600">→</span> web · REST · MCP · CLI · webhooks out
+            <span aria-hidden="true" class="text-accent-600">·</span> one Go binary, zero config
           </p>
         </div>
 
@@ -163,7 +162,7 @@
              min-w-0: the wrapper is the grid item, so without it the nowrap
              ledger rows would force the column track past the viewport. -->
         <div class="relative min-w-0">
-        <svg class="postmark absolute -top-10 -right-2 sm:-right-6 w-24 sm:w-28 z-10" viewBox="0 0 120 120" aria-hidden="true">
+        <svg class="postmark absolute -top-16 -right-1 sm:-top-14 sm:-right-7 w-24 sm:w-28 z-10" viewBox="0 0 120 120" aria-hidden="true">
           <circle cx="60" cy="60" r="57" fill="none" stroke="currentColor" stroke-width="2.5"/>
           <circle cx="60" cy="60" r="41" fill="none" stroke="currentColor" stroke-width="1.5"/>
           <defs><path id="pm-arc" d="M60,60 m-49,0 a49,49 0 1,1 98,0 a49,49 0 1,1 -98,0"/></defs>
@@ -179,49 +178,49 @@
             <span>unified inbox · 3 accounts</span>
             <span class="flex gap-1.5"><kbd class="kbd">/</kbd><kbd class="kbd">?</kbd></span>
           </div>
-          <ul class="divide-y divide-ink-950/10 text-sm">
+          <ul class="divide-y divide-white/10 text-sm">
             <li class="flex items-center gap-3 px-4 py-3 bg-accent-500/10 border-l-2 border-accent-500">
-              <span class="font-mono text-[10px] text-ink-500 w-12 shrink-0">09:41</span>
+              <span class="font-mono text-[10px] text-screen-400 w-12 shrink-0">09:41</span>
               <span class="min-w-0">
-                <span class="block truncate text-ink-950 font-medium">CI — release pipeline passed</span>
-                <span class="block truncate text-xs text-ink-500">All 214 checks green. Artifacts published…</span>
+                <span class="block truncate text-screen-50 font-medium">CI — release pipeline passed</span>
+                <span class="block truncate text-xs text-screen-400">All 214 checks green. Artifacts published…</span>
               </span>
               <span class="ml-auto shrink-0"><kbd class="kbd">Enter</kbd></span>
             </li>
             <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-ink-500 w-12 shrink-0">08:12</span>
+              <span class="font-mono text-[10px] text-screen-400 w-12 shrink-0">08:12</span>
               <span class="min-w-0">
-                <span class="block truncate text-ink-800">Invoice #2451 — paid</span>
-                <span class="block truncate text-xs text-ink-500">filed by rule <span class="text-accent-600">invoices → Accounting</span></span>
+                <span class="block truncate text-screen-100">Invoice #2451 — paid</span>
+                <span class="block truncate text-xs text-screen-400">filed by rule <span class="text-accent-300">invoices → Accounting</span></span>
               </span>
               <span class="ml-auto shrink-0"><kbd class="kbd">e</kbd></span>
             </li>
             <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-ink-500 w-12 shrink-0">07:58</span>
+              <span class="font-mono text-[10px] text-screen-400 w-12 shrink-0">07:58</span>
               <span class="min-w-0">
-                <span class="block truncate text-ink-800">Re: quotes for the server rack</span>
-                <span class="block truncate text-xs text-ink-500">agent draft waiting for your review</span>
+                <span class="block truncate text-screen-100">Re: quotes for the server rack</span>
+                <span class="block truncate text-xs text-screen-400">agent draft waiting for your review</span>
               </span>
               <span class="ml-auto shrink-0"><kbd class="kbd">R</kbd></span>
             </li>
             <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-ink-500 w-12 shrink-0">06:30</span>
+              <span class="font-mono text-[10px] text-screen-400 w-12 shrink-0">06:30</span>
               <span class="min-w-0">
-                <span class="block truncate text-ink-600">Newsletter — this week in self-hosting</span>
-                <span class="block truncate text-xs text-ink-500">unread · 4 min read</span>
+                <span class="block truncate text-screen-300">Newsletter — this week in self-hosting</span>
+                <span class="block truncate text-xs text-screen-400">unread · 4 min read</span>
               </span>
               <span class="ml-auto shrink-0"><kbd class="kbd">d</kbd></span>
             </li>
             <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-ink-500 w-12 shrink-0">05:47</span>
+              <span class="font-mono text-[10px] text-screen-400 w-12 shrink-0">05:47</span>
               <span class="min-w-0">
-                <span class="block truncate text-ink-800">OAuth token refreshed — Gmail</span>
-                <span class="block truncate text-xs text-ink-500">automatic · no action needed</span>
+                <span class="block truncate text-screen-100">OAuth token refreshed — Gmail</span>
+                <span class="block truncate text-xs text-screen-400">automatic · no action needed</span>
               </span>
               <span class="ml-auto shrink-0"><kbd class="kbd">s</kbd></span>
             </li>
           </ul>
-          <div class="flex items-center justify-between px-4 py-2 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">
+          <div class="flex items-center justify-between px-4 py-2 border-t border-white/10 bg-screen-800 font-mono text-[10px] text-screen-400">
             <span>IMAP IDLE · synced 12s ago</span>
             <span class="whitespace-nowrap"><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd> to move</span>
           </div>
@@ -250,6 +249,62 @@
           <dd class="mt-1 font-display text-2xl font-semibold text-ink-950">0 calls home</dd>
         </div>
       </dl>
+    </section>
+
+    <!-- ================================ Interfaces ================================ -->
+    <section id="interfaces" aria-labelledby="interfaces-h" class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28">
+      <div class="max-w-2xl" data-reveal>
+        <p class="kicker">The gateway</p>
+        <h2 id="interfaces-h" class="display mt-3 text-3xl sm:text-4xl">Connect a mailbox once. Reach it every way.</h2>
+        <p class="mt-4 text-ink-600 leading-relaxed">
+          Your provider stays exactly where it is — mimux speaks IMAP and SMTP to it,
+          keeps a synced copy in SQLite, and exposes it through whichever interface the
+          job calls for. Humans get the app, free. Machines get the licence.
+        </p>
+      </div>
+
+      <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="card p-6 border-ink-950/40" data-reveal>
+          <p class="font-mono text-[10px] uppercase tracking-wider text-ink-500 border border-ink-500/40 rounded px-1.5 py-0.5 inline-block">in</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">Any IMAP mailbox</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">Gmail, Fastmail, Zoho, your own Dovecot — OAuth2 or app passwords. No migration, no forwarding: your provider stays the source of truth.</p>
+        </div>
+        <a href="/features/" class="card card-hover p-6 block" data-reveal data-reveal="40">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-ok-400 border border-ok-400/40 rounded px-1.5 py-0.5 inline-block">free</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">Web app</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">The full client in any browser — unified inbox, deep search, filters, Markdown compose, keyboard everything.</p>
+        </a>
+        <a href="/features/#pwa" class="card card-hover p-6 block" data-reveal data-reveal="80">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-ok-400 border border-ok-400/40 rounded px-1.5 py-0.5 inline-block">free</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">Mobile PWA</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">Install it on your phone from the browser. Offline fallback, end-to-end-encrypted push, no app store.</p>
+        </a>
+        <a href="/agents/#api" class="card card-hover p-6 block" data-reveal data-reveal="120">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-accent-600 border border-accent-500/50 rounded px-1.5 py-0.5 inline-block">pro</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">REST API</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">Everything over plain HTTP, self-documented — the binary serves its own OpenAPI spec.</p>
+        </a>
+        <a href="/agents/#mcp" class="card card-hover p-6 block" data-reveal>
+          <p class="font-mono text-[10px] uppercase tracking-wider text-accent-600 border border-accent-500/50 rounded px-1.5 py-0.5 inline-block">pro</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">MCP server</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">The mailbox as tools for Claude or any MCP-capable client — scope-filtered, revocable tokens.</p>
+        </a>
+        <a href="/agents/#cli" class="card card-hover p-6 block" data-reveal data-reveal="40">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-accent-600 border border-accent-500/50 rounded px-1.5 py-0.5 inline-block">pro</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">CLI</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">Search, read, file and draft from your shell — plain text or JSON out, so your inbox pipes like any other stream.</p>
+        </a>
+        <a href="/agents/#webhooks" class="card card-hover p-6 block" data-reveal data-reveal="80">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-accent-600 border border-accent-500/50 rounded px-1.5 py-0.5 inline-block">pro</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">Webhooks</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">Signed pushes on new mail and rule matches — retries with backoff and a delivery log.</p>
+        </a>
+        <div class="card p-6 border-dashed" data-reveal data-reveal="120">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-ink-500 border border-ink-500/40 rounded px-1.5 py-0.5 inline-block">soon</p>
+          <h3 class="mt-3 font-display font-semibold text-ink-950">GraphQL</h3>
+          <p class="mt-2 text-sm text-ink-600 leading-relaxed">One query across mail, folders and filters. On the roadmap — part of pro when it ships, same price.</p>
+        </div>
+      </div>
     </section>
 
     <!-- ================================ Features ================================ -->
@@ -306,8 +361,8 @@
           <p class="mt-4 text-ink-600 leading-relaxed">
             Agent frameworks ship with web search and code execution — and no way into a
             mailbox that doesn't route your mail through someone else's cloud. mimux pro is
-            that missing tool: a REST API, an MCP server and signed webhooks over the inbox
-            you already run.
+            that missing tool: a REST API, an MCP server, a CLI and signed webhooks over
+            the inbox you already run.
           </p>
           <ul class="mt-6 space-y-3.5 text-sm text-ink-600">
             <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">MCP server at <code class="font-mono text-accent-600">/api/mcp</code>.</strong> Search, read, triage and draft from Claude, or any MCP-capable client.</span></li>
@@ -321,7 +376,7 @@
         </div>
 
         <figure class="panel" data-reveal="100">
-          <figcaption class="panel-bar"><span>claude — connected to your mimux</span><span class="text-ok-400">● live</span></figcaption>
+          <figcaption class="panel-bar"><span>claude — connected to your mimux</span><span class="text-ok-300">● live</span></figcaption>
           <div class="code text-[0.8rem]">
 <pre><span class="c"># an agent triaging this morning's mail</span>
 <span class="p">▸</span> <span class="k">search_messages</span> <span class="s">query="is:unread"</span>
@@ -366,7 +421,7 @@
           <figcaption class="panel-bar">
             <span>terminal</span>
             <button type="button" data-copy="git clone https://github.com/mattmezza/mimux && cd mimux && docker compose up -d"
-                    class="font-mono text-[11px] text-ink-600 hover:text-ink-950 transition-colors cursor-pointer">copy</button>
+                    class="font-mono text-[11px] text-screen-300 hover:text-screen-50 transition-colors cursor-pointer">copy</button>
           </figcaption>
           <pre class="code"><code><span class="c"># the whole install</span>
 <span class="p">$</span> <span class="w">git clone https://github.com/mattmezza/mimux</span>
@@ -478,7 +533,7 @@
           <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
           <ul class="space-y-2.5 text-ink-600">
             <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Automation &amp; APIs</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
             <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>

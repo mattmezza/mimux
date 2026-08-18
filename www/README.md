@@ -15,7 +15,7 @@ www/
     404.html            # Cloudflare Pages not-found page
     app.css             # Tailwind v4 entry: @theme tokens + components
     js/site.js          # progressive enhancement: reveal, copy, mobile nav
-    fonts/              # self-hosted Inter + Instrument Serif + JetBrains Mono (OFL)
+    fonts/              # self-hosted Inter + Bricolage Grotesque + JetBrains Mono (OFL)
     img/                # icons, og.png (see ASSETS.md)
     assets/             # raw generator output — source material, NOT shipped
     favicon.svg, site.webmanifest, robots.txt, sitemap.xml

@@ -1,7 +1,8 @@
 /* mimux.dev design system — "correspondence": warm paper, warm ink, one
- * vermilion accent, postal-blue reserved for airmail stripes. Instrument
- * Serif display / Inter body / JetBrains Mono. All backdrops are pure CSS
- * so no image can ever be the LCP element. */
+ * vermilion accent, postal blue reserved for airmail stripes; product
+ * artifacts render as dark screens on the paper. Bricolage Grotesque
+ * display / Inter body / JetBrains Mono. All backdrops are pure CSS so no
+ * image can ever be the LCP element. */
 @import "tailwindcss" source(none);
 
 /* Scan every marketing page for class names — automatic content detection is
@@ -24,7 +25,7 @@
   --animate-*: initial;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --font-display: "Bricolage Grotesque", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --color-white: #fff;
@@ -55,6 +56,16 @@
   --color-post-700: oklch(40% 0.09 262);
 
   --color-ok-400: oklch(50% 0.11 155);
+  --color-ok-300: oklch(76% 0.13 155);
+
+  /* Screen: the warm-dark surfaces of the product artifacts on the paper. */
+  --color-screen-900: oklch(23% 0.012 55);
+  --color-screen-800: oklch(28.5% 0.014 55);
+  --color-screen-50: oklch(96% 0.005 85);
+  --color-screen-100: oklch(87% 0.008 85);
+  --color-screen-300: oklch(70% 0.011 85);
+  --color-screen-400: oklch(57% 0.012 85);
+  --color-post-300: oklch(74% 0.07 262);
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -73,9 +84,9 @@
 }
 
 @font-face {
-  font-family: "Instrument Serif";
-  src: url("../fonts/instrument-serif.woff2") format("woff2");
-  font-weight: 400;
+  font-family: "Bricolage Grotesque";
+  src: url("../fonts/bricolage-var.woff2") format("woff2");
+  font-weight: 200 800;
   font-style: normal;
   font-display: swap;
 }
@@ -109,8 +120,7 @@
 html {
   scroll-behavior: smooth;
   overflow-x: clip;
-  /* Instrument Serif ships one weight — never fake-bold it. Inter is
-     variable and JetBrains Mono has real 400/500/700, so nothing is lost. */
+  /* Every face here is variable or ships real weights — never synthesize. */
   font-synthesis-weight: none;
 }
 
@@ -157,9 +167,6 @@ h1, h2, h3 {
   min-width: 0;
 }
 
-/* Serif card/section titles need a size step to hold their own at 400. */
-h3.font-display { font-size: 1.3rem; line-height: 1.25; }
-
 /* ---------------------------------------------------------------- components */
 
 /* Kicker: small mono label stacked above a heading, rubber-stamp red. */
@@ -174,8 +181,8 @@ h3.font-display { font-size: 1.3rem; line-height: 1.25; }
 
 .display {
   font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.015em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
   color: var(--color-ink-950);
   text-wrap: balance;
 }
@@ -281,12 +288,13 @@ h3.font-display { font-size: 1.3rem; line-height: 1.25; }
 .stamp-card::before { top: 0; }
 .stamp-card::after { bottom: 0; scale: 1 -1; }
 
-/* App/product panel: a typed artifact on heavier stock. */
+/* App/product panel: a dark screen sitting on the paper — the machine on
+   the desk. Page stays print; the product looks like software. */
 .panel {
   border-radius: 0.5rem;
-  border: 1px solid oklch(25% 0.02 50 / 0.25);
-  background: var(--color-card);
-  box-shadow: 5px 5px 0 oklch(25% 0.02 50 / 0.1);
+  border: 1px solid var(--color-ink-950);
+  background: var(--color-screen-900);
+  box-shadow: 5px 5px 0 oklch(25% 0.02 50 / 0.18);
   overflow: hidden;
 }
 .panel-bar {
@@ -295,13 +303,19 @@ h3.font-display { font-size: 1.3rem; line-height: 1.25; }
   justify-content: space-between;
   gap: 0.75rem;
   padding: 0.6rem 1rem;
-  border-bottom: 1px solid oklch(25% 0.02 50 / 0.14);
-  background: var(--color-paper-200);
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  background: var(--color-screen-800);
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--color-ink-600);
+  color: var(--color-screen-400);
+}
+/* Typewriter keys invert on a screen. */
+.panel .kbd {
+  color: var(--color-screen-100);
+  background: var(--color-screen-800);
+  border-color: rgb(255 255 255 / 0.14);
 }
 
 /* Code: a typewritten memo. Red for the machine's voice, postal blue for
@@ -312,13 +326,13 @@ h3.font-display { font-size: 1.3rem; line-height: 1.25; }
   line-height: 1.7;
   overflow-x: auto;
   padding: 1.1rem 1.25rem;
-  color: var(--color-ink-700);
+  color: var(--color-screen-300);
 }
-.code .c { color: var(--color-ink-500); }
-.code .p { color: var(--color-accent-600); }
-.code .s { color: var(--color-post-700); }
-.code .k { color: var(--color-accent-700); }
-.code .w { color: var(--color-ink-950); }
+.code .c { color: var(--color-screen-400); }
+.code .p { color: var(--color-accent-300); }
+.code .s { color: var(--color-post-300); }
+.code .k { color: var(--color-screen-100); }
+.code .w { color: var(--color-screen-50); }
 
 /* Hero backdrop: ruled writing-paper lines, fading out. Pure CSS. */
 .hero-bg {
