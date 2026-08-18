@@ -50,4 +50,9 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy www/dist --project-name=mimux-www
+          # --branch=main is load-bearing: a release checkout is a detached
+          # HEAD, so wrangler infers the branch as "HEAD", which is not the
+          # project's production branch. Without it the deploy succeeds, is
+          # reported green, and lands as a *preview* — mimux.dev keeps serving
+          # whatever was published before.
+          command: pages deploy www/dist --project-name=mimux-www --branch=main
