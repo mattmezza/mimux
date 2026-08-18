@@ -22,16 +22,20 @@ The 2026-08 postal redesign uses no raster imagery at all on the pages —
 every backdrop (ruled lines, airmail stripes, scallops, postmark) is CSS or
 inline SVG, so no image can ever be the LCP element.
 
-## Icons — `src/favicon.svg` → `src/img/icon-*.png`, `favicon.ico`
+## Icons — from the app logo
 
-The favicon is a hand-written SVG (cream stamp, ink border, vermilion "m").
-All raster icons derive from it:
+`www/src/img/icon-512.png` is a straight copy of the product logo at
+`web/static/icons/icon-512.png` (dark square, indigo envelope-tray, green
+leaf). `src/favicon.svg` is a hand-traced vector of the same mark (geometry
+measured off the PNG). All other raster icons derive from the 512:
 
 ```bash
-magick -background none -density 300 src/favicon.svg -resize 512x512 src/img/icon-512.png
-magick src/img/icon-512.png -resize 192x192 src/img/icon-192.png
-magick src/img/icon-512.png -resize 180x180 src/img/icon-180.png
-cp src/img/icon-180.png src/img/apple-touch-icon.png
-magick src/img/icon-512.png -define icon:auto-resize=48,32,16 src/img/favicon.ico
+cp web/static/icons/icon-512.png www/src/img/icon-512.png
+magick www/src/img/icon-512.png -resize 192x192 www/src/img/icon-192.png
+magick www/src/img/icon-512.png -resize 180x180 www/src/img/icon-180.png
+cp www/src/img/icon-180.png www/src/img/apple-touch-icon.png
+magick www/src/img/icon-512.png -define icon:auto-resize=48,32,16 www/src/img/favicon.ico
 ```
 
+The docs shell (docs/src/index.html) embeds the same mark as inline data-URI
+SVGs for its favicon and header brand.
