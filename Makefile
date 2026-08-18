@@ -73,7 +73,7 @@ www: ## Dev the marketing site: Tailwind watch + local static server
 	rsync -a --delete --exclude='app.css' --exclude='assets/' www/src/ www/dist/
 	@trap 'kill 0' INT; \
 	npx @tailwindcss/cli -i www/src/app.css -o www/dist/css/app.css --watch & \
-	(cd www/dist && python3 ../www/scripts/serve.py 8732) & \
+	(cd www/dist && python3 ../scripts/serve.py 8732) & \
 	wait
 
 .PHONY: www-build
