@@ -227,7 +227,7 @@ sender and subject in the clear unless you run it yourself.
   "password"`. Gmail label display and the `label:` filter action are currently
   dormant — the upstream go-imap v2 library can't fetch `X-GM-LABELS`/`X-GM-THRID`
   yet; threading falls back to the standard JWZ algorithm, which works well.
-- **Known limitations (v0.19):** drafts are local-only — autosaved to the
+- **Known limitations (v0.20):** drafts are local-only — autosaved to the
   SQLite DB, not appended to the IMAP Drafts folder, so they don't follow you
   to another client; offline mode is read-only (the service worker falls back
   to the last-synced inbox, and actions need the server); Gmail labels are
@@ -246,9 +246,28 @@ will be moved out of it later.
 **The paid layer is automation only** — a REST API, an MCP server for AI agents,
 and webhooks. The rule is simple: if a *human* drives mimux, that is free; if
 something *else* drives it, that is the paid part. AI compose is human-driven, so
-it stays free. It does not exist
-yet; this line is published in advance so its arrival is a plan being executed
-rather than a surprise.
+it stays free.
+
+### Running pro
+
+The pro layer ships as a separate image and separate binaries, because the free
+ones do not contain it at all — `pro/` is excluded from that build graph by a
+build tag, not disabled at runtime (`make verify-free` proves it on every CI
+run). Swap the image and add your key:
+
+```yaml
+services:
+  mimux:
+    image: ghcr.io/mattmezza/mimux:pro   # or :v0.20-pro to pin
+    environment:
+      - MIMUX_LICENCE_KEY=mimuxlic1....  # from account.mimux.dev
+```
+
+Binaries are attached to each release as `mimux-pro-<os>-<arch>`. A pro build
+runs 14 days without a key, and **mail itself never stops working** whether the
+key is present, expired or absent — only the API, MCP and webhook endpoints
+answer 402. `mimux licence status` prints exactly where you stand. Buy or
+re-send a key at [account.mimux.dev](https://account.mimux.dev).
 
 ## Contributing and support
 

@@ -8,6 +8,15 @@ permissions:
   contents: write
   packages: write
 
+# The ed25519 public key that pro/ verifies licences against, injected at link
+# time (pro/licence.go ships a development key as its default, whose private
+# half is a test fixture). This half is public by construction — the private
+# half exists only as an env var on the account.mimux.dev VPS. It is in plain
+# sight rather than in a secret on purpose: anyone can check that the key a
+# release verifies against is the one the shop signs with.
+env:
+  LICENCE_PUBKEY: h5RYHhjY0p/8LV9XxRo1npqclQY2LUOFWn+QH/2XIIA
+
 jobs:
   # Gate: run the same checks as CI. The release job below only runs if this
   # passes, so a release never ships unless CI is green.
@@ -48,6 +57,28 @@ jobs:
               go build -ldflags="-s -w -X main.version=${{ github.event.release.tag_name }}" \
               -o dist/mimux-${target%/*}-${target#*/} ./cmd/mimux
           done
+
+      # The pro binaries: same client, plus the ELv2 automation layer, with the
+      # production licence key linked in. Suffixed -pro in both the filename and
+      # main.version, so `mimux -version` and the licence watermark agree.
+      - name: Build pro release binaries
+        run: |
+          for target in linux/amd64 linux/arm64 darwin/arm64; do
+            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
+              go build -tags pro \
+              -ldflags="-s -w -X main.version=${{ github.event.release.tag_name }}-pro -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}" \
+              -o dist/mimux-pro-${target%/*}-${target#*/} ./cmd/mimux
+          done
+          # A release that links the dev key would verify nothing anyone paid
+          # for, and would do it silently. Fail loudly instead.
+          #
+          # Checked against buildinfo, not the raw bytes: -X overwrites the
+          # value the code reads but leaves the original initializer in the
+          # binary as dead data, so BOTH keys grep-match either way and a plain
+          # `grep` would pass for a dev-key build too.
+          go version -m dist/mimux-pro-linux-amd64 \
+            | grep -qF -- "-X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}" \
+            || { echo "::error::pro binary was not linked against the production licence key"; exit 1; }
       - name: Attach binaries to release
         run: gh release upload "${{ github.event.release.tag_name }}" dist/*
         env:
@@ -73,3 +104,22 @@ jobs:
             ghcr.io/mattmezza/mimux:latest
             ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.tag }}
             ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.ver }}
+
+      # The pro image. Same Dockerfile, built with -tags pro and the production
+      # licence key. `:pro` is the moving pointer, the way `:latest` is for free.
+      - name: Build and push the pro image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            VERSION=${{ github.event.release.tag_name }}-pro
+            BUILD_TAGS=pro
+            LICENCE_PUBKEY=${{ env.LICENCE_PUBKEY }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          tags: |
+            ghcr.io/mattmezza/mimux:pro
+            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.tag }}-pro
+            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.ver }}-pro

@@ -8,6 +8,10 @@ on:
     paths:
       - "docs/**"
       - "pro/openapi.json"
+  # Pages deploys are otherwise only reachable by touching docs/. Enabling Pages
+  # on the repo, or re-publishing after a Pages settings change, needs a run that
+  # no source change triggers.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -40,9 +44,6 @@ jobs:
           }
 
   deploy:
-    # NOTE: GitHub Pages needs a public repository. While mimux is private this
-    # job fails with a Pages-not-enabled error — expected until launch. The
-    # staleness gate above is the part that matters in the meantime.
     needs: staleness
     runs-on: ubuntu-latest
     environment:

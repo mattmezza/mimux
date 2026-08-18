@@ -16,13 +16,22 @@ FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go
 ARG VERSION=dev
 ARG TARGETOS
 ARG TARGETARCH
+# Empty by default, so a plain `docker build` still produces the free (AGPL-only)
+# image with no pro/ code in the build graph at all. The release workflow passes
+# BUILD_TAGS=pro plus the production licence public key to build the pro image.
+ARG BUILD_TAGS=
+ARG LICENCE_PUBKEY=
 WORKDIR /build
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=css /build/web/static/css/dist.css web/static/css/dist.css
+# ${LICENCE_PUBKEY:+...} so an unset key adds no -X at all — injecting an empty
+# string would blank the compiled-in key and make every licence fail to verify.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -ldflags="-s -w -X main.version=${VERSION}" -o mimux ./cmd/mimux
+    go build -tags "${BUILD_TAGS}" \
+    -ldflags="-s -w -X main.version=${VERSION}${LICENCE_PUBKEY:+ -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}}" \
+    -o mimux ./cmd/mimux
 
 # Stage 3: Final image (per target arch — just ca-certs + the binary).
 FROM alpine:3.20
