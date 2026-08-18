@@ -5,7 +5,9 @@ services:
     # which also sets X-Forwarded-For — the per-IP rate limit trusts it, so the
     # port must never be reachable from outside the box.
     ports:
-      - "127.0.0.1:8080:8080"
+      # Host side is 9999 to match the nginx vhost on the VPS; container side
+      # stays 8080 (LISTEN_ADDR below).
+      - "127.0.0.1:9999:8080"
     volumes:
       - account-data:/data
     # Real values live in account.env on the VPS, mode 600, never in git.
