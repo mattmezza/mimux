@@ -100,3 +100,27 @@ func TestRetrieveIsNotAnOracle(t *testing.T) {
 		t.Errorf("per-email limit did not hold: %d -> %d emails", before, len(*sent))
 	}
 }
+
+// A caller who sets their own X-Forwarded-For must not get a fresh per-IP
+// budget. The proxy appends the real peer, so the forged value sits first and
+// the trustworthy one last — read the wrong end and the limit is decorative.
+func TestClientIPIgnoresForgedForwardedFor(t *testing.T) {
+	r := httptest.NewRequest("POST", "/retrieve", nil)
+	r.RemoteAddr = "127.0.0.1:12345"
+
+	// What nginx/Caddy actually forward when the client sent "1.2.3.4".
+	r.Header.Set("X-Forwarded-For", "1.2.3.4, 203.0.113.9")
+	if got := clientIP(r); got != "203.0.113.9" {
+		t.Errorf("forged prefix won: clientIP = %q, want 203.0.113.9", got)
+	}
+
+	r.Header.Set("X-Forwarded-For", "203.0.113.9")
+	if got := clientIP(r); got != "203.0.113.9" {
+		t.Errorf("single hop: clientIP = %q, want 203.0.113.9", got)
+	}
+
+	r.Header.Del("X-Forwarded-For")
+	if got := clientIP(r); got != "127.0.0.1" {
+		t.Errorf("no header: clientIP = %q, want 127.0.0.1", got)
+	}
+}

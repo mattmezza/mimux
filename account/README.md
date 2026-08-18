@@ -163,7 +163,9 @@ git pull && docker compose up -d --build
 docker compose logs -f account
 ```
 
-Reverse proxy, in Caddy terms:
+Reverse proxy: [`nginx/account.mimux.dev.conf`](nginx/account.mimux.dev.conf) is
+ready to copy into `sites-available`, with the certbot invocation in its header
+comment. In Caddy terms it is:
 
 ```
 account.mimux.dev {
@@ -171,9 +173,12 @@ account.mimux.dev {
 }
 ```
 
-Caddy sets `X-Forwarded-For`, which the per-IP limiter trusts. That trust is why
-compose binds the port to `127.0.0.1` — if the container port were reachable
-from the internet, the header would be forgeable and the limit meaningless.
+Both proxies **append** to `X-Forwarded-For`, so the last value is the hop the
+proxy itself added and the only one a caller cannot forge; `clientIP` reads that
+end deliberately. Compose also binds the port to `127.0.0.1` so the container is
+not reachable directly. Both halves matter: the bind stops someone skipping the
+proxy, and reading the last hop stops someone who goes *through* it from setting
+their own header and rotating past the per-IP limit.
 
 Bump `CURRENT_VERSION` in `account.env` and `docker compose up -d` on every
 mimux release: it is the watermark stamped into new perpetual licences, so a

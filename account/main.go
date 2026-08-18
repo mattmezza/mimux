@@ -226,13 +226,21 @@ func (a *app) resend(email string, portal bool) error {
 	return a.send(email, "Your mimux pro licence key", b.String())
 }
 
-// clientIP trusts the first hop in X-Forwarded-For, because this only ever runs
-// behind our own reverse proxy. Exposing the port directly would make the header
-// forgeable and the per-IP limit meaningless — see docker-compose.yml, which
-// binds to loopback for exactly this reason.
+// clientIP is the peer as reported by the reverse proxy in front of this
+// service. It takes the LAST value in X-Forwarded-For, not the first: proxies
+// append (nginx's $proxy_add_x_forwarded_for, Caddy's default), so the final
+// entry is the hop our own proxy added and the only one a caller cannot forge.
+// Anything before it arrived from the internet.
+//
+// Reading the first value instead would hand the per-IP limit to the attacker:
+// /retrieve is limited to make licence-holder enumeration and mail-cannon abuse
+// useless, and a client that sets its own X-Forwarded-For could rotate straight
+// past it. The loopback bind in docker-compose.yml stops the port being reached
+// directly, but the header still arrives through the proxy either way.
 func clientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		return strings.TrimSpace(strings.Split(xff, ",")[0])
+		parts := strings.Split(xff, ",")
+		return strings.TrimSpace(parts[len(parts)-1])
 	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
