@@ -1,12 +1,12 @@
 <!--
 title: The automation layer
-description: mimux pro — the REST API, MCP server and webhooks. API tokens and scopes, bearer auth, rate limiting, the licence key, the 14-day trial, and why mail never stops.
+description: mimux pro — the REST API, MCP server, CLI and webhooks. API tokens and scopes, bearer auth, rate limiting, the licence key, the 14-day trial, and why mail never stops.
 -->
 <h1>The automation layer <span class="pro-tag">pro</span></h1>
 <p class="lede">
   Everything a human does in mimux is free, forever. When something other than a
   human needs to drive the mailbox, that is the pro layer: a REST API, an MCP
-  server, and webhooks.
+  server, a CLI, and webhooks.
 </p>
 
 <p>Read this page before the <a href="../api/">API guide</a> or the
@@ -20,14 +20,17 @@ description: mimux pro — the REST API, MCP server and webhooks. API tokens and
   <tbody>
     <tr><td><a href="../api/">REST API</a></td><td><code>/api/v1</code></td><td>Scripts, integrations, anything that speaks HTTP and JSON.</td></tr>
     <tr><td><a href="../mcp/">MCP server</a></td><td><code>/api/mcp</code></td><td>AI agents, over streamable HTTP or the bundled stdio bridge.</td></tr>
+    <tr><td><a href="../cli/">CLI</a></td><td><code>mimux mail</code></td><td>Shells, scripts and cron — and agents with a bash harness but no MCP client.</td></tr>
     <tr><td><a href="../webhooks/">Webhooks</a></td><td>outbound</td><td>Signed POSTs to your URL when mail arrives, so nothing has to poll.</td></tr>
   </tbody>
 </table>
 </div>
 
 <p>
-  All three share one credential model, one scope set and one domain layer.
-  The MCP server is the REST API wearing the protocol an agent already speaks.
+  All four share one credential model, one scope set and one domain layer. The
+  MCP server is the REST API wearing the protocol an agent already speaks; the
+  CLI is that same API wearing a shell prompt, and talks to a running server over
+  HTTP like any other client.
 </p>
 
 <h2>Running a pro build</h2>

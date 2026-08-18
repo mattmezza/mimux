@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Command line — mimux docs</title>
-    <meta name="description" content="Every subcommand the mimux binary has — running the server, the -version flag, the pro stdio MCP bridge, and mimux licence status." />
+    <meta name="description" content="Every subcommand the mimux binary has — running the server, the -version flag, mimux mail (the terminal client for the pro API), the stdio MCP bridge, and mimux licence status." />
     <link rel="stylesheet" href="../style.css" />
     <link
       rel="icon"
@@ -57,7 +57,7 @@
 <h1>Command line</h1>
 <p class="lede">
   The mimux binary has a deliberately small command line. Running it with no
-  arguments starts the server; there are exactly two subcommands, and both come
+  arguments starts the server; there are three subcommands, and all three come
   from the pro layer.
 </p>
 
@@ -69,6 +69,7 @@
   <tbody>
     <tr><td><code>mimux</code></td><td>any</td><td>Start the server. Opens the database, runs migrations, starts a sync worker per account, listens on <code>MIMUX_HOST:MIMUX_PORT</code>.</td></tr>
     <tr><td><code>mimux -version</code></td><td>any</td><td>Print the version and exit.</td></tr>
+    <tr><td><code>mimux mail …</code></td><td>pro</td><td>The terminal client: read, search, triage, draft and send against a <em>running</em> mimux.</td></tr>
     <tr><td><code>mimux mcp</code></td><td>pro</td><td>Run the stdio MCP bridge against a <em>running</em> mimux.</td></tr>
     <tr><td><code>mimux licence status</code></td><td>pro</td><td>Report this install's licence and whether the API is answering.</td></tr>
   </tbody>
@@ -77,8 +78,8 @@
 
 <p>
   That is the complete list. The free build's subcommand table is
-  <strong>empty</strong> — the two pro verbs are registered from files carrying
-  the <code>pro</code> build tag, so a free binary neither has them nor mentions
+  <strong>empty</strong> — the pro verbs are registered from files carrying the
+  <code>pro</code> build tag, so a free binary neither has them nor mentions
   them.
 </p>
 
@@ -134,6 +135,296 @@
   workers stop and the HTTP server drains, with a 10-second timeout.
 </p>
 
+<h2><code>mimux mail</code> — the terminal client <span class="pro-tag">pro</span></h2>
+
+<p>
+  A mailbox from the shell: list, search, read, triage, draft and send. It is
+  the third way into the same automation layer — for a shell, a cron job, a
+  <code>jq</code> pipeline, or an agent that has a bash harness but no MCP
+  client.
+</p>
+
+<p>
+  Like the MCP bridge below, it is a <strong>thin HTTP client of a running
+  mimux</strong>. It never opens the database: the server process owns that file
+  and is actively writing to it, so a second writer would be a corruption and
+  lock-contention problem. It authenticates with the same
+  <a href="../automation/">scoped API tokens</a> everything else uses, which is
+  also what keeps the pro layer behind its licence — there is no second
+  authorisation surface, and nothing here that a free binary plus a file path
+  could reach.
+</p>
+
+<h3>Configuration</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Flag</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>MIMUX_URL</code></td><td><code>--url</code></td><td><code>http://localhost:8083</code></td></tr>
+    <tr><td><code>MIMUX_TOKEN</code> (or <code>MIMUX_API_TOKEN</code>)</td><td><code>--token</code></td><td><em>required</em></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Flags win over the environment. The same two variables configure
+  <code>mimux mcp</code>, so one export serves both. With no token at all it
+  says where to get one rather than dumping a 401:
+</p>
+
+<pre><code>$ mimux mail accounts
+mimux mail accounts: no API token — set MIMUX_TOKEN or pass --token. Mint one in Settings → API</code></pre>
+
+<pre><code>export MIMUX_URL=https://mail.example.com
+export MIMUX_TOKEN=mimux_pat_...</code></pre>
+
+<h3>The commands</h3>
+
+<p>
+  They mirror the <a href="../mcp/">MCP tools</a> one for one — same nouns, same
+  scopes, same semantics — because they are the same product wearing a different
+  skin. The scope column is what the token must carry; a token that is missing
+  one is told <em>which</em> one.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Command</th><th>Scope</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>mimux mail whoami</code></td><td>—</td><td>The token's label and scopes.</td></tr>
+    <tr><td><code>mimux mail accounts</code></td><td><code>accounts:read</code></td><td>Accounts with sync state, message and unread counts.</td></tr>
+    <tr><td><code>mimux mail folders</code></td><td><code>mail:read</code></td><td>The folder tree per account, with folder ids.</td></tr>
+    <tr><td><code>mimux mail list</code></td><td><code>mail:read</code></td><td>Messages newest-first; the unified inbox by default.</td></tr>
+    <tr><td><code>mimux mail search &lt;query&gt;</code></td><td><code>mail:read</code></td><td>The client's own query language, local index or deep IMAP.</td></tr>
+    <tr><td><code>mimux mail read &lt;id&gt;</code></td><td><code>mail:read</code></td><td>One message: headers, flags, attachments, body.</td></tr>
+    <tr><td><code>mimux mail mark-read &lt;id&gt;</code></td><td><code>mail:modify</code></td><td>Mark read, or <code>-unread</code>.</td></tr>
+    <tr><td><code>mimux mail star &lt;id&gt;</code></td><td><code>mail:modify</code></td><td>Star, or <code>-off</code> to unstar.</td></tr>
+    <tr><td><code>mimux mail move &lt;id&gt; &lt;dest&gt;</code></td><td><code>mail:modify</code></td><td>A folder id, or <code>archive</code>/<code>spam</code>/<code>trash</code>.</td></tr>
+    <tr><td><code>mimux mail draft</code></td><td><code>mail:send</code></td><td>Save a draft. Nothing is sent.</td></tr>
+    <tr><td><code>mimux mail send</code></td><td><code>mail:send</code></td><td>Send now, or <code>-dry-run</code> to preview.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Every command takes <code>--url</code>, <code>--token</code> and
+  <code>--json</code>; <code>-h</code> on any of them lists its own flags.
+  Exit codes are <code>0</code> fine, <code>1</code> the operation failed,
+  <code>2</code> wrong usage.
+</p>
+
+<h3>Reading</h3>
+
+<pre><code>$ mimux mail whoami
+url:    http://localhost:8083
+token:  laptop
+scopes: mail:read accounts:read
+
+$ mimux mail accounts
+ACCOUNT     EMAIL                   STATE  MESSAGES  UNREAD  LAST SYNC
+GMail       me@gmail.com            ok     3520      151     2026-08-18 15:02
+merola.co   matteo@merola.co        ok     2157      38      2026-08-18 15:01
+
+$ mimux mail folders -account merola.co
+merola.co
+  Inbox          86  inbox    4 unread
+  Sent           93  sent
+  Archive        98  archive  1 unread
+  Spam           90  spam     32 unread
+  Trash          91  trash
+  Invoices       96</code></pre>
+
+<p>
+  <code>list</code> is the unified inbox unless you narrow it with
+  <code>-account</code> or <code>-folder</code>; <code>-unread</code> and
+  <code>-starred</code> filter, and <code>--cursor</code> takes the value printed
+  at the bottom of a page. The <code>FLAGS</code> column is three characters —
+  <code>u</code> unread, <code>*</code> starred, <code>@</code> has an
+  attachment:
+</p>
+
+<pre><code>$ mimux mail list -unread -limit 5
+ID     DATE              FLAGS  FROM                        SUBJECT
+12792  2026-08-17 10:19  u..    Jacob Riff                  Re: prodcontent + enterprise security reviews?
+12689  2026-08-13 23:47  u..    ZeptoMail Notifications     Credits expiry
+12622  2026-08-13 00:03  u..    Google AI Studio            [Action Required] Update your Gemini API billing
+12479  2026-08-03 15:55  u.@    "Cal.eu"                    FlowRent Demo between Matteo Merola and Ashley Nell
+
+more: --cursor 2026-08-03T13:55:02Z_12479</code></pre>
+
+<p>
+  <code>-limit</code> counts <em>conversations</em>, not rows: a page carries
+  every message of the conversations it contains, so a thread is never cut in
+  half across a page boundary. That is why the output above can be longer than
+  the limit you asked for.
+</p>
+
+<p>
+  <code>search</code> speaks the same query language as the search box —
+  <code>from:</code>, <code>to:</code>, <code>subject:</code>,
+  <code>body:</code>, <code>is:unread</code>, <code>is:starred</code>,
+  <code>has:attachment</code>, <code>before:</code>/<code>after:</code> with
+  <code>YYYY-MM-DD</code>, quoted phrases, and <code>-</code> to negate:
+</p>
+
+<pre><code>$ mimux mail search receipt -limit 3
+ID     DATE              FLAGS  FROM               SUBJECT
+12819  2026-08-17 23:29  ..@    OpenRouter, Inc    Your receipt from OpenRouter, Inc #2536-8232
+12697  2026-08-13 19:05  ...    "Purelymail, LLC"  Your Purelymail, LLC receipt [#1447-0849]</code></pre>
+
+<p>
+  Flags may follow the query, which is how people actually type. A query that
+  <em>starts</em> with the negation <code>-</code> needs a <code>--</code> first,
+  so the shell's argument parser does not read it as a flag:
+</p>
+
+<pre><code>mimux mail search -- -from:noreply is:unread</code></pre>
+
+<p>
+  <code>-deep</code> asks the IMAP servers themselves instead of the local index
+  — for very old mail, or folders that rarely sync. It waits up to
+  <code>-wait</code> (30s by default) and otherwise hands back the job id; the
+  result is cached, so re-running the identical query answers instantly.
+</p>
+
+<pre><code>$ mimux mail read 12819
+id:       12819
+account:  GMail
+from:     OpenRouter, Inc &lt;invoice+statements@openrouter.ai&gt;
+to:       me@gmail.com
+subject:  Your receipt from OpenRouter, Inc #2536-8232
+date:     Mon, 17 Aug 2026 23:29:11 CEST
+flags:    ..@
+attach:   [0] receipt.pdf (application/pdf, 41231 bytes)
+
+Thanks for your business...</code></pre>
+
+<p>
+  <code>-html</code> returns the sanitised HTML body instead of the plain-text
+  one.
+</p>
+
+<h3>Triage</h3>
+
+<pre><code>$ mimux mail mark-read 12792
+12792 marked read
+
+$ mimux mail star 12816
+12816 starred
+
+$ mimux mail move 12689 archive
+12689 moved to archive
+
+$ mimux mail move 12689 96          # or a folder id from `mimux mail folders`
+12689 moved to 96</code></pre>
+
+<p>
+  <code>trash</code> is the one destination that needs a second, explicit
+  statement of intent, exactly as the <code>move_message</code> MCP tool
+  requires <code>confirm=true</code> — from the human's point of view it is how
+  mail disappears:
+</p>
+
+<pre><code>$ mimux mail move 12689 trash
+mimux mail move: moving to trash needs -yes — it deletes mail from the human's point of view
+usage: mimux mail move &lt;id&gt; &lt;folder-id|archive|spam|trash&gt;</code></pre>
+
+<h3>Drafting and sending</h3>
+
+<p>
+  The body comes from <code>-body</code>, or from standard input when that flag
+  is omitted — so the text can come out of a file, a heredoc, or another
+  program. <code>draft</code> saves and sends nothing; the draft appears in
+  Drafts in the web UI like any other.
+</p>
+
+<pre><code>$ echo "Thanks — next week works." | mimux mail draft -in-reply-to 12792
+account:  merola.co
+to:       jacob@example.com
+subject:  Re: prodcontent + enterprise security reviews?
+
+Thanks — next week works.
+
+Draft 4 saved, NOT sent. It is in Drafts in the web UI; send it with
+`mimux mail send` once you are happy with the text above.</code></pre>
+
+<p>
+  <code>-in-reply-to</code> takes a mimux message id and derives the recipient,
+  the subject and the threading headers from the original, the way
+  <code>draft_reply</code> does for an agent. <code>-reply-all</code> keeps
+  every original recipient, minus you.
+</p>
+
+<p>
+  <code>send</code> takes the same flags and sends immediately.
+  <code>-dry-run</code> prints exactly what would go out and sends nothing,
+  which is the CLI's version of the draft-then-approve step: show the preview to
+  the human, then re-run without the flag.
+</p>
+
+<pre><code>$ mimux mail send -to ada@example.com -subject "Re: invoice" -body "Paid, thanks." -dry-run
+account:  merola.co
+to:       ada@example.com
+subject:  Re: invoice
+
+Paid, thanks.
+
+Dry run — nothing was sent. Re-run without -dry-run to send it.
+
+$ mimux mail send -to ada@example.com -subject "Re: invoice" -body "Paid, thanks."
+sent &lt;3f9c1e2a@merola.co&gt;</code></pre>
+
+<p>
+  <code>-at</code> takes an RFC3339 time and queues the message in the outbox
+  instead of sending it now.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Sending a saved draft is not a CLI operation.</strong> The REST API
+    has no send-this-draft endpoint — <code>send_draft</code> is MCP-only — so
+    <code>draft</code> and <code>send</code> are two separate acts here. Compose
+    with <code>-dry-run</code> when what you want is a preview before sending.
+  </p>
+</div>
+
+<h3>Piping to jq</h3>
+
+<p>
+  <code>--json</code> prints the API's response <strong>verbatim</strong> —
+  not a re-encoding — so what <code>jq</code> sees is exactly what the
+  <a href="../reference/">API reference</a> documents. This is the mode to
+  script against; the tables above are for humans and their column widths are
+  not a contract.
+</p>
+
+<pre><code>$ mimux mail search 'is:unread from:google' -limit 3 --json | jq -r '.data[] | "\(.id)\t\(.from.address)\t\(.subject)"'
+12622	googleaistudio-noreply@google.com	[Action Required] Update your Gemini API billing in Google AI Studio
+12135	sc-noreply@google.com	New reasons prevent pages from being indexed on site humux.dev</code></pre>
+
+<p>Archive every unread newsletter older than a month, in one line:</p>
+
+<pre><code>mimux mail search 'is:unread newsletter before:2026-07-18' --json \
+  | jq -r '.data[].id' \
+  | while read -r id; do mimux mail move "$id" archive; done</code></pre>
+
+<p>Which sender is filling the inbox:</p>
+
+<pre><code>mimux mail list -limit 200 --json \
+  | jq -r '.data[].from.address' \
+  | sort | uniq -c | sort -rn | head</code></pre>
+
+<p>
+  Errors go to standard error and never into the JSON stream, so a pipeline
+  fails cleanly. A missing scope names itself, because an agent told
+  <em>forbidden</em> cannot fix itself and one told <em>which scope</em> can
+  tell its operator:
+</p>
+
+<pre><code>$ mimux mail star 12816
+mimux mail star: this token is missing the mail:modify scope — tick it in Settings → API and mint a new token</code></pre>
+
 <h2><code>mimux mcp</code> — the stdio MCP bridge <span class="pro-tag">pro</span></h2>
 
 <p>
@@ -170,9 +461,10 @@
 <h2><code>mimux licence status</code> <span class="pro-tag">pro</span></h2>
 
 <p>
-  Prints what this install makes of its licence. It reads the same config and
-  the same database the server does, but opens the store <strong>read-only</strong>,
-  so it runs happily alongside a live mimux and writes nothing.
+  Prints what this install makes of its licence. Unlike the two commands above
+  it talks to no server: it reads the same config and the same database, but
+  opens the store <strong>read-only</strong>, so it runs happily alongside a
+  live mimux and writes nothing.
 </p>
 
 <pre><code>$ mimux licence status

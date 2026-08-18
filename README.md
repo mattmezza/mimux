@@ -38,7 +38,9 @@ drive mimux, that is [mimux pro](LICENSING.md): a REST API
 (self-documented at `/api/v1/openapi.json`, rendered at
 [docs.mimux.dev](https://docs.mimux.dev)), an MCP server at `/api/mcp` so
 agents can search, read, triage and draft (never send without a second,
-explicit step), and signed webhooks with retries and a delivery log. Machine
+explicit step), a `mimux mail` CLI over the same API for shells, scripts and
+agents with no MCP client, and signed webhooks with retries and a delivery
+log. Machine
 access authenticates with scoped API tokens from **Settings → API**; a pro
 build runs 14 days without a key, and mail itself never stops working,
 licensed or not. Keys at [account.mimux.dev](https://account.mimux.dev).
@@ -244,9 +246,9 @@ Nothing in it is held back, time-limited, or behind a licence key, and nothing
 will be moved out of it later.
 
 **The paid layer is automation only** — a REST API, an MCP server for AI agents,
-and webhooks. The rule is simple: if a *human* drives mimux, that is free; if
-something *else* drives it, that is the paid part. AI compose is human-driven, so
-it stays free.
+a CLI over that same API, and webhooks. The rule is simple: if a *human* drives
+mimux, that is free; if something *else* drives it, that is the paid part. AI
+compose is human-driven, so it stays free.
 
 ### Running pro
 
