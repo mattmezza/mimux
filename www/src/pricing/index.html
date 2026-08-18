@@ -18,13 +18,13 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A glowing indigo envelope glyph on a dark background — the mimux mark.">
+  <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Pricing — mimux. Free client, flat-priced automation.">
   <meta name="twitter:description" content="The mail client is free and AGPL-3.0 forever. The automation layer is €49/year or €99 once, per instance, with a 14-day free trial.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
-  <meta name="theme-color" content="#0b0b11">
+  <meta name="theme-color" content="#f6f1e7">
 
   <link rel="icon" href="/img/favicon.ico" sizes="any">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/sg-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -112,7 +112,7 @@
   }
   </script>
 </head>
-<body class="bg-ink-950 text-paper-200 font-sans antialiased">
+<body class="bg-paper-50 text-ink-700 font-sans antialiased">
 
   <a href="#main-content"
      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-accent-600 focus:text-white focus:rounded-md focus:font-mono focus:text-sm">
@@ -120,24 +120,24 @@
   </a>
 
   <!-- ================================ Header ================================ -->
-  <header class="sticky top-0 z-40 border-b border-white/5 bg-ink-950/85 backdrop-blur-md">
+  <header class="sticky top-0 z-40 border-b border-ink-950/15 bg-paper-50/90 backdrop-blur-md">
     <nav aria-label="Main" class="mx-auto max-w-6xl px-5 lg:px-8 h-16 flex items-center justify-between gap-4">
       <a href="/" class="flex items-center gap-2.5" aria-label="mimux home">
         <img src="/favicon.svg" alt="" width="26" height="26" class="rounded-md">
-        <span class="font-display font-bold text-paper-50 text-lg tracking-tight">mimux</span>
+        <span class="font-display font-bold text-ink-950 text-lg tracking-tight">mimux</span>
       </a>
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
-        <li><a href="/features/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Features</a></li>
-        <li><a href="/agents/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Agents</a></li>
-        <li><a href="/pricing/" aria-current="page" class="px-3 py-2 rounded-md text-paper-50">Pricing</a></li>
-        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Docs</a></li>
-        <li><a href="/about/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">About</a></li>
+        <li><a href="/features/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Features</a></li>
+        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Agents</a></li>
+        <li><a href="/pricing/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Pricing</a></li>
+        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
+        <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
       </ul>
 
       <div class="flex items-center gap-2.5">
         <a href="https://github.com/mattmezza/mimux" aria-label="mimux on GitHub"
-           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-paper-400 hover:text-paper-50 transition-colors">
+           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-ink-600 hover:text-ink-950 transition-colors">
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
           GitHub
         </a>
@@ -145,17 +145,17 @@
 
         <!-- Mobile menu -->
         <details class="nav-toggle md:hidden relative">
-          <summary class="p-2 rounded-md text-paper-200 hover:bg-white/5" aria-label="Menu">
+          <summary class="p-2 rounded-md text-ink-800 hover:bg-ink-950/5" aria-label="Menu">
             <svg class="nav-open-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
             <svg class="nav-close-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
           </summary>
-          <div class="absolute right-0 top-12 w-56 rounded-xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/60 p-2 text-sm">
-            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Agents</a>
-            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-paper-50 bg-white/5">Pricing</a>
-            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Docs</a>
-            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">About</a>
-            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">GitHub</a>
+          <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
+            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Features</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Agents</a>
+            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Pricing</a>
+            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
+            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
+            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">GitHub</a>
           </div>
         </details>
       </div>
@@ -170,7 +170,7 @@
       <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 sm:pt-24 pb-12 sm:pb-16 text-center">
         <p class="kicker">Pricing</p>
         <h1 class="display mt-3 text-4xl sm:text-5xl lg:text-6xl mx-auto max-w-3xl">One line, and it doesn't move.</h1>
-        <p class="mt-5 text-lg text-paper-400 max-w-2xl mx-auto leading-relaxed">
+        <p class="mt-5 text-lg text-ink-600 max-w-2xl mx-auto leading-relaxed">
           A human driving mimux is free, forever. A machine driving mimux — the API, the
           MCP server, webhooks — is paid. Nothing ever crosses from the free side to the
           paid side.
@@ -182,10 +182,10 @@
     <section aria-label="Plans" class="mx-auto max-w-6xl px-5 lg:px-8 pb-16 sm:pb-24">
       <div class="grid md:grid-cols-3 gap-5 items-stretch">
         <div class="card p-7 flex flex-col" data-reveal>
-          <h2 class="font-display font-semibold text-paper-50">The client</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-paper-50">€0</p>
-          <p class="mt-1 font-mono text-xs text-paper-500">forever · AGPL-3.0</p>
-          <ul class="mt-6 space-y-2.5 text-sm text-paper-400 flex-1">
+          <h2 class="font-display font-semibold text-ink-950">The client</h2>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€0</p>
+          <p class="mt-1 font-mono text-xs text-ink-500">forever · AGPL-3.0</p>
+          <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>The complete mail client</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Unlimited accounts &amp; devices</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Sync, search, compose, filters</li>
@@ -196,12 +196,12 @@
           <a href="https://github.com/mattmezza/mimux" class="btn btn-secondary mt-7 w-full">Get the client</a>
         </div>
 
-        <div class="card p-7 flex flex-col border-accent-500/50 relative" data-reveal data-reveal="70">
-          <span class="absolute -top-3 left-6 font-mono text-[10px] uppercase tracking-wider bg-accent-600 text-white rounded-full px-2.5 py-1">most popular</span>
-          <h2 class="font-display font-semibold text-paper-50">Pro — annual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-paper-50">€49<span class="text-lg text-paper-500 font-normal">/year</span></p>
-          <p class="mt-1 font-mono text-xs text-paper-500">per instance · ELv2 · cancel anytime</p>
-          <ul class="mt-6 space-y-2.5 text-sm text-paper-400 flex-1">
+        <div class="stamp-card p-7 pt-9 pb-9 flex flex-col relative" data-reveal data-reveal="70">
+          <span class="absolute -top-4 left-6 rubber !text-[10px] !px-2 !py-1 bg-paper-50 z-10">most popular</span>
+          <h2 class="font-display font-semibold text-ink-950">Pro — annual</h2>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€49<span class="text-lg text-ink-500 font-normal">/year</span></p>
+          <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · cancel anytime</p>
+          <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in the client</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>REST API with OpenAPI spec</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>MCP server for AI agents</li>
@@ -212,11 +212,11 @@
           <a href="https://account.mimux.dev" class="btn btn-primary mt-7 w-full">Buy annual</a>
         </div>
 
-        <div class="card p-7 flex flex-col" data-reveal data-reveal="140">
-          <h2 class="font-display font-semibold text-paper-50">Pro — perpetual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-paper-50">€99<span class="text-lg text-paper-500 font-normal"> once</span></p>
-          <p class="mt-1 font-mono text-xs text-paper-500">per instance · ELv2 · yours forever</p>
-          <ul class="mt-6 space-y-2.5 text-sm text-paper-400 flex-1">
+        <div class="stamp-card p-7 pt-9 pb-9 flex flex-col" data-reveal data-reveal="140">
+          <h2 class="font-display font-semibold text-ink-950">Pro — perpetual</h2>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€99<span class="text-lg text-ink-500 font-normal"> once</span></p>
+          <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · yours forever</p>
+          <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in Pro annual</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>One payment, no subscription</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Covers all builds released within a year of purchase</li>
@@ -226,14 +226,14 @@
         </div>
       </div>
 
-      <p class="mt-8 text-center font-mono text-xs text-paper-500 max-w-2xl mx-auto" data-reveal>
+      <p class="mt-8 text-center font-mono text-xs text-ink-500 max-w-2xl mx-auto" data-reveal>
         14-day free trial of pro, no key, no card · 14-day money-back guarantee ·
-        payments by Stripe at <a href="https://account.mimux.dev" class="text-accent-300 hover:text-accent-200 underline underline-offset-4">account.mimux.dev</a>
+        payments by Stripe at <a href="https://account.mimux.dev" class="text-accent-600 hover:text-accent-700 underline underline-offset-4">account.mimux.dev</a>
       </p>
     </section>
 
     <!-- ================================ How the licence behaves ================================ -->
-    <section aria-labelledby="licence-h" class="border-t border-white/5 bg-ink-900/40">
+    <section aria-labelledby="licence-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">The licence, honestly</p>
@@ -241,32 +241,32 @@
         </div>
         <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-x-8 gap-y-10 text-sm leading-relaxed">
           <div data-reveal>
-            <p class="font-mono text-xs text-accent-300 uppercase tracking-wider">Verification</p>
-            <p class="mt-2 text-paper-400">Offline Ed25519 signature check, built into the binary. No activation server, no fingerprint, no phone-home. Check it: <code class="font-mono text-xs text-paper-200">mimux licence status</code>.</p>
+            <p class="font-mono text-xs text-accent-600 uppercase tracking-wider">Verification</p>
+            <p class="mt-2 text-ink-600">Offline Ed25519 signature check, built into the binary. No activation server, no fingerprint, no phone-home. Check it: <code class="font-mono text-xs text-ink-800">mimux licence status</code>.</p>
           </div>
           <div data-reveal data-reveal="60">
-            <p class="font-mono text-xs text-accent-300 uppercase tracking-wider">Expiry</p>
-            <p class="mt-2 text-paper-400">Annual lapsed? 14 days of grace with warnings, then only the automation layer stops. Your mail client never does — that's a design guarantee, not a promise.</p>
+            <p class="font-mono text-xs text-accent-600 uppercase tracking-wider">Expiry</p>
+            <p class="mt-2 text-ink-600">Annual lapsed? 14 days of grace with warnings, then only the automation layer stops. Your mail client never does — that's a design guarantee, not a promise.</p>
           </div>
           <div data-reveal data-reveal="120">
-            <p class="font-mono text-xs text-accent-300 uppercase tracking-wider">Source</p>
-            <p class="mt-2 text-paper-400">The pro code is in the public repo under ELv2 — read every line before paying. <code class="font-mono text-xs text-paper-200">make verify-free</code> proves the free build links none of it.</p>
+            <p class="font-mono text-xs text-accent-600 uppercase tracking-wider">Source</p>
+            <p class="mt-2 text-ink-600">The pro code is in the public repo under ELv2 — read every line before paying. <code class="font-mono text-xs text-ink-800">make verify-free</code> proves the free build links none of it.</p>
           </div>
           <div data-reveal data-reveal="180">
-            <p class="font-mono text-xs text-accent-300 uppercase tracking-wider">Scope</p>
-            <p class="mt-2 text-paper-400">Per instance, flat. Unlimited mail accounts, unlimited agents, unlimited requests. Two servers, two licences — that's the whole model.</p>
+            <p class="font-mono text-xs text-accent-600 uppercase tracking-wider">Scope</p>
+            <p class="mt-2 text-ink-600">Per instance, flat. Unlimited mail accounts, unlimited agents, unlimited requests. Two servers, two licences — that's the whole model.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ================================ Compare ================================ -->
-    <section aria-labelledby="compare-h" class="border-t border-white/5">
+    <section aria-labelledby="compare-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">The alternative</p>
           <h2 id="compare-h" class="display mt-3 text-3xl sm:text-4xl">Hosted email APIs exist. So does the catch.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Email API services are excellent products — for companies connecting thousands
             of customer mailboxes. For one person's inbox, the trade looks different:
           </p>
@@ -274,18 +274,18 @@
         <div class="mt-10 overflow-x-auto" data-reveal>
           <table class="w-full max-w-3xl text-sm border-collapse">
             <thead>
-              <tr class="text-left font-mono text-xs uppercase tracking-wider text-paper-500">
+              <tr class="text-left font-mono text-xs uppercase tracking-wider text-ink-500">
                 <th class="py-3 pr-4 font-medium"></th>
-                <th class="py-3 pr-4 font-medium text-paper-50">mimux pro</th>
+                <th class="py-3 pr-4 font-medium text-ink-950">mimux pro</th>
                 <th class="py-3 font-medium">Hosted email API</th>
               </tr>
             </thead>
-            <tbody class="text-paper-400">
-              <tr class="border-t border-white/5"><td class="py-3 pr-4 text-paper-200">Where your mail lives</td><td class="py-3 pr-4">Your server, full stop</td><td class="py-3">Synced into a vendor's cloud</td></tr>
-              <tr class="border-t border-white/5"><td class="py-3 pr-4 text-paper-200">Pricing model</td><td class="py-3 pr-4">Flat, per instance</td><td class="py-3">Per mailbox, per month</td></tr>
-              <tr class="border-t border-white/5"><td class="py-3 pr-4 text-paper-200">Works offline / on a LAN</td><td class="py-3 pr-4">Yes</td><td class="py-3">No</td></tr>
-              <tr class="border-t border-white/5"><td class="py-3 pr-4 text-paper-200">A mail client included</td><td class="py-3 pr-4">Yes — it's the core</td><td class="py-3">No</td></tr>
-              <tr class="border-t border-white/5"><td class="py-3 pr-4 text-paper-200">If the vendor disappears</td><td class="py-3 pr-4">Everything keeps running</td><td class="py-3">The API goes with them</td></tr>
+            <tbody class="text-ink-600">
+              <tr class="border-t border-ink-950/15"><td class="py-3 pr-4 text-ink-800">Where your mail lives</td><td class="py-3 pr-4">Your server, full stop</td><td class="py-3">Synced into a vendor's cloud</td></tr>
+              <tr class="border-t border-ink-950/15"><td class="py-3 pr-4 text-ink-800">Pricing model</td><td class="py-3 pr-4">Flat, per instance</td><td class="py-3">Per mailbox, per month</td></tr>
+              <tr class="border-t border-ink-950/15"><td class="py-3 pr-4 text-ink-800">Works offline / on a LAN</td><td class="py-3 pr-4">Yes</td><td class="py-3">No</td></tr>
+              <tr class="border-t border-ink-950/15"><td class="py-3 pr-4 text-ink-800">A mail client included</td><td class="py-3 pr-4">Yes — it's the core</td><td class="py-3">No</td></tr>
+              <tr class="border-t border-ink-950/15"><td class="py-3 pr-4 text-ink-800">If the vendor disappears</td><td class="py-3 pr-4">Everything keeps running</td><td class="py-3">The API goes with them</td></tr>
             </tbody>
           </table>
         </div>
@@ -293,7 +293,7 @@
     </section>
 
     <!-- ================================ FAQ ================================ -->
-    <section id="faq" aria-labelledby="faq-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="faq" aria-labelledby="faq-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-3xl px-5 lg:px-8 py-16 sm:py-24">
         <div data-reveal>
           <p class="kicker">FAQ</p>
@@ -341,12 +341,12 @@
     </section>
 
     <!-- ================================ CTA ================================ -->
-    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-white/5">
+    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-ink-950/15">
       <div aria-hidden="true" class="absolute inset-0 -z-10"
-           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.2 277 / 0.16), transparent 70%)"></div>
+           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.19 32 / 0.07), transparent 70%)"></div>
       <div class="mx-auto max-w-3xl px-5 lg:px-8 py-24 sm:py-28 text-center">
         <h2 id="cta-h" class="display text-3xl sm:text-4xl" data-reveal>Try the whole thing first.</h2>
-        <p class="mt-5 text-paper-400 max-w-xl mx-auto" data-reveal data-reveal="60">
+        <p class="mt-5 text-ink-600 max-w-xl mx-auto" data-reveal data-reveal="60">
           Install mimux free, flip on the pro trial, and decide in two weeks with your own
           mail on your own hardware.
         </p>
@@ -359,50 +359,50 @@
   </main>
 
   <!-- ================================ Footer ================================ -->
-  <footer class="relative border-t border-white/5 overflow-hidden">
+  <footer class="relative border-t border-ink-950/15 overflow-hidden">
     <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 pb-8">
       <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-4 text-sm">
         <div>
           <p class="flex items-center gap-2.5">
             <img src="/favicon.svg" alt="" width="22" height="22" class="rounded">
-            <span class="font-display font-bold text-paper-50">mimux</span>
+            <span class="font-display font-bold text-ink-950">mimux</span>
           </p>
-          <p class="mt-4 text-paper-500 leading-relaxed">
+          <p class="mt-4 text-ink-500 leading-relaxed">
             The self-hosted inbox your agents can act on.
           </p>
-          <p class="mt-4 font-mono text-xs text-paper-500 leading-relaxed">
+          <p class="mt-4 font-mono text-xs text-ink-500 leading-relaxed">
             Merola Software &amp; Services<br>
             Wartauweg 19, 8049 Zurich<br>
             Switzerland
           </p>
         </div>
         <nav aria-label="Product">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Product</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/agents/">Agents &amp; API</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/pricing/">Pricing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
           </ul>
         </nav>
         <nav aria-label="Project">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Project</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/about/">About</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Project</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/about/">About</a></li>
           </ul>
         </nav>
         <nav aria-label="Legal">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Legal</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/privacy/">Privacy</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/terms/">Terms</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/security/">Security</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/legal/">Imprint</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Legal</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/privacy/">Privacy</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/terms/">Terms</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/security/">Security</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/legal/">Imprint</a></li>
           </ul>
         </nav>
       </div>
@@ -410,9 +410,9 @@
       <p aria-hidden="true" class="footer-mark mt-12 -mb-4 sm:-mb-8 text-center">mimux</p>
 
       <div class="rule-fade"></div>
-      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-paper-500">
+      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-ink-500">
         <p>© 2026 Merola Software &amp; Services. mimux is a trademark of Matteo Merola.</p>
-        <p>No cookies on this site — <a class="hover:text-paper-200 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
+        <p>No cookies on this site — <a class="hover:text-ink-800 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
       </div>
     </div>
   </footer>

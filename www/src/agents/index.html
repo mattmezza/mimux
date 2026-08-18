@@ -18,13 +18,13 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A glowing indigo envelope glyph on a dark background — the mimux mark.">
+  <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Email for AI agents — MCP server, REST API &amp; webhooks — mimux">
   <meta name="twitter:description" content="Give your AI agents a mailbox on your own hardware: MCP server, REST API and signed webhooks over your self-hosted inbox.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
-  <meta name="theme-color" content="#0b0b11">
+  <meta name="theme-color" content="#f6f1e7">
 
   <link rel="icon" href="/img/favicon.ico" sizes="any">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/sg-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -58,7 +58,7 @@
   }
   </script>
 </head>
-<body class="bg-ink-950 text-paper-200 font-sans antialiased">
+<body class="bg-paper-50 text-ink-700 font-sans antialiased">
 
   <a href="#main-content"
      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-accent-600 focus:text-white focus:rounded-md focus:font-mono focus:text-sm">
@@ -66,24 +66,24 @@
   </a>
 
   <!-- ================================ Header ================================ -->
-  <header class="sticky top-0 z-40 border-b border-white/5 bg-ink-950/85 backdrop-blur-md">
+  <header class="sticky top-0 z-40 border-b border-ink-950/15 bg-paper-50/90 backdrop-blur-md">
     <nav aria-label="Main" class="mx-auto max-w-6xl px-5 lg:px-8 h-16 flex items-center justify-between gap-4">
       <a href="/" class="flex items-center gap-2.5" aria-label="mimux home">
         <img src="/favicon.svg" alt="" width="26" height="26" class="rounded-md">
-        <span class="font-display font-bold text-paper-50 text-lg tracking-tight">mimux</span>
+        <span class="font-display font-bold text-ink-950 text-lg tracking-tight">mimux</span>
       </a>
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
-        <li><a href="/features/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Features</a></li>
-        <li><a href="/agents/" aria-current="page" class="px-3 py-2 rounded-md text-paper-50">Agents</a></li>
-        <li><a href="/pricing/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Pricing</a></li>
-        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Docs</a></li>
-        <li><a href="/about/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">About</a></li>
+        <li><a href="/features/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Features</a></li>
+        <li><a href="/agents/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Agents</a></li>
+        <li><a href="/pricing/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Pricing</a></li>
+        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
+        <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
       </ul>
 
       <div class="flex items-center gap-2.5">
         <a href="https://github.com/mattmezza/mimux" aria-label="mimux on GitHub"
-           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-paper-400 hover:text-paper-50 transition-colors">
+           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-ink-600 hover:text-ink-950 transition-colors">
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
           GitHub
         </a>
@@ -91,17 +91,17 @@
 
         <!-- Mobile menu -->
         <details class="nav-toggle md:hidden relative">
-          <summary class="p-2 rounded-md text-paper-200 hover:bg-white/5" aria-label="Menu">
+          <summary class="p-2 rounded-md text-ink-800 hover:bg-ink-950/5" aria-label="Menu">
             <svg class="nav-open-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
             <svg class="nav-close-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
           </summary>
-          <div class="absolute right-0 top-12 w-56 rounded-xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/60 p-2 text-sm">
-            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-paper-50 bg-white/5">Agents</a>
-            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Pricing</a>
-            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Docs</a>
-            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">About</a>
-            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">GitHub</a>
+          <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
+            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Features</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Agents</a>
+            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Pricing</a>
+            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
+            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
+            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">GitHub</a>
           </div>
         </details>
       </div>
@@ -116,7 +116,7 @@
       <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 sm:pt-24 pb-14 sm:pb-20">
         <p class="kicker">mimux pro</p>
         <h1 class="display mt-3 text-4xl sm:text-5xl lg:text-6xl max-w-3xl">Give your agents an inbox.</h1>
-        <p class="mt-5 text-lg text-paper-400 max-w-2xl leading-relaxed">
+        <p class="mt-5 text-lg text-ink-600 max-w-2xl leading-relaxed">
           Your agents can search the web and run code. They still can't read your mail —
           unless you hand your inbox to a SaaS intermediary. mimux pro closes that gap on
           hardware you own: a REST API, an MCP server and signed webhooks over the
@@ -126,25 +126,25 @@
           <a href="/pricing/" class="btn btn-primary">Start the 14-day trial</a>
           <a href="https://docs.mimux.dev" class="btn btn-secondary">API reference</a>
         </div>
-        <p class="mt-6 font-mono text-xs text-paper-500">
+        <p class="mt-6 font-mono text-xs text-ink-500">
           No key needed for the trial — a pro build runs free for 14 days from first boot.
         </p>
       </div>
     </section>
 
     <!-- ================================ MCP ================================ -->
-    <section id="mcp" aria-labelledby="mcp-h" class="border-t border-white/5">
+    <section id="mcp" aria-labelledby="mcp-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <div data-reveal>
           <p class="kicker">MCP server</p>
           <h2 id="mcp-h" class="display mt-3 text-3xl sm:text-4xl">Your inbox, as a first-class tool.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
-            mimux serves MCP over streamable HTTP at <code class="font-mono text-sm text-accent-300">/api/mcp</code>
+          <p class="mt-4 text-ink-600 leading-relaxed">
+            mimux serves MCP over streamable HTTP at <code class="font-mono text-sm text-accent-600">/api/mcp</code>
             — plus a stdio bridge for clients that want one. Point Claude, or any
             MCP-capable client, at your instance and the mailbox becomes a set of tools:
             search, read, move, label, draft.
           </p>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             The tools an agent sees are filtered by its token's scopes — a read-only token
             never even shows the agent a write tool.
           </p>
@@ -152,7 +152,7 @@
         <figure class="panel" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>mcp.json</span>
             <button type="button" data-copy='{"mcpServers":{"mimux":{"url":"https://mail.example.com/api/mcp","headers":{"Authorization":"Bearer mx_your_token"}}}}'
-                    class="font-mono text-[11px] text-paper-400 hover:text-paper-50 transition-colors cursor-pointer">copy</button>
+                    class="font-mono text-[11px] text-ink-600 hover:text-ink-950 transition-colors cursor-pointer">copy</button>
           </figcaption>
           <pre class="code"><code>{
   <span class="k">"mcpServers"</span>: {
@@ -169,12 +169,12 @@
     </section>
 
     <!-- ================================ REST ================================ -->
-    <section id="api" aria-labelledby="api-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="api" aria-labelledby="api-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <figure class="panel order-last lg:order-first" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>terminal</span>
             <button type="button" data-copy='curl -H "Authorization: Bearer mx_your_token" https://mail.example.com/api/v1/messages?q=is:unread'
-                    class="font-mono text-[11px] text-paper-400 hover:text-paper-50 transition-colors cursor-pointer">copy</button>
+                    class="font-mono text-[11px] text-ink-600 hover:text-ink-950 transition-colors cursor-pointer">copy</button>
           </figcaption>
           <pre class="code"><code><span class="c"># everything the client can do, over plain HTTP</span>
 <span class="p">$</span> <span class="w">curl -H</span> <span class="s">"Authorization: Bearer mx_your_token"</span> <span class="w">\</span>
@@ -186,14 +186,14 @@
         <div data-reveal>
           <p class="kicker">REST API</p>
           <h2 id="api-h" class="display mt-3 text-3xl sm:text-4xl">Plain HTTP over your whole mailbox.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Messages, folders, search, drafts, send and filters — everything the client
             does, scriptable. The OpenAPI spec is served from the binary itself at
-            <code class="font-mono text-sm text-accent-300">/api/v1/openapi.json</code> and rendered at
+            <code class="font-mono text-sm text-accent-600">/api/v1/openapi.json</code> and rendered at
             <a href="https://docs.mimux.dev" class="link">docs.mimux.dev</a>, so the docs
             can never drift from the build you run.
           </p>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             cron jobs, n8n flows, a Raspberry Pi that prints your morning mail — if it
             speaks HTTP, it now speaks to your inbox.
           </p>
@@ -202,12 +202,12 @@
     </section>
 
     <!-- ================================ Webhooks ================================ -->
-    <section id="webhooks" aria-labelledby="webhooks-h" class="border-t border-white/5">
+    <section id="webhooks" aria-labelledby="webhooks-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <div data-reveal>
           <p class="kicker">Webhooks</p>
           <h2 id="webhooks-h" class="display mt-3 text-3xl sm:text-4xl">Push, when mail arrives.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             New mail and rule matches, pushed to whatever automation you run — n8n, Home
             Assistant, your own scripts. Payloads are signed so your endpoint can verify
             the sender, deliveries retry with backoff, and a delivery log shows exactly
@@ -216,12 +216,12 @@
         </div>
         <figure class="panel" data-reveal data-reveal="100">
           <figcaption class="panel-bar"><span>delivery log</span><span>endpoint: n8n.local</span></figcaption>
-          <ul class="text-sm font-mono divide-y divide-white/5">
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-paper-200">message.received · #8271</span><span class="text-[11px] text-ok-400 shrink-0">200 · 84ms</span></li>
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-paper-200">rule.matched · invoices</span><span class="text-[11px] text-ok-400 shrink-0">200 · 61ms</span></li>
-            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-paper-400">message.received · #8270</span><span class="text-[11px] text-paper-500 shrink-0">retry 2 · 503</span></li>
+          <ul class="text-sm font-mono divide-y divide-ink-950/10">
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-800">message.received · #8271</span><span class="text-[11px] text-ok-400 shrink-0">200 · 84ms</span></li>
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-800">rule.matched · invoices</span><span class="text-[11px] text-ok-400 shrink-0">200 · 61ms</span></li>
+            <li class="flex items-center justify-between gap-3 px-4 py-3"><span class="truncate text-ink-600">message.received · #8270</span><span class="text-[11px] text-ink-500 shrink-0">retry 2 · 503</span></li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">
+          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">
             signed · X-Mimux-Signature · retries with backoff
           </div>
         </figure>
@@ -229,39 +229,39 @@
     </section>
 
     <!-- ================================ Guardrails ================================ -->
-    <section id="guardrails" aria-labelledby="guardrails-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="guardrails" aria-labelledby="guardrails-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">Guardrails</p>
           <h2 id="guardrails-h" class="display mt-3 text-3xl sm:text-4xl">Safe by architecture, not by prompt.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             An agent with your inbox deserves more caution than a system prompt asking it
             nicely. The guardrails in mimux are structural:
           </p>
         </div>
         <div class="mt-10 grid sm:grid-cols-2 gap-x-10 gap-y-10 text-sm leading-relaxed">
           <div class="border-l-2 border-accent-500/40 pl-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50 text-base">Sending is a two-step operation</h3>
-            <p class="mt-2 text-paper-400">Agents create drafts. Actually sending is a separate, explicit call — so a prompt-injected "forward all mail to attacker@evil" dies as a draft you never approve. No tool description can merge the two steps.</p>
+            <h3 class="font-display font-semibold text-ink-950 text-base">Sending is a two-step operation</h3>
+            <p class="mt-2 text-ink-600">Agents create drafts. Actually sending is a separate, explicit call — so a prompt-injected "forward all mail to attacker@evil" dies as a draft you never approve. No tool description can merge the two steps.</p>
           </div>
           <div class="border-l-2 border-accent-500/40 pl-6" data-reveal data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50 text-base">Tokens carry scopes</h3>
-            <p class="mt-2 text-paper-400">Mint a read-only token for the summariser, a draft-capable one for the assistant, and revoke either in one click from Settings → API. Scope-filtered tools mean an agent can't even see what it can't do.</p>
+            <h3 class="font-display font-semibold text-ink-950 text-base">Tokens carry scopes</h3>
+            <p class="mt-2 text-ink-600">Mint a read-only token for the summariser, a draft-capable one for the assistant, and revoke either in one click from Settings → API. Scope-filtered tools mean an agent can't even see what it can't do.</p>
           </div>
           <div class="border-l-2 border-accent-500/40 pl-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50 text-base">Your mail never leaves</h3>
-            <p class="mt-2 text-paper-400">The API runs on your server, next to your mail. There's no vendor cloud caching your messages to make the API fast — the API is fast because it's local.</p>
+            <h3 class="font-display font-semibold text-ink-950 text-base">Your mail never leaves</h3>
+            <p class="mt-2 text-ink-600">The API runs on your server, next to your mail. There's no vendor cloud caching your messages to make the API fast — the API is fast because it's local.</p>
           </div>
           <div class="border-l-2 border-accent-500/40 pl-6" data-reveal data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50 text-base">Licensing can't brick your mail</h3>
-            <p class="mt-2 text-paper-400">Licence checks are offline Ed25519 signature verification — no activation server, no phone-home. And if a licence lapses, only the automation layer stops. The mail client keeps working, always.</p>
+            <h3 class="font-display font-semibold text-ink-950 text-base">Licensing can't brick your mail</h3>
+            <p class="mt-2 text-ink-600">Licence checks are offline Ed25519 signature verification — no activation server, no phone-home. And if a licence lapses, only the automation layer stops. The mail client keeps working, always.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ================================ Use cases ================================ -->
-    <section id="uses" aria-labelledby="uses-h" class="border-t border-white/5">
+    <section id="uses" aria-labelledby="uses-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">What people build</p>
@@ -269,36 +269,36 @@
         </div>
         <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <div class="card card-hover p-6" data-reveal>
-            <p class="font-mono text-xs text-accent-300">triage</p>
-            <h3 class="mt-2 font-display font-semibold text-paper-50">Morning inbox agent</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Files invoices, archives newsletters, stars anything from a real human, drafts the two replies that matter — before you sit down.</p>
+            <p class="font-mono text-xs text-accent-600">triage</p>
+            <h3 class="mt-2 font-display font-semibold text-ink-950">Morning inbox agent</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">Files invoices, archives newsletters, stars anything from a real human, drafts the two replies that matter — before you sit down.</p>
           </div>
           <div class="card card-hover p-6" data-reveal data-reveal="60">
-            <p class="font-mono text-xs text-accent-300">digest</p>
-            <h3 class="mt-2 font-display font-semibold text-paper-50">Daily brief to ntfy</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">A cron hits the API, an LLM summarises what arrived overnight, and the digest lands on your phone with the rest of your homelab alerts.</p>
+            <p class="font-mono text-xs text-accent-600">digest</p>
+            <h3 class="mt-2 font-display font-semibold text-ink-950">Daily brief to ntfy</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">A cron hits the API, an LLM summarises what arrived overnight, and the digest lands on your phone with the rest of your homelab alerts.</p>
           </div>
           <div class="card card-hover p-6" data-reveal data-reveal="120">
-            <p class="font-mono text-xs text-accent-300">automation</p>
-            <h3 class="mt-2 font-display font-semibold text-paper-50">Webhook → n8n → anywhere</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Order confirmations into a spreadsheet, support requests into a ticket queue, alerts into Home Assistant scenes. Mail becomes an event source.</p>
+            <p class="font-mono text-xs text-accent-600">automation</p>
+            <h3 class="mt-2 font-display font-semibold text-ink-950">Webhook → n8n → anywhere</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">Order confirmations into a spreadsheet, support requests into a ticket queue, alerts into Home Assistant scenes. Mail becomes an event source.</p>
           </div>
           <div class="card card-hover p-6" data-reveal data-reveal="180">
-            <p class="font-mono text-xs text-accent-300">search</p>
-            <h3 class="mt-2 font-display font-semibold text-paper-50">Ask your archive</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">"What did the landlord say about the deposit?" — an agent with search and read tools answers from your own mail, on your own machine.</p>
+            <p class="font-mono text-xs text-accent-600">search</p>
+            <h3 class="mt-2 font-display font-semibold text-ink-950">Ask your archive</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">"What did the landlord say about the deposit?" — an agent with search and read tools answers from your own mail, on your own machine.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ================================ CTA ================================ -->
-    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-white/5">
+    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-ink-950/15">
       <div aria-hidden="true" class="absolute inset-0 -z-10"
-           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.2 277 / 0.16), transparent 70%)"></div>
+           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.19 32 / 0.07), transparent 70%)"></div>
       <div class="mx-auto max-w-3xl px-5 lg:px-8 py-24 sm:py-28 text-center">
         <h2 id="cta-h" class="display text-3xl sm:text-4xl" data-reveal>Fourteen days, no key, no card.</h2>
-        <p class="mt-5 text-paper-400 max-w-xl mx-auto" data-reveal data-reveal="60">
+        <p class="mt-5 text-ink-600 max-w-xl mx-auto" data-reveal data-reveal="60">
           Run a pro build and the whole automation layer is on from first boot. Keep it
           for €49 a year — or €99 once, forever.
         </p>
@@ -311,50 +311,50 @@
   </main>
 
   <!-- ================================ Footer ================================ -->
-  <footer class="relative border-t border-white/5 overflow-hidden">
+  <footer class="relative border-t border-ink-950/15 overflow-hidden">
     <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 pb-8">
       <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-4 text-sm">
         <div>
           <p class="flex items-center gap-2.5">
             <img src="/favicon.svg" alt="" width="22" height="22" class="rounded">
-            <span class="font-display font-bold text-paper-50">mimux</span>
+            <span class="font-display font-bold text-ink-950">mimux</span>
           </p>
-          <p class="mt-4 text-paper-500 leading-relaxed">
+          <p class="mt-4 text-ink-500 leading-relaxed">
             The self-hosted inbox your agents can act on.
           </p>
-          <p class="mt-4 font-mono text-xs text-paper-500 leading-relaxed">
+          <p class="mt-4 font-mono text-xs text-ink-500 leading-relaxed">
             Merola Software &amp; Services<br>
             Wartauweg 19, 8049 Zurich<br>
             Switzerland
           </p>
         </div>
         <nav aria-label="Product">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Product</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/agents/">Agents &amp; API</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/pricing/">Pricing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
           </ul>
         </nav>
         <nav aria-label="Project">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Project</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/about/">About</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Project</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/about/">About</a></li>
           </ul>
         </nav>
         <nav aria-label="Legal">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Legal</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/privacy/">Privacy</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/terms/">Terms</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/security/">Security</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/legal/">Imprint</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Legal</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/privacy/">Privacy</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/terms/">Terms</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/security/">Security</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/legal/">Imprint</a></li>
           </ul>
         </nav>
       </div>
@@ -362,9 +362,9 @@
       <p aria-hidden="true" class="footer-mark mt-12 -mb-4 sm:-mb-8 text-center">mimux</p>
 
       <div class="rule-fade"></div>
-      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-paper-500">
+      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-ink-500">
         <p>© 2026 Merola Software &amp; Services. mimux is a trademark of Matteo Merola.</p>
-        <p>No cookies on this site — <a class="hover:text-paper-200 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
+        <p>No cookies on this site — <a class="hover:text-ink-800 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
       </div>
     </div>
   </footer>

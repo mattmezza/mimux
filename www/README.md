@@ -15,7 +15,7 @@ www/
     404.html            # Cloudflare Pages not-found page
     app.css             # Tailwind v4 entry: @theme tokens + components
     js/site.js          # progressive enhancement: reveal, copy, mobile nav
-    fonts/              # self-hosted Inter + Space Grotesk + JetBrains Mono (OFL)
+    fonts/              # self-hosted Inter + Instrument Serif + JetBrains Mono (OFL)
     img/                # icons, og.png (see ASSETS.md)
     assets/             # raw generator output — source material, NOT shipped
     favicon.svg, site.webmanifest, robots.txt, sitemap.xml
@@ -65,30 +65,18 @@ Cloudflare Pages via `.github/workflows/www.yml`:
 Secrets needed in GitHub: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 Pages project name: `mimux-www`.
 
-## Swapping the screenshot placeholders
+## Real screenshots / demo video
 
-Four slots in `index.html`, each marked with an HTML comment:
-
-- `SCREENSHOT-PLACEHOLDER: unified-inbox|reading-pane|compose` — three dashed
-  frames in `#screenshots`. Replace each `<figure class="shot-frame">` with:
-
-  ```html
-  <img src="/img/shots/unified-inbox.webp" alt="The mimux unified inbox, three accounts merged into one message list"
-       width="1600" height="1000" loading="lazy">
-  ```
-
-  Capture at 1600×1000, export WebP (quality ~80) into `www/src/img/shots/`,
-  keep explicit `width`/`height` and `loading="lazy"`.
-
-- `DEMO-GIF-PLACEHOLDER: agent-triage` — the 30-second agent demo. Replace the
-  frame with a `<video>` (muted, loop, playsinline, poster) or an `<img>` GIF
-  ≤1200×750. Keep it under ~2MB.
+The pages currently use hand-built HTML product panels (`.panel`), not
+captures. When real screenshots or the 30-second agent-triage demo exist, add
+them as `<img>`/`<video>` inside a `.panel` figure (WebP ~80 quality into
+`www/src/img/shots/`, explicit `width`/`height`, `loading="lazy"`).
 
 ## Analytics
 
 One external request: Umami at `analytics.casa.merola.co` (self-hosted,
 cookieless, DNT honoured, `data-domains` restricted to mimux.dev). The website
-ID is hardcoded in `index.html` — search for `WEBSITE_ID` and replace it with
+ID is hardcoded in every page — `grep -rl WEBSITE_ID src` and replace it with
 the UUID from the Umami dashboard before first deploy. The footer copy claims
 "exactly one external request" — keep that true.
 

@@ -18,13 +18,13 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A glowing indigo envelope glyph on a dark background — the mimux mark.">
+  <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Features — mimux, the self-hosted email client">
   <meta name="twitter:description" content="Unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push. Free and AGPL-3.0.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
-  <meta name="theme-color" content="#0b0b11">
+  <meta name="theme-color" content="#f6f1e7">
 
   <link rel="icon" href="/img/favicon.ico" sizes="any">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
@@ -32,7 +32,7 @@
   <link rel="manifest" href="/site.webmanifest">
 
   <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/sg-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/instrument-serif.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/jbm-400.woff2" as="font" type="font/woff2" crossorigin>
   <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
        page has zero render-blocking requests. -->
@@ -58,7 +58,7 @@
   }
   </script>
 </head>
-<body class="bg-ink-950 text-paper-200 font-sans antialiased">
+<body class="bg-paper-50 text-ink-700 font-sans antialiased">
 
   <a href="#main-content"
      class="sr-only focus:not-sr-only focus:fixed focus:top-3 focus:left-3 focus:z-50 focus:px-4 focus:py-2 focus:bg-accent-600 focus:text-white focus:rounded-md focus:font-mono focus:text-sm">
@@ -66,24 +66,24 @@
   </a>
 
   <!-- ================================ Header ================================ -->
-  <header class="sticky top-0 z-40 border-b border-white/5 bg-ink-950/85 backdrop-blur-md">
+  <header class="sticky top-0 z-40 border-b border-ink-950/15 bg-paper-50/90 backdrop-blur-md">
     <nav aria-label="Main" class="mx-auto max-w-6xl px-5 lg:px-8 h-16 flex items-center justify-between gap-4">
       <a href="/" class="flex items-center gap-2.5" aria-label="mimux home">
         <img src="/favicon.svg" alt="" width="26" height="26" class="rounded-md">
-        <span class="font-display font-bold text-paper-50 text-lg tracking-tight">mimux</span>
+        <span class="font-display font-bold text-ink-950 text-lg tracking-tight">mimux</span>
       </a>
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
-        <li><a href="/features/" aria-current="page" class="px-3 py-2 rounded-md text-paper-50">Features</a></li>
-        <li><a href="/agents/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Agents</a></li>
-        <li><a href="/pricing/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Pricing</a></li>
-        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Docs</a></li>
-        <li><a href="/about/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">About</a></li>
+        <li><a href="/features/" aria-current="page" class="px-3 py-2 rounded-md text-ink-950">Features</a></li>
+        <li><a href="/agents/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Agents</a></li>
+        <li><a href="/pricing/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Pricing</a></li>
+        <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">Docs</a></li>
+        <li><a href="/about/" class="px-3 py-2 rounded-md text-ink-600 hover:text-ink-950 transition-colors">About</a></li>
       </ul>
 
       <div class="flex items-center gap-2.5">
         <a href="https://github.com/mattmezza/mimux" aria-label="mimux on GitHub"
-           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-paper-400 hover:text-paper-50 transition-colors">
+           class="hidden sm:inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-sm text-ink-600 hover:text-ink-950 transition-colors">
           <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 2-.27c.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
           GitHub
         </a>
@@ -91,17 +91,17 @@
 
         <!-- Mobile menu -->
         <details class="nav-toggle md:hidden relative">
-          <summary class="p-2 rounded-md text-paper-200 hover:bg-white/5" aria-label="Menu">
+          <summary class="p-2 rounded-md text-ink-800 hover:bg-ink-950/5" aria-label="Menu">
             <svg class="nav-open-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg>
             <svg class="nav-close-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
           </summary>
-          <div class="absolute right-0 top-12 w-56 rounded-xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/60 p-2 text-sm">
-            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-paper-50 bg-white/5">Features</a>
-            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Agents</a>
-            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Pricing</a>
-            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Docs</a>
-            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">About</a>
-            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">GitHub</a>
+          <div class="absolute right-0 top-12 w-56 rounded-xl border border-ink-950/20 bg-card shadow-2xl shadow-ink-950/15 p-2 text-sm">
+            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-ink-950 bg-ink-950/5">Features</a>
+            <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Agents</a>
+            <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Pricing</a>
+            <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">Docs</a>
+            <a href="/about/" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">About</a>
+            <a href="https://github.com/mattmezza/mimux" class="block px-3 py-2.5 rounded-lg text-ink-800 hover:bg-ink-950/5">GitHub</a>
           </div>
         </details>
       </div>
@@ -116,7 +116,7 @@
       <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 sm:pt-24 pb-14 sm:pb-20">
         <p class="kicker">Features</p>
         <h1 class="display mt-3 text-4xl sm:text-5xl lg:text-6xl max-w-3xl">A complete client, not a demo.</h1>
-        <p class="mt-5 text-lg text-paper-400 max-w-2xl leading-relaxed">
+        <p class="mt-5 text-lg text-ink-600 max-w-2xl leading-relaxed">
           Everything on this page ships in the free, AGPL-3.0 build. Nothing is metered,
           nothing is held back to seed a paid tier, and nothing here will ever move behind
           a licence key.
@@ -125,99 +125,99 @@
     </section>
 
     <!-- ================================ Triage ================================ -->
-    <section id="inbox" aria-labelledby="inbox-h" class="border-t border-white/5">
+    <section id="inbox" aria-labelledby="inbox-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <div data-reveal>
           <p class="kicker">Triage</p>
           <h2 id="inbox-h" class="display mt-3 text-3xl sm:text-4xl">One inbox for every account you own.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Add as many accounts as you like — Gmail and Zoho over OAuth2, everything else
             over passwords or app passwords. mimux keeps one IMAP connection per account,
             holds it open with IDLE, and falls back to polling when a server can't. New
             mail appears without a refresh.
           </p>
-          <ul class="mt-6 space-y-3 text-sm text-paper-400">
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Conversation threading</strong> that follows references across accounts and folders.</span></li>
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">The full folder tree</strong> per account — inbox, sent, drafts, archive, spam, trash — plus a unified view across all of them.</span></li>
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Calendar invites</strong> render inline; accept or decline without leaving the message.</span></li>
+          <ul class="mt-6 space-y-3 text-sm text-ink-600">
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Conversation threading</strong> that follows references across accounts and folders.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">The full folder tree</strong> per account — inbox, sent, drafts, archive, spam, trash — plus a unified view across all of them.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Calendar invites</strong> render inline; accept or decline without leaving the message.</span></li>
           </ul>
         </div>
         <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>accounts</span><span>3 connected</span></div>
-          <ul class="text-sm divide-y divide-white/5">
+          <ul class="text-sm divide-y divide-ink-950/10">
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">work@fastmail.com</span></span>
-              <span class="font-mono text-[10px] text-paper-500">IDLE · 12 unread</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">work@fastmail.com</span></span>
+              <span class="font-mono text-[10px] text-ink-500">IDLE · 12 unread</span>
             </li>
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">me@gmail.com</span></span>
-              <span class="font-mono text-[10px] text-paper-500">OAuth2 · 3 unread</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">me@gmail.com</span></span>
+              <span class="font-mono text-[10px] text-ink-500">OAuth2 · 3 unread</span>
             </li>
             <li class="flex items-center justify-between px-4 py-3">
-              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">ops@myserver.io</span></span>
-              <span class="font-mono text-[10px] text-paper-500">IDLE · clear</span>
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-ink-800">ops@myserver.io</span></span>
+              <span class="font-mono text-[10px] text-ink-500">IDLE · clear</span>
             </li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">
-            unified view <span class="text-accent-300">0</span> · per-account <span class="text-accent-300">1</span>–<span class="text-accent-300">9</span>
+          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">
+            unified view <span class="text-accent-600">0</span> · per-account <span class="text-accent-600">1</span>–<span class="text-accent-600">9</span>
           </div>
         </figure>
       </div>
     </section>
 
     <!-- ================================ Keyboard ================================ -->
-    <section id="keyboard" aria-labelledby="keyboard-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="keyboard" aria-labelledby="keyboard-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">Keyboard</p>
           <h2 id="keyboard-h" class="display mt-3 text-3xl sm:text-4xl">Inbox forty to inbox zero, hands on the home row.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Every action has a key. Press <kbd class="kbd">?</kbd> anywhere in the app for
             the live version of this table.
           </p>
         </div>
         <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-2 text-sm max-w-5xl" data-reveal data-reveal="80">
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Next / previous message</span><span class="shrink-0"><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Open message</span><span class="shrink-0"><kbd class="kbd">o</kbd> <kbd class="kbd">Enter</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Reply / reply all / forward</span><span class="shrink-0"><kbd class="kbd">R</kbd> <kbd class="kbd">A</kbd> <kbd class="kbd">F</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Compose</span><span class="shrink-0"><kbd class="kbd">c</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Archive</span><span class="shrink-0"><kbd class="kbd">e</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Delete</span><span class="shrink-0"><kbd class="kbd">d</kbd> <kbd class="kbd">#</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Star / unstar</span><span class="shrink-0"><kbd class="kbd">s</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Mark read / unread</span><span class="shrink-0"><kbd class="kbd">r</kbd> <kbd class="kbd">u</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Mark as spam</span><span class="shrink-0"><kbd class="kbd">!</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Search</span><span class="shrink-0"><kbd class="kbd">/</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Go to inbox / starred / drafts / sent</span><span class="shrink-0"><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">s</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">d</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">t</kbd></span></div>
-          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Unified / nth account inbox</span><span class="shrink-0"><kbd class="kbd">0</kbd> <kbd class="kbd">1</kbd>–<kbd class="kbd">9</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Next / previous message</span><span class="shrink-0"><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Open message</span><span class="shrink-0"><kbd class="kbd">o</kbd> <kbd class="kbd">Enter</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Reply / reply all / forward</span><span class="shrink-0"><kbd class="kbd">R</kbd> <kbd class="kbd">A</kbd> <kbd class="kbd">F</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Compose</span><span class="shrink-0"><kbd class="kbd">c</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Archive</span><span class="shrink-0"><kbd class="kbd">e</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Delete</span><span class="shrink-0"><kbd class="kbd">d</kbd> <kbd class="kbd">#</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Star / unstar</span><span class="shrink-0"><kbd class="kbd">s</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Mark read / unread</span><span class="shrink-0"><kbd class="kbd">r</kbd> <kbd class="kbd">u</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Mark as spam</span><span class="shrink-0"><kbd class="kbd">!</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Search</span><span class="shrink-0"><kbd class="kbd">/</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Go to inbox / starred / drafts / sent</span><span class="shrink-0"><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd><span class="text-ink-500 mx-0.5">·</span><kbd class="kbd">s</kbd><span class="text-ink-500 mx-0.5">·</span><kbd class="kbd">d</kbd><span class="text-ink-500 mx-0.5">·</span><kbd class="kbd">t</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-ink-950/15"><span class="text-ink-600">Unified / nth account inbox</span><span class="shrink-0"><kbd class="kbd">0</kbd> <kbd class="kbd">1</kbd>–<kbd class="kbd">9</kbd></span></div>
         </div>
       </div>
     </section>
 
     <!-- ================================ Search ================================ -->
-    <section id="search" aria-labelledby="search-h" class="border-t border-white/5">
+    <section id="search" aria-labelledby="search-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <figure class="panel order-last lg:order-first" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>search</span><span>deep search: streaming</span></div>
-          <div class="px-4 py-3 border-b border-white/5 font-mono text-sm text-paper-200">
-            <span class="text-accent-300">/</span> rack quote <span class="text-paper-500">from:vendor</span>
+          <div class="px-4 py-3 border-b border-ink-950/15 font-mono text-sm text-ink-800">
+            <span class="text-accent-600">/</span> rack quote <span class="text-ink-500">from:vendor</span>
           </div>
-          <ul class="text-sm divide-y divide-white/5">
-            <li class="px-4 py-3"><span class="block truncate text-paper-200">Re: quotes for the server rack</span><span class="block truncate text-xs text-paper-500">local index · 2 ms</span></li>
-            <li class="px-4 py-3"><span class="block truncate text-paper-200">Rack PDU options + pricing</span><span class="block truncate text-xs text-paper-500">local index · 2 ms</span></li>
-            <li class="px-4 py-3"><span class="block truncate text-paper-400">Quote #Q-2207 — 42U enclosure</span><span class="block truncate text-xs text-accent-300">found on server · streamed just now</span></li>
+          <ul class="text-sm divide-y divide-ink-950/10">
+            <li class="px-4 py-3"><span class="block truncate text-ink-800">Re: quotes for the server rack</span><span class="block truncate text-xs text-ink-500">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-ink-800">Rack PDU options + pricing</span><span class="block truncate text-xs text-ink-500">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-ink-600">Quote #Q-2207 — 42U enclosure</span><span class="block truncate text-xs text-accent-600">found on server · streamed just now</span></li>
           </ul>
-          <div class="px-4 py-2.5 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">searching 3 accounts on the server…</div>
+          <div class="px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80 font-mono text-[10px] text-ink-500">searching 3 accounts on the server…</div>
         </figure>
         <div data-reveal>
           <p class="kicker">Search</p>
           <h2 id="search-h" class="display mt-3 text-3xl sm:text-4xl">Instant locally. Exhaustive on demand.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Everything mimux has synced is in a local full-text index, so most searches
             return before you finish typing. When you need the archive from 2019, one key
             fires a deep IMAP search on the server side — results stream into the same
             list live as each account answers.
           </p>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             No search appliance to run, no reindexing cron job. It's one more thing the
             SQLite file quietly does for you.
           </p>
@@ -226,73 +226,73 @@
     </section>
 
     <!-- ================================ Compose ================================ -->
-    <section id="compose" aria-labelledby="compose-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="compose" aria-labelledby="compose-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <div data-reveal>
           <p class="kicker">Compose</p>
           <h2 id="compose-h" class="display mt-3 text-3xl sm:text-4xl">Write in Markdown. Send without regret.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             Reply, reply-all and forward over your own SMTP — in plain text, rich text or
             Markdown, whichever the moment calls for. Drafts autosave locally as you type.
           </p>
-          <ul class="mt-6 space-y-3 text-sm text-paper-400">
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Undo-send</strong> holds every message for a beat after you hit send — long enough to catch the missing attachment.</span></li>
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Scheduled send</strong> for the reply you want to land Monday morning, not Saturday night.</span></li>
-            <li class="flex gap-3" id="ai"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">AI compose &amp; translate, bring-your-own-key.</strong> Optional drafting via OpenRouter and translation via Google Translate. Off by default; your keys live in your database and requests go straight from your server to the provider you chose.</span></li>
+          <ul class="mt-6 space-y-3 text-sm text-ink-600">
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Undo-send</strong> holds every message for a beat after you hit send — long enough to catch the missing attachment.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Scheduled send</strong> for the reply you want to land Monday morning, not Saturday night.</span></li>
+            <li class="flex gap-3" id="ai"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">AI compose &amp; translate, bring-your-own-key.</strong> Optional drafting via OpenRouter and translation via Google Translate. Off by default; your keys live in your database and requests go straight from your server to the provider you chose.</span></li>
           </ul>
         </div>
         <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>compose — markdown</span><span>draft saved 3s ago</span></div>
-          <div class="px-4 py-3 text-sm font-mono leading-relaxed text-paper-200">
-            <p class="text-paper-500"># To: vendor@rackworks.io</p>
+          <div class="px-4 py-3 text-sm font-mono leading-relaxed text-ink-800">
+            <p class="text-ink-500"># To: vendor@rackworks.io</p>
             <p class="mt-2">Thanks — option **B** works for us.</p>
             <p class="mt-2">Could you confirm:</p>
             <p>- lead time for the 42U enclosure</p>
             <p>- shipping to Zurich</p>
           </div>
-          <div class="flex items-center justify-between px-4 py-2.5 border-t border-white/5 bg-ink-850">
-            <span class="font-mono text-[10px] text-paper-500">sending in <span class="text-accent-300">8s</span>…</span>
-            <span class="font-mono text-[10px] text-accent-300">undo</span>
+          <div class="flex items-center justify-between px-4 py-2.5 border-t border-ink-950/15 bg-paper-200/80">
+            <span class="font-mono text-[10px] text-ink-500">sending in <span class="text-accent-600">8s</span>…</span>
+            <span class="font-mono text-[10px] text-accent-600">undo</span>
           </div>
         </figure>
       </div>
     </section>
 
     <!-- ================================ Filters ================================ -->
-    <section id="filters" aria-labelledby="filters-h" class="border-t border-white/5">
+    <section id="filters" aria-labelledby="filters-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <figure class="panel order-last lg:order-first" data-reveal data-reveal="100" aria-hidden="true">
           <div class="panel-bar"><span>filters</span><span>runs on incoming mail</span></div>
           <div class="px-4 py-4 text-sm space-y-3">
             <div class="flex flex-wrap items-center gap-2 font-mono text-xs">
-              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">from contains @billing</span>
-              <span class="text-paper-500">and</span>
-              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">subject contains invoice</span>
+              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">from contains @billing</span>
+              <span class="text-ink-500">and</span>
+              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">subject contains invoice</span>
             </div>
-            <div class="flex items-center gap-2 font-mono text-xs text-paper-500">
-              <span aria-hidden="true" class="text-accent-400">↳</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">move to Accounting</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">mark read</span>
+            <div class="flex items-center gap-2 font-mono text-xs text-ink-500">
+              <span aria-hidden="true" class="text-accent-600">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">move to Accounting</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">mark read</span>
             </div>
-            <div class="flex flex-wrap items-center gap-2 font-mono text-xs pt-2 border-t border-white/5">
-              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">from is alerts@uptime.io</span>
+            <div class="flex flex-wrap items-center gap-2 font-mono text-xs pt-2 border-t border-ink-950/15">
+              <span class="rounded-md border border-ink-950/20 bg-ink-950/5 px-2 py-1 text-ink-800">from is alerts@uptime.io</span>
             </div>
-            <div class="flex items-center gap-2 font-mono text-xs text-paper-500">
-              <span aria-hidden="true" class="text-accent-400">↳</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">notify</span>
-              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">star</span>
+            <div class="flex items-center gap-2 font-mono text-xs text-ink-500">
+              <span aria-hidden="true" class="text-accent-600">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">notify</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-700">star</span>
             </div>
           </div>
         </figure>
         <div data-reveal>
           <p class="kicker">Filters</p>
           <h2 id="filters-h" class="display mt-3 text-3xl sm:text-4xl">Rules that work while you don't.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             A straightforward rule engine: conditions in, actions out — move, label,
             forward, mark read, star, delete, notify. Rules run on your server as mail
             arrives, so the sorting is already done on every device you open.
           </p>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             No sieve scripts to learn, no per-device duplication, and when a rule files
             something you can see exactly which rule did it.
           </p>
@@ -301,63 +301,63 @@
     </section>
 
     <!-- ================================ PWA ================================ -->
-    <section id="pwa" aria-labelledby="pwa-h" class="border-t border-white/5 bg-ink-900/40">
+    <section id="pwa" aria-labelledby="pwa-h" class="border-t border-ink-950/15 bg-paper-200/60">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">Everywhere</p>
           <h2 id="pwa-h" class="display mt-3 text-3xl sm:text-4xl">An app on your phone, without an app store.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             mimux installs as a PWA on desktop and mobile, with an offline fallback to
             your last-synced inbox. Notifications reach you even when it's closed:
           </p>
         </div>
         <div class="mt-10 grid sm:grid-cols-2 gap-5 max-w-3xl">
           <div class="card p-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50">Web Push, end-to-end encrypted</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Straight from your server to your devices. Payloads are encrypted, so the push relay in the middle sees noise, not your mail.</p>
+            <h3 class="font-display font-semibold text-ink-950">Web Push, end-to-end encrypted</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">Straight from your server to your devices. Payloads are encrypted, so the push relay in the middle sees noise, not your mail.</p>
           </div>
           <div class="card p-6" data-reveal data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50">Or a POST to ntfy</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Already running ntfy for everything else in your homelab? Point mimux at a topic and new-mail notifications join the stream.</p>
+            <h3 class="font-display font-semibold text-ink-950">Or a POST to ntfy</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">Already running ntfy for everything else in your homelab? Point mimux at a topic and new-mail notifications join the stream.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ================================ Ops ================================ -->
-    <section id="ops" aria-labelledby="ops-h" class="border-t border-white/5">
+    <section id="ops" aria-labelledby="ops-h" class="border-t border-ink-950/15">
       <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
         <div class="max-w-2xl" data-reveal>
           <p class="kicker">Operations</p>
           <h2 id="ops-h" class="display mt-3 text-3xl sm:text-4xl">Boring to run. That's the feature.</h2>
-          <p class="mt-4 text-paper-400 leading-relaxed">
+          <p class="mt-4 text-ink-600 leading-relaxed">
             You will run this for years. It's built like it knows that.
           </p>
         </div>
         <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           <div class="card p-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50">Backup is <code class="font-mono text-accent-300 text-sm">cp</code></h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Accounts, credentials, cache, sessions, filters, tokens — one SQLite file holds all of it. Copy the directory, and you've backed up everything.</p>
+            <h3 class="font-display font-semibold text-ink-950">Backup is <code class="font-mono text-accent-600 text-sm">cp</code></h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">Accounts, credentials, cache, sessions, filters, tokens — one SQLite file holds all of it. Copy the directory, and you've backed up everything.</p>
           </div>
           <div class="card p-6" data-reveal data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50">Zero required config</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">No config file. A fresh install boots with zero environment variables; everything else is edited in the UI and applies without a restart.</p>
+            <h3 class="font-display font-semibold text-ink-950">Zero required config</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">No config file. A fresh install boots with zero environment variables; everything else is edited in the UI and applies without a restart.</p>
           </div>
           <div class="card p-6" data-reveal data-reveal="120">
-            <h3 class="font-display font-semibold text-paper-50">One small binary</h3>
-            <p class="mt-2 text-sm text-paper-400 leading-relaxed">A single Go binary serving htmx and Alpine.js. No node process, no Redis, no Postgres, no queue — nothing else to babysit at 2am.</p>
+            <h3 class="font-display font-semibold text-ink-950">One small binary</h3>
+            <p class="mt-2 text-sm text-ink-600 leading-relaxed">A single Go binary serving htmx and Alpine.js. No node process, no Redis, no Postgres, no queue — nothing else to babysit at 2am.</p>
           </div>
         </div>
       </div>
     </section>
 
     <!-- ================================ CTA ================================ -->
-    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-white/5">
+    <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-ink-950/15">
       <div aria-hidden="true" class="absolute inset-0 -z-10"
-           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.2 277 / 0.16), transparent 70%)"></div>
+           style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.19 32 / 0.07), transparent 70%)"></div>
       <div class="mx-auto max-w-3xl px-5 lg:px-8 py-24 sm:py-28 text-center">
         <h2 id="cta-h" class="display text-3xl sm:text-4xl" data-reveal>All of it, free. Today.</h2>
-        <p class="mt-5 text-paper-400 max-w-xl mx-auto" data-reveal data-reveal="60">
+        <p class="mt-5 text-ink-600 max-w-xl mx-auto" data-reveal data-reveal="60">
           One command and this whole page is running on your hardware.
         </p>
         <div class="mt-8 flex flex-wrap justify-center gap-3" data-reveal data-reveal="120">
@@ -369,50 +369,50 @@
   </main>
 
   <!-- ================================ Footer ================================ -->
-  <footer class="relative border-t border-white/5 overflow-hidden">
+  <footer class="relative border-t border-ink-950/15 overflow-hidden">
     <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 pb-8">
       <div class="grid gap-12 sm:grid-cols-2 lg:grid-cols-4 text-sm">
         <div>
           <p class="flex items-center gap-2.5">
             <img src="/favicon.svg" alt="" width="22" height="22" class="rounded">
-            <span class="font-display font-bold text-paper-50">mimux</span>
+            <span class="font-display font-bold text-ink-950">mimux</span>
           </p>
-          <p class="mt-4 text-paper-500 leading-relaxed">
+          <p class="mt-4 text-ink-500 leading-relaxed">
             The self-hosted inbox your agents can act on.
           </p>
-          <p class="mt-4 font-mono text-xs text-paper-500 leading-relaxed">
+          <p class="mt-4 font-mono text-xs text-ink-500 leading-relaxed">
             Merola Software &amp; Services<br>
             Wartauweg 19, 8049 Zurich<br>
             Switzerland
           </p>
         </div>
         <nav aria-label="Product">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Product</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/features/">Features</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/agents/">Agents &amp; API</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/pricing/">Pricing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Product</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/features/">Features</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/agents/">Agents &amp; API</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/pricing/">Pricing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://docs.mimux.dev">Documentation</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://account.mimux.dev">Licence account</a></li>
           </ul>
         </nav>
         <nav aria-label="Project">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Project</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/about/">About</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Project</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux">GitHub</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/releases">Releases</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">Licensing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="https://github.com/mattmezza/mimux/blob/main/CONTRIBUTING.md">Contributing</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/about/">About</a></li>
           </ul>
         </nav>
         <nav aria-label="Legal">
-          <p class="font-mono text-xs uppercase tracking-wider text-paper-500 mb-4">Legal</p>
-          <ul class="space-y-2.5 text-paper-400">
-            <li><a class="hover:text-paper-50 transition-colors" href="/privacy/">Privacy</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/terms/">Terms</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/security/">Security</a></li>
-            <li><a class="hover:text-paper-50 transition-colors" href="/legal/">Imprint</a></li>
+          <p class="font-mono text-xs uppercase tracking-wider text-ink-500 mb-4">Legal</p>
+          <ul class="space-y-2.5 text-ink-600">
+            <li><a class="hover:text-ink-950 transition-colors" href="/privacy/">Privacy</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/terms/">Terms</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/security/">Security</a></li>
+            <li><a class="hover:text-ink-950 transition-colors" href="/legal/">Imprint</a></li>
           </ul>
         </nav>
       </div>
@@ -420,9 +420,9 @@
       <p aria-hidden="true" class="footer-mark mt-12 -mb-4 sm:-mb-8 text-center">mimux</p>
 
       <div class="rule-fade"></div>
-      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-paper-500">
+      <div class="pt-6 flex flex-wrap items-center justify-between gap-3 font-mono text-xs text-ink-500">
         <p>© 2026 Merola Software &amp; Services. mimux is a trademark of Matteo Merola.</p>
-        <p>No cookies on this site — <a class="hover:text-paper-200 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
+        <p>No cookies on this site — <a class="hover:text-ink-800 transition-colors underline underline-offset-4" href="/privacy/">see how</a>.</p>
       </div>
     </div>
   </footer>
