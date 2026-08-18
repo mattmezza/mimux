@@ -6,24 +6,169 @@
     <title>mimux API reference</title>
     <meta
       name="description"
-      content="REST API reference for mimux — the self-hosted mail client. A human driving mimux is free; a machine driving it is the pro layer."
+      content="REST API reference for mimux — the self-hosted email gateway. A human driving mimux is free; a machine driving it is the pro layer."
     />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23111'/%3E%3Cpath d='M2.5 5.5h11v6h-11z' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3Cpath d='M2.5 5.5 8 9.2l5.5-3.7' fill='none' stroke='%23fff' stroke-width='1.2'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23f6f1e7'/%3E%3Crect x='3' y='3' width='94' height='94' rx='17' fill='none' stroke='%233a2f28' stroke-width='3'/%3E%3Cpolygon fill='%23c2452a' points='24,28 36,28 50,46 64,28 76,28 76,74 64,74 64,44 50,62 36,44 36,74 24,74'/%3E%3C/svg%3E"
     />
     <style>
-      html,
-      body {
+      /* The mimux.dev "correspondence" shell, condensed: warm paper, warm
+         ink, one vermilion accent, airmail stripe across the top. Fonts are
+         copied into ./fonts/ by scripts/docs.sh from www/src/fonts. */
+      @font-face {
+        font-family: "Inter";
+        src: url("./fonts/inter-var.woff2") format("woff2");
+        font-weight: 100 900;
+        font-display: optional;
+      }
+      @font-face {
+        font-family: "Bricolage Grotesque";
+        src: url("./fonts/bricolage-var.woff2") format("woff2");
+        font-weight: 200 800;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url("./fonts/jbm-400.woff2") format("woff2");
+        font-weight: 400;
+        font-display: swap;
+      }
+
+      :root {
+        --paper: oklch(96.5% 0.012 85);
+        --paper-2: oklch(93% 0.018 83);
+        --card: oklch(98.8% 0.006 90);
+        --ink: oklch(25% 0.02 50);
+        --ink-mid: oklch(41% 0.018 50);
+        --ink-soft: oklch(49% 0.016 50);
+        --accent: oklch(52% 0.19 31);
+        --accent-bright: oklch(58% 0.19 32);
+        --post: oklch(48% 0.11 262);
+      }
+
+      html, body { margin: 0; padding: 0; background: var(--paper); }
+      body { font-family: "Inter", ui-sans-serif, system-ui, sans-serif; }
+
+      /* The envelope edge. */
+      body::before {
+        content: "";
+        display: block;
+        height: 7px;
+        background: repeating-linear-gradient(-45deg,
+          var(--accent-bright) 0 14px,
+          var(--paper) 14px 26px,
+          var(--post) 26px 40px,
+          var(--paper) 40px 52px);
+      }
+
+      .site-header {
+        position: sticky;
+        top: 0;
+        z-index: 40;
+        border-bottom: 1px solid oklch(25% 0.02 50 / 0.15);
+        background: oklch(96.5% 0.012 85 / 0.92);
+        backdrop-filter: blur(8px);
+      }
+      .site-header nav {
+        max-width: 76rem;
+        margin: 0 auto;
+        padding: 0 1.25rem;
+        height: 4rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        text-decoration: none;
+      }
+      .brand img { border-radius: 6px; }
+      .brand span {
+        font-family: "Bricolage Grotesque", "Inter", sans-serif;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--ink);
+        font-size: 1.125rem;
+      }
+      .brand small {
+        font-family: "JetBrains Mono", monospace;
+        font-size: 0.65rem;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        color: var(--accent);
+        border: 1px solid oklch(58% 0.19 32 / 0.5);
+        border-radius: 4px;
+        padding: 0.2rem 0.45rem;
+        rotate: -2deg;
+      }
+      .site-header ul {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        list-style: none;
         margin: 0;
         padding: 0;
-        /* Paint the dark ground before Scalar boots, so a slow first load
-           doesn't flash white at someone reading in the dark. */
-        background: #0d0d0d;
+        font-size: 0.875rem;
+        font-weight: 500;
+      }
+      .site-header ul a {
+        display: inline-block;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        color: var(--ink-soft);
+        text-decoration: none;
+        transition: color 150ms ease;
+      }
+      .site-header ul a:hover { color: var(--ink); }
+      .site-header ul a.cta {
+        color: var(--paper);
+        background: var(--ink);
+        box-shadow: 2px 2px 0 oklch(25% 0.02 50 / 0.22);
+        margin-left: 0.35rem;
+      }
+      .site-header ul a.cta:hover { background: var(--accent); }
+      @media (max-width: 640px) {
+        .site-header ul a { padding: 0.5rem 0.5rem; }
+        .site-header ul .hide-sm { display: none; }
+      }
+
+      /* Scalar, dressed in the house palette. */
+      .scalar-app {
+        --scalar-font: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --scalar-font-code: "JetBrains Mono", ui-monospace, monospace;
+        --scalar-color-accent: var(--accent);
+        --scalar-background-1: var(--paper);
+        --scalar-background-2: var(--paper-2);
+        --scalar-background-3: var(--card);
+        --scalar-background-accent: oklch(58% 0.19 32 / 0.08);
+        --scalar-color-1: var(--ink);
+        --scalar-color-2: var(--ink-mid);
+        --scalar-color-3: var(--ink-soft);
+        --scalar-border-color: oklch(25% 0.02 50 / 0.15);
       }
     </style>
   </head>
   <body>
+    <header class="site-header">
+      <nav aria-label="Main">
+        <a class="brand" href="https://mimux.dev/">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23f6f1e7'/%3E%3Crect x='3' y='3' width='94' height='94' rx='17' fill='none' stroke='%233a2f28' stroke-width='3'/%3E%3Cpolygon fill='%23c2452a' points='24,28 36,28 50,46 64,28 76,28 76,74 64,74 64,44 50,62 36,44 36,74 24,74'/%3E%3C/svg%3E" alt="" width="26" height="26" />
+          <span>mimux</span>
+          <small>api docs</small>
+        </a>
+        <ul>
+          <li class="hide-sm"><a href="https://mimux.dev/agents/">Automation</a></li>
+          <li class="hide-sm"><a href="https://mimux.dev/pricing/">Pricing</a></li>
+          <li><a href="https://github.com/mattmezza/mimux">GitHub</a></li>
+          <li><a class="cta" href="https://mimux.dev/#install">Get mimux</a></li>
+        </ul>
+      </nav>
+    </header>
+
     <!--
       Scalar's standalone bundle auto-mounts by finding this element. Everything
       is local: ./scalar.js is vendored in the repo and ./openapi.json is copied
@@ -33,10 +178,11 @@
       id="api-reference"
       data-url="./openapi.json"
       data-configuration='{
-        "darkMode": true,
-        "theme": "default",
+        "darkMode": false,
+        "theme": "none",
         "layout": "modern",
         "hideModels": false,
+        "hideDarkModeToggle": true,
         "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" },
         "metaData": {
           "title": "mimux API reference",

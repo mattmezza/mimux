@@ -1,29 +1,31 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 #
-# mimux inbox triage — the mimux pro MCP server driven by Claude.
+# mimux inbox triage — the mimux pro MCP server driven by DeepSeek.
 #
 # Reads unread mail, stars what needs a human reply, archives newsletters and
 # notifications, and drafts (never sends) replies where one is obvious. The
 # send_draft tool is stripped from the tool list before the model ever sees it,
 # so nothing can go out without a human pressing Send in mimux.
 #
-# Run:  MIMUX_TOKEN=mimux_pat_... ANTHROPIC_API_KEY=sk-ant-... uv run triage.py
+# Run:  MIMUX_TOKEN=mimux_pat_... DEEPSEEK_API_KEY=sk-... uv run triage.py
 #
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["anthropic>=0.60", "mcp>=1.9"]
+# dependencies = ["openai>=1.40", "mcp>=1.9"]
 # ///
 import asyncio
 import json
 import os
 import sys
 
-from anthropic import Anthropic
 from mcp import ClientSession
 from mcp.client.streamable_http import streamablehttp_client
+from openai import OpenAI
 
 MIMUX_URL = os.environ.get("MIMUX_URL", "http://localhost:8083")
-MODEL = "claude-opus-5"
+# DeepSeek's API is OpenAI-compatible; any OpenAI-compatible provider and
+# model works here — edit MODEL and the base_url below to swap.
+MODEL = "deepseek-v4-flash"
 
 SYSTEM = """You are triaging the user's mailbox through mimux's MCP tools.
 
@@ -44,22 +46,25 @@ did as a short list: starred / archived / drafted / left alone, with one-line
 reasons."""
 
 
-def to_anthropic_tools(mcp_tools):
-    """MCP tool declarations -> Messages API tool dicts, minus send_draft."""
+def to_openai_tools(mcp_tools):
+    """MCP tool declarations -> chat-completions tool dicts, minus send_draft."""
     tools = []
     for t in mcp_tools:
         if t.name == "send_draft":  # belt and braces: never even offered
             continue
         tools.append({
-            "name": t.name,
-            "description": t.description or "",
-            "input_schema": t.inputSchema,
+            "type": "function",
+            "function": {
+                "name": t.name,
+                "description": t.description or "",
+                "parameters": t.inputSchema,
+            },
         })
     return tools
 
 
 def result_text(result):
-    """Flatten an MCP tool result into text for the tool_result block."""
+    """Flatten an MCP tool result into text for the tool message."""
     if result.structuredContent is not None:
         return json.dumps(result.structuredContent)
     parts = [c.text for c in result.content if getattr(c, "text", None)]
@@ -71,8 +76,14 @@ async def main():
     if not token:
         sys.exit("Set MIMUX_TOKEN to a mimux API token (Settings → API) "
                  "with mail:read, mail:send and mail:modify scopes.")
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        sys.exit("Set DEEPSEEK_API_KEY (an OpenAI-compatible key works with "
+                 "a matching base_url).")
 
-    client = Anthropic()  # ANTHROPIC_API_KEY from the environment
+    client = OpenAI(
+        base_url="https://api.deepseek.com",
+        api_key=os.environ["DEEPSEEK_API_KEY"],
+    )
 
     async with streamablehttp_client(
         f"{MIMUX_URL}/api/mcp",
@@ -80,47 +91,42 @@ async def main():
     ) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            tools = to_anthropic_tools((await session.list_tools()).tools)
+            tools = to_openai_tools((await session.list_tools()).tools)
             print(f"Connected to {MIMUX_URL} — {len(tools)} tools\n")
 
-            messages = [{"role": "user", "content": "Triage my inbox."}]
+            messages = [
+                {"role": "system", "content": SYSTEM},
+                {"role": "user", "content": "Triage my inbox."},
+            ]
             while True:
-                response = client.beta.messages.create(
+                response = client.chat.completions.create(
                     model=MODEL,
                     max_tokens=16000,
-                    system=SYSTEM,
                     tools=tools,
                     messages=messages,
-                    # Safety classifiers can decline a request; fall back to
-                    # Anthropic's recommended substitute instead of stopping.
-                    betas=["server-side-fallback-2026-07-01"],
-                    extra_body={"fallbacks": "default"},
                 )
+                msg = response.choices[0].message
 
-                for block in response.content:
-                    if block.type == "text" and block.text.strip():
-                        print(block.text.strip(), "\n")
+                if msg.content and msg.content.strip():
+                    print(msg.content.strip(), "\n")
 
-                if response.stop_reason == "refusal":
-                    print("The model declined this request; nothing was changed.")
-                    return
-                if response.stop_reason != "tool_use":
-                    return  # end_turn: triage finished
+                if not msg.tool_calls:
+                    return  # triage finished
 
-                messages.append({"role": "assistant", "content": response.content})
-                results = []
-                for block in response.content:
-                    if block.type != "tool_use":
-                        continue
-                    print(f"  -> {block.name} {json.dumps(block.input)}")
-                    r = await session.call_tool(block.name, block.input)
-                    results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
+                messages.append({
+                    "role": "assistant",
+                    "content": msg.content,
+                    "tool_calls": [tc.model_dump() for tc in msg.tool_calls],
+                })
+                for tc in msg.tool_calls:
+                    args = json.loads(tc.function.arguments or "{}")
+                    print(f"  -> {tc.function.name} {json.dumps(args)}")
+                    r = await session.call_tool(tc.function.name, args)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
                         "content": result_text(r),
-                        "is_error": bool(r.isError),
                     })
-                messages.append({"role": "user", "content": results})
 
 
 if __name__ == "__main__":

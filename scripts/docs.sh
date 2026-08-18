@@ -19,6 +19,15 @@ cp "$root/pro/openapi.json" "$out/openapi.json"
 # Globbed rather than named so a version bump is a file swap, not a script edit.
 # Two matching files make cp fail loudly, which is the right outcome.
 cp "$root"/docs/vendor/scalar-api-reference-*.js "$out/scalar.js"
+# The house fonts, shared with the marketing site so the two stay in step.
+mkdir -p "$out/fonts"
+cp "$root/www/src/fonts/inter-var.woff2" \
+   "$root/www/src/fonts/bricolage-var.woff2" \
+   "$root/www/src/fonts/jbm-400.woff2" \
+   "$root/www/src/fonts/OFL-Inter.txt" \
+   "$root/www/src/fonts/OFL-BricolageGrotesque.txt" \
+   "$root/www/src/fonts/OFL-JetBrainsMono.txt" \
+   "$out/fonts/"
 # GitHub Pages reads the custom domain from this file in the published artifact.
 echo docs.mimux.dev > "$out/CNAME"
 

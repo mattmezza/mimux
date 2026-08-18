@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-only -->
-# Inbox triage with Claude — the mimux MCP demo
+# Inbox triage — the mimux MCP demo
 
 A single-file agent that connects to a running **mimux pro** instance over the
 MCP streamable-HTTP endpoint (`/api/mcp`) and triages the inbox: it reads the
@@ -27,14 +27,15 @@ over-eager archive, which is one drag-and-drop to undo.
 
 1. Run a **pro** build of mimux and create an API token in **Settings → API**
    with the `mail:read`, `mail:send` and `mail:modify` scopes.
-2. Get an Anthropic API key.
+2. Get a DeepSeek API key (any OpenAI-compatible provider works — see
+   the `MODEL` constant and `base_url` in the script).
 3. Install [uv](https://docs.astral.sh/uv/) (the script declares its own
    dependencies inline — no venv or requirements file).
 
 ```sh
 export MIMUX_URL=http://localhost:8083   # default; set if mimux runs elsewhere
 export MIMUX_TOKEN=mimux_pat_...
-export ANTHROPIC_API_KEY=sk-ant-...
+export DEEPSEEK_API_KEY=sk-...
 uv run triage.py
 ```
 
@@ -44,8 +45,8 @@ as tool results.
 
 ## Notes
 
-- Uses the current recommended model (`claude-opus-5`); edit the `MODEL`
-  constant to try others.
+- Uses `deepseek-v4-flash`; the API is OpenAI-compatible, so editing the
+  `MODEL` constant and `base_url` swaps in any other provider or model.
 - Stateless streamable HTTP: every request carries the bearer token; there is
   no session to expire.
 - The stdio alternative for MCP clients that can't speak streamable HTTP is

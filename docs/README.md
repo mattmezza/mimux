@@ -11,8 +11,9 @@ describes the pro layer. Nothing here is compiled into any binary.
 
 | Path | What it is |
 |---|---|
-| `src/index.html` | The page shell. Loads `./openapi.json` and `./scalar.js`, both siblings in the built output. |
+| `src/index.html` | The page shell — mimux.dev's "correspondence" header and palette around Scalar. Loads `./openapi.json` and `./scalar.js`, both siblings in the built output. |
 | `vendor/scalar-api-reference-<version>.js` | The Scalar standalone bundle, committed. The only third-party file here. |
+| `dist/fonts/` | Inter, Bricolage Grotesque and JetBrains Mono, copied from `www/src/fonts` at build time so the docs wear the same clothes as mimux.dev. |
 | `dist/` | **Committed build output.** This is what GitHub Pages serves, byte for byte. |
 
 ## Building
