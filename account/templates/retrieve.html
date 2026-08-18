@@ -1,5 +1,6 @@
 {{define "content"}}
-<h2>Licence and billing</h2>
+<p class="kicker">Licence and billing</p>
+<h1>Have it sent again.</h1>
 {{if .Sent}}
   <div class="notice">
     <p>
@@ -12,23 +13,25 @@
     make this page a way to find out who our customers are.
   </p>
 {{else}}
-  <p>
+  <p class="lede">
     Enter the address you paid with. We will email the licence key to it, or a
     link to Stripe&rsquo;s billing portal where you can update the card or
     cancel.
   </p>
-  <form method="post" action="/retrieve">
-    <label for="email" class="small muted">Purchase email</label>
-    <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
-    <div class="row">
-      <button type="submit" name="action" value="licence">Email me my key</button>
-      <button type="submit" name="action" value="portal" class="ghost">Manage subscription</button>
-    </div>
-  </form>
+  <div class="panel">
+    <form method="post" action="/retrieve">
+      <label for="email">Purchase email</label>
+      <input type="email" id="email" name="email" required autocomplete="email" placeholder="you@example.com">
+      <div class="row">
+        <button type="submit" name="action" value="licence" class="btn">Email me my key</button>
+        <button type="submit" name="action" value="portal" class="btn btn-secondary">Manage subscription</button>
+      </div>
+    </form>
+  </div>
   <p class="small muted">
     Three requests an hour, per address and per network. Keys are never shown on
     this page, only sent to the address that bought them.
   </p>
 {{end}}
-<p><a href="/">Back to the plans</a></p>
+<p><a href="/">&larr; Back to the plans</a></p>
 {{end}}

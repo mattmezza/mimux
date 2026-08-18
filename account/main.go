@@ -15,6 +15,7 @@ import (
 	"flag"
 	"fmt"
 	"html/template"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
@@ -35,6 +36,15 @@ var templatesFS embed.FS
 //
 //go:embed static
 var staticFS embed.FS
+
+// fontsFS is staticFS rooted at static/, so request paths map straight onto it.
+var fontsFS = func() fs.FS {
+	sub, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		panic(err) // embedded at build time: unreachable unless the embed changes
+	}
+	return sub
+}()
 
 type config struct {
 	listenAddr     string
@@ -179,6 +189,14 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /retrieve", a.page("retrieve"))
 	mux.HandleFunc("POST /retrieve", a.handleRetrieve)
 	mux.HandleFunc("POST /stripe/webhook", a.handleWebhook)
+	// The house fonts, served from the embedded FS. No StripPrefix: the sub-FS
+	// is rooted at static/, so the request path /fonts/x.woff2 already names
+	// fonts/x.woff2 inside it.
+	mux.Handle("GET /fonts/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Immutable in practice — the filenames change when the fonts do.
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		http.FileServerFS(fontsFS).ServeHTTP(w, r)
+	}))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})

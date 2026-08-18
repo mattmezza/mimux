@@ -1,13 +1,15 @@
 {{define "content"}}
-<h2>Payment received</h2>
+<p class="kicker">Payment received</p>
+<h1>Your key is on its way.</h1>
 <div class="notice">
   <p>
-    Your licence key is on its way to the address you paid with. It usually
-    arrives within a minute.
+    It goes to the address you paid with, and usually arrives within a minute.
   </p>
 </div>
 <p>
-  Paste it into mimux under Settings, or set <code>MIMUX_LICENCE</code>.
+  Paste it into mimux under <strong>Settings &rarr; API</strong>, or set
+  <code>MIMUX_LICENCE_KEY</code> in the environment. Run
+  <code>mimux licence status</code> to check what the build makes of it.
 </p>
 <p>
   Nothing arrived, or you have lost it since? <a href="/retrieve">Have it sent
