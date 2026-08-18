@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"crypto/ed25519"
 	"database/sql"
 	"embed"
@@ -20,7 +21,10 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	stripe "github.com/stripe/stripe-go/v86"
@@ -68,6 +72,9 @@ type app struct {
 	key  ed25519.PrivateKey
 	tmpl map[string]*template.Template
 	send mailer
+	// mail counts the sends still in flight, so shutdown can wait for them and
+	// tests can assert on delivery without racing the goroutine.
+	mail sync.WaitGroup
 
 	ipLimit    *limiter
 	emailLimit *limiter
@@ -125,11 +132,44 @@ func run() error {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+	// SIGTERM is how the container stops. Without catching it the process dies
+	// mid-send and a paid-for licence key never leaves the building.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		_ = srv.Shutdown(shutdown)
+	}()
+
 	slog.Info("account listening", "addr", cfg.listenAddr, "base", cfg.baseURL, "version", cfg.currentVersion)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	err = srv.ListenAndServe()
+	// Runs while Shutdown is still draining connections, so the two bounds
+	// overlap rather than add up.
+	a.drainMail(shutdownGrace)
+	if !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
+}
+
+// shutdownGrace stays under Docker's default ten seconds between SIGTERM and
+// SIGKILL: a drain longer than that is not a drain, it is a process being shot
+// mid-sentence.
+const shutdownGrace = 8 * time.Second
+
+// drainMail waits for in-flight sends, but not for ever: a send that is still
+// retrying past the bound is abandoned and the customer uses /retrieve.
+// ponytail: no persistent queue — mail is only ever a resend away.
+func (a *app) drainMail(limit time.Duration) {
+	done := make(chan struct{})
+	go func() { a.mail.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(limit):
+		slog.Warn("exiting with email still in flight — those customers can use /retrieve")
+	}
 }
 
 func loadConfig() (config, error) {
@@ -234,7 +274,8 @@ func (a *app) resend(email string, portal bool) error {
 			if err != nil {
 				return err
 			}
-			return a.send(email, "Manage your mimux pro subscription", portalEmail(url))
+			a.dispatch("retrieve", email, "Manage your mimux pro subscription", portalEmail(url))
+			return nil
 		}
 		return nil
 	}
@@ -245,7 +286,8 @@ func (a *app) resend(email string, portal bool) error {
 			l.ID, l.Plan, time.Unix(l.CreatedAt, 0).UTC().Format("2006-01-02"), l.Key)
 	}
 	b.WriteString("\n" + emailFooter)
-	return a.send(email, "Your mimux pro licence key", b.String())
+	a.dispatch("retrieve", email, "Your mimux pro licence key", b.String())
+	return nil
 }
 
 // clientIP is the peer as reported by the reverse proxy in front of this

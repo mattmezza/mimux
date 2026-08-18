@@ -185,10 +185,10 @@ func (a *app) handleWebhook(w http.ResponseWriter, r *http.Request) {
 // id and inserting the licence happen in one transaction, so a redelivery of
 // the same event finds the id taken and issues nothing.
 //
-// The email is sent after the commit and its failure is logged, not returned:
-// the licence exists at that point, and /retrieve can resend it. Returning an
-// error would make Stripe redeliver an event that is already claimed, which
-// would resend nothing anyway.
+// The email is handed to the background sender after the commit and never
+// waited on: the licence exists at that point, and Stripe must get its 200
+// before it decides we timed out. Returning an error would make it redeliver an
+// event that is already claimed, which would resend nothing anyway.
 func (a *app) issueFromEvent(eventID string, raw []byte) error {
 	var sess checkoutSession
 	if err := json.Unmarshal(raw, &sess); err != nil {
@@ -232,9 +232,7 @@ func (a *app) issueFromEvent(eventID string, raw []byte) error {
 	}
 	slog.Info("licence issued", "id", p.ID, "plan", plan)
 
-	if err := a.send(email, "Your mimux pro licence key", licenceEmail(p, key)); err != nil {
-		slog.Error("licence email failed — customer can use /retrieve", "id", p.ID, "err", err)
-	}
+	a.dispatch(p.ID, email, "Your mimux pro licence key", licenceEmail(p, key))
 	return nil
 }
 
@@ -361,9 +359,7 @@ func (a *app) renewFromEvent(eventID string, raw []byte) error {
 	}
 	slog.Info("licence renewed", "id", p.ID, "until", end)
 
-	if err := a.send(l.Email, "Your renewed mimux pro licence key", renewalEmail(p, key)); err != nil {
-		slog.Error("renewal email failed — customer can use /retrieve", "id", p.ID, "err", err)
-	}
+	a.dispatch(p.ID, l.Email, "Your renewed mimux pro licence key", renewalEmail(p, key))
 	return nil
 }
 

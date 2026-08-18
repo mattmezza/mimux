@@ -50,9 +50,7 @@ func retrieve(t *testing.T, a *app, form, ip string) *httptest.ResponseRecorder 
 	r := httptest.NewRequest(http.MethodPost, "/retrieve", strings.NewReader(form))
 	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	r.Header.Set("X-Forwarded-For", ip)
-	w := httptest.NewRecorder()
-	a.routes().ServeHTTP(w, r)
-	return w
+	return serve(a, r)
 }
 
 // TestRetrieveIsNotAnOracle: same answer for a customer and a stranger, key
@@ -63,7 +61,7 @@ func TestRetrieveIsNotAnOracle(t *testing.T) {
 	if w := post(t, a, body, signed(t, body, time.Now())); w.Code != http.StatusOK {
 		t.Fatalf("seed: %d", w.Code)
 	}
-	*sent = nil
+	sent.reset()
 
 	customer := retrieve(t, a, "email=buyer@example.com&action=licence", "203.0.113.1")
 	stranger := retrieve(t, a, "email=nobody@example.com&action=licence", "203.0.113.2")
@@ -76,10 +74,10 @@ func TestRetrieveIsNotAnOracle(t *testing.T) {
 	if strings.Contains(customer.Body.String(), keyPrefix+".") {
 		t.Error("licence key rendered in the browser")
 	}
-	if len(*sent) != 1 || (*sent)[0].to != "buyer@example.com" {
-		t.Fatalf("emails = %+v, want one to the customer", *sent)
+	if sent.len() != 1 || sent.all()[0].to != "buyer@example.com" {
+		t.Fatalf("emails = %+v, want one to the customer", sent.all())
 	}
-	if !strings.Contains((*sent)[0].body, keyPrefix+".") {
+	if !strings.Contains(sent.all()[0].body, keyPrefix+".") {
 		t.Error("resent email carries no key")
 	}
 
@@ -87,17 +85,17 @@ func TestRetrieveIsNotAnOracle(t *testing.T) {
 	for range 2 {
 		retrieve(t, a, "email=buyer@example.com&action=licence", "203.0.113.1")
 	}
-	before := len(*sent)
+	before := sent.len()
 	retrieve(t, a, "email=buyer@example.com&action=licence", "203.0.113.1")
-	if len(*sent) != before {
-		t.Errorf("rate limit did not hold: %d -> %d emails", before, len(*sent))
+	if sent.len() != before {
+		t.Errorf("rate limit did not hold: %d -> %d emails", before, sent.len())
 	}
 
 	// The same address from a fresh IP is still capped by the per-email budget.
-	before = len(*sent)
+	before = sent.len()
 	retrieve(t, a, "email=buyer@example.com&action=licence", "198.51.100.7")
-	if len(*sent) != before {
-		t.Errorf("per-email limit did not hold: %d -> %d emails", before, len(*sent))
+	if sent.len() != before {
+		t.Errorf("per-email limit did not hold: %d -> %d emails", before, sent.len())
 	}
 }
 

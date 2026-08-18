@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,9 +18,43 @@ import (
 
 const testWebhookSecret = "whsec_test_not_a_real_secret"
 
+// TestMain kills the retry backoff: the tests exercise the retry path, they do
+// not need to sit through it.
+func TestMain(m *testing.M) {
+	mailRetryDelay = 0
+	os.Exit(m.Run())
+}
+
 type sentMail struct{ to, subject, body string }
 
-func newTestApp(t *testing.T) (*app, *[]sentMail) {
+// mailbox is what the tests read instead of a bare slice — sends now land from
+// a background goroutine, so the append needs a lock of its own.
+type mailbox struct {
+	mu   sync.Mutex
+	sent []sentMail
+}
+
+func (b *mailbox) add(m sentMail) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sent = append(b.sent, m)
+}
+
+func (b *mailbox) all() []sentMail {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]sentMail(nil), b.sent...)
+}
+
+func (b *mailbox) reset() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.sent = nil
+}
+
+func (b *mailbox) len() int { return len(b.all()) }
+
+func newTestApp(t *testing.T) (*app, *mailbox) {
 	t.Helper()
 	_, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
@@ -30,19 +66,31 @@ func newTestApp(t *testing.T) (*app, *[]sentMail) {
 	}
 	t.Cleanup(func() { _ = db.Close() })
 
-	var sent []sentMail
+	var box mailbox
 	a := &app{
 		cfg:        config{webhookSecret: testWebhookSecret, currentVersion: "v0.19", baseURL: "https://account.test"},
 		db:         db,
 		key:        priv,
-		send:       func(to, subject, body string) error { sent = append(sent, sentMail{to, subject, body}); return nil },
+		send:       func(to, subject, body string) error { box.add(sentMail{to, subject, body}); return nil },
 		ipLimit:    newLimiter(3, time.Hour),
 		emailLimit: newLimiter(3, time.Hour),
 	}
 	if err := a.parseTemplates(); err != nil {
 		t.Fatal(err)
 	}
-	return a, &sent
+	// No goroutine outlives its test: every send is joined before cleanup.
+	t.Cleanup(func() { a.mail.Wait() })
+	return a, &box
+}
+
+// serve runs one request and then waits for the mail it set off, so assertions
+// on the mailbox are not racing the background sender. No sleeping: the same
+// WaitGroup shutdown drains on.
+func serve(a *app, r *http.Request) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	a.routes().ServeHTTP(w, r)
+	a.mail.Wait()
+	return w
 }
 
 // TestPagesRender walks every GET page: parseTemplates catches syntax errors,
@@ -67,9 +115,7 @@ func post(t *testing.T, a *app, body, sig string) *httptest.ResponseRecorder {
 	if sig != "" {
 		r.Header.Set("Stripe-Signature", sig)
 	}
-	w := httptest.NewRecorder()
-	a.routes().ServeHTTP(w, r)
-	return w
+	return serve(a, r)
 }
 
 func signed(t *testing.T, body string, at time.Time) string {
@@ -120,13 +166,13 @@ func storedLicence(t *testing.T, a *app) (licence, licencePayload) {
 
 // seedAnnual runs a checkout event through the handler and returns the licence
 // it issued, with the mail recorder emptied.
-func seedAnnual(t *testing.T, a *app, sent *[]sentMail) (licence, licencePayload) {
+func seedAnnual(t *testing.T, a *app, sent *mailbox) (licence, licencePayload) {
 	t.Helper()
 	body := checkoutEvent("evt_seed", "subscription", planAnnual)
 	if w := post(t, a, body, signed(t, body, time.Now())); w.Code != http.StatusOK {
 		t.Fatalf("seed checkout: %d %s", w.Code, w.Body)
 	}
-	*sent = nil
+	sent.reset()
 	return storedLicence(t, a)
 }
 
@@ -163,10 +209,10 @@ func TestRenewalExtendsLicence(t *testing.T) {
 	if afterKey.Email != "buyer@example.com" || afterKey.Plan != planAnnual {
 		t.Errorf("renewed payload = %+v", afterKey)
 	}
-	if len(*sent) != 1 {
-		t.Fatalf("emails = %d, want exactly 1 despite the redelivery", len(*sent))
+	if sent.len() != 1 {
+		t.Fatalf("emails = %d, want exactly 1 despite the redelivery", sent.len())
 	}
-	m := (*sent)[0]
+	m := sent.all()[0]
 	if !strings.Contains(m.body, after.Key) {
 		t.Error("renewal email does not carry the new key")
 	}
@@ -203,8 +249,8 @@ func TestFirstInvoiceDoesNotDoubleIssue(t *testing.T) {
 	if after.Key != before.Key {
 		t.Error("key was re-issued for an invoice that adds no time")
 	}
-	if len(*sent) != 0 {
-		t.Errorf("emails = %d, want none", len(*sent))
+	if sent.len() != 0 {
+		t.Errorf("emails = %d, want none", sent.len())
 	}
 }
 
@@ -234,8 +280,8 @@ func TestFailedThenRecoveredPayment(t *testing.T) {
 	if *p.ExpiresAt != next {
 		t.Errorf("exp = %d, want %d", *p.ExpiresAt, next)
 	}
-	if len(*sent) != 1 {
-		t.Errorf("emails = %d, want 1 (the renewed key)", len(*sent))
+	if sent.len() != 1 {
+		t.Errorf("emails = %d, want 1 (the renewed key)", sent.len())
 	}
 }
 
@@ -270,8 +316,8 @@ func TestRecoveredPaymentSamePeriodClearsLapse(t *testing.T) {
 	if *afterKey.ExpiresAt != end {
 		t.Errorf("exp = %d, want %d unchanged", *afterKey.ExpiresAt, end)
 	}
-	if len(*sent) != 0 {
-		t.Errorf("emails = %d, want none", len(*sent))
+	if sent.len() != 0 {
+		t.Errorf("emails = %d, want none", sent.len())
 	}
 }
 
@@ -321,10 +367,10 @@ func TestWebhookIssuesOnceOnRedelivery(t *testing.T) {
 	if n := countLicences(t, a); n != 1 {
 		t.Fatalf("licences issued = %d, want 1", n)
 	}
-	if len(*sent) != 1 {
-		t.Fatalf("emails sent = %d, want 1", len(*sent))
+	if sent.len() != 1 {
+		t.Fatalf("emails sent = %d, want 1", sent.len())
 	}
-	m := (*sent)[0]
+	m := sent.all()[0]
 	if m.to != "buyer@example.com" {
 		t.Errorf("recipient = %q", m.to)
 	}
@@ -358,8 +404,8 @@ func TestWebhookRejectsBadSignatures(t *testing.T) {
 		if n := countLicences(t, a); n != 0 {
 			t.Errorf("%s: issued %d licences", name, n)
 		}
-		if len(*sent) != 0 {
-			t.Errorf("%s: sent %d emails", name, len(*sent))
+		if sent.len() != 0 {
+			t.Errorf("%s: sent %d emails", name, sent.len())
 		}
 	}
 

@@ -73,9 +73,20 @@ they cover the race with
 `checkout.session.completed` on a new subscription without assuming which event
 Stripe delivers first.
 
-If the email fails after the licence is stored, the failure is logged and the
+Email is never on the response path. The licence is committed, the send is
+handed to a background goroutine, and the webhook answers Stripe immediately —
+a submission host that stalls used to hold the request open until Stripe called
+it a failed delivery, and the retry finds the event id already claimed and
+sends nothing, so a slow SMTP server could lose a paying customer's key. The
+same goes for `/retrieve`, where a person is waiting.
+
+The sender bounds itself: one deadline over dial and the whole SMTP
+conversation, three attempts with a widening gap between them, every failure
+logged against the licence id. If all three fail, that is logged too and the
 customer can pull the key from `/retrieve`. Redelivering the event would not
-help — the id is already claimed.
+help — the id is already claimed. On `SIGTERM` the process stops accepting
+requests and waits, briefly, for sends still in flight; anything still retrying
+past that bound is abandoned to `/retrieve` rather than held on to.
 
 ## Pricing and currency
 
