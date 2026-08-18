@@ -8,6 +8,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -378,7 +379,7 @@ func TestLicenceReportExitCodes(t *testing.T) {
 		{
 			name: "in grace", cfg: &config.Config{Version: "v0.19"},
 			seed: withKey(annualKey(t, now.AddDate(0, 0, -2))), wantCode: 0,
-			contains: []string{"grace:     day 3 of 14", "API stops"},
+			contains: []string{fmt.Sprintf("grace:     day 3 of %d", graceDays), "API stops"},
 		},
 		{
 			name: "past grace", cfg: &config.Config{Version: "v0.19"},

@@ -93,7 +93,7 @@ If something other than a human drives mimux, that is the paid layer:
   first boot — no key, no card.
 - **Licence enforcement is offline**: Ed25519 signature verification inside the
   binary. No activation server, no machine fingerprint, no phone-home. If an
-  annual licence lapses there is a 14-day grace period, then only the
+  annual licence lapses there is a 45-day grace period, then only the
   automation layer stops — the mail client never stops working.
 - Purchase via Stripe at <https://account.mimux.dev>; 14-day money-back
   guarantee on first purchase.

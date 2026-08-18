@@ -66,7 +66,7 @@ description: mimux pro — the REST API, MCP server and webhooks. API tokens and
   <thead><tr><th>State</th><th>What happens</th></tr></thead>
   <tbody>
     <tr><td><strong>Trial</strong></td><td>A pro build with no usable key runs for <strong>14 days</strong> from its first pro boot. Responses carry an <code>X-Mimux-Trial</code> header counting down.</td></tr>
-    <tr><td><strong>Annual licence</strong></td><td>Works until it expires, then keeps working through a <strong>14-day grace period</strong> during which responses carry <code>X-Mimux-Licence-Warning</code>. After that the API and MCP pause.</td></tr>
+    <tr><td><strong>Annual licence</strong></td><td>Works until it expires, then keeps working through a <strong>45-day grace period</strong> during which responses carry <code>X-Mimux-Licence-Warning</code>. After that the API and MCP pause.</td></tr>
     <tr><td><strong>Perpetual licence</strong></td><td>Covers builds up to its watermark version, forever. A newer build is not covered, and says so out loud rather than degrading silently.</td></tr>
     <tr><td><strong>Invalid key</strong></td><td>Treated as no key at all: the trial rules apply and the status line explains why the key was ignored, rather than hard-failing the install over a mangled paste.</td></tr>
   </tbody>

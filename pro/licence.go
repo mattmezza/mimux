@@ -37,10 +37,12 @@ const (
 	planAnnual    = "annual"
 	planPerpetual = "perpetual"
 
-	// graceDays is how long an expired annual licence keeps working. Two weeks
-	// is long enough that a failed renewal payment is a nuisance rather than an
-	// outage, and short enough to still mean something.
-	graceDays = 14
+	// graceDays is how long an expired annual licence keeps working. A renewal
+	// key is emailed and pasted in by hand — mimux never phones home, so there
+	// is no push channel — and someone who has already paid should not lose the
+	// API to a missed email. Six-and-a-half weeks is long enough to survive a
+	// holiday and a spam folder, and still short enough to mean something.
+	graceDays = 45
 	// trialDays is the no-key trial, from the first boot of a pro build.
 	trialDays = 14
 	// recheckAfter is how stale a cached evaluation may get. The key can change
@@ -389,8 +391,8 @@ func (g *licenceGate) require(next http.Handler) http.Handler {
 			licenceError(w, s.Code, s.Message)
 			return
 		}
-		// Warnings ride on successful responses: the client that will break in
-		// two weeks is the one making these calls.
+		// Warnings ride on successful responses: the client that will break
+		// when the grace period runs out is the one making these calls.
 		if s.Warning != "" {
 			w.Header().Set("X-Mimux-Licence-Warning", s.Warning)
 		}
