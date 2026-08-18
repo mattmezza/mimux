@@ -36,6 +36,23 @@ dev-account: ## Run the account licence service locally (:8081; mimux itself is 
 		cd account && DB_PATH=../data/account-dev.db \
 		LISTEN_ADDR=:$(ACCOUNT_PORT) BASE_URL=http://localhost:$(ACCOUNT_PORT) go run .
 
+# `stripe listen` mints its own whsec_ for each session — it is NOT the secret
+# of any dashboard endpoint, so account.env has to be updated and dev-account
+# restarted or every forwarded event dies on signature verification. Only the
+# four events handleWebhook acts on are forwarded; the rest is terminal noise.
+.PHONY: dev-webhook
+dev-webhook: ## Forward Stripe webhooks to the local account service (prints a fresh whsec_)
+	@command -v stripe >/dev/null || { \
+		echo "the Stripe CLI is missing — it is what forwards the webhooks."; \
+		echo "  install: https://docs.stripe.com/stripe-cli#install"; \
+		echo "  then run: stripe login"; \
+		exit 1; \
+	}
+	@echo "Put the whsec_… below into account/account.env as STRIPE_WEBHOOK_SECRET,"
+	@echo "then restart 'make dev-account' — it reads the secret once, at boot."
+	stripe listen --forward-to localhost:$(ACCOUNT_PORT)/stripe/webhook \
+		--events checkout.session.completed,invoice.payment_succeeded,customer.subscription.deleted,invoice.payment_failed
+
 .PHONY: css
 css: ## Build Tailwind CSS (watch mode)
 	npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --watch
