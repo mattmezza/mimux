@@ -28,6 +28,14 @@ import (
 //go:embed templates
 var templatesFS embed.FS
 
+// The house fonts, embedded so this service serves its own and does not fetch
+// anything from mimux.dev at runtime — a checkout page should not depend on a
+// second origin being up. Copies of www/src/fonts; OFL licences ship beside
+// them because the binary redistributes the fonts.
+//
+//go:embed static
+var staticFS embed.FS
+
 type config struct {
 	listenAddr     string
 	baseURL        string
