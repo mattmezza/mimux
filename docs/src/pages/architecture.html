@@ -1,0 +1,225 @@
+<!--
+title: Architecture
+description: How mimux is built — a single Go binary serving htmx, IMAP IDLE sync with polling fallback, SQLite storage, JWZ threading, FTS5 plus deep IMAP search, a filters engine, and the build-tag split that separates the free client from the pro layer.
+-->
+<h1>Architecture</h1>
+<p class="lede">
+  One Go binary, one SQLite file, and a server-rendered front end with no
+  JavaScript build step beyond the CSS pipeline.
+</p>
+
+<pre class="diagram"><code>            browser (htmx + Alpine.js + Tailwind)
+                          |  HTML fragments, SSE on /events
+                          v
+  +------------------------------------------------------------+
+  |  cmd/mimux - one process                                   |
+  |                                                            |
+  |  internal/server     chi router, html/template pages       |
+  |                      and htmx fragments, session cookies   |
+  |  internal/mail       one worker + IMAP connection per      |
+  |                      account: IDLE/poll sync, SMTP send,   |
+  |                      threading, sanitising, scheduler      |
+  |  internal/store      SQLite: messages, folders, drafts,    |
+  |                      filters, settings, tokens, FTS index  |
+  |  internal/filter     pure rules engine (no I/O)            |
+  |  internal/search     query parser + SQL builder            |
+  |  internal/ai         optional, OpenAI-compatible           |
+  |  internal/translate  optional, Google Translate            |
+  |                                                            |
+  |  internal/ext  <- the only door the pro layer comes in by  |
+  |  pro/          REST API, MCP server, webhooks     [ELv2]   |
+  +------------------------------------------------------------+
+          |                                     |
+          v                                     v
+     IMAP / SMTP                          data/mimux.db
+     (your providers)                     data/secret</code></pre>
+
+<h2>The web layer</h2>
+
+<p>
+  <code>internal/server</code> is a <a href="https://github.com/go-chi/chi">chi</a>
+  router rendering <code>html/template</code> pages and htmx fragments. The
+  browser side stays deliberately dependency-light: <strong>htmx</strong> for
+  server-driven updates, <strong>Alpine.js</strong> for small local UI state
+  (menus, forms), <strong>Tailwind</strong> for styling. There is no bundler and
+  no client-side router — the only build step for the front end is the Tailwind
+  CSS pass, and its output is embedded in the binary along with the templates,
+  icons and service worker.
+</p>
+
+<p>
+  Live updates arrive over a Server-Sent Events stream at <code>/events</code>:
+  new mail, sync status changes, deep-search results as they land. That stream
+  is why the HTTP server has no global write timeout.
+</p>
+
+<h2>Mail: sync, send, threading</h2>
+
+<p>
+  <code>internal/mail</code> owns a <code>Manager</code> with one worker and one
+  IMAP connection per account. Each worker loops: sync, then wait. The wait is
+  IMAP <strong>IDLE</strong> where the server advertises the capability — new
+  data breaks the idle and triggers a resync — with a ceiling equal to the poll
+  interval, so the <em>Check every N minutes</em> setting still applies under
+  IDLE. Servers without IDLE, and connections that drop, fall back to plain
+  <strong>polling</strong>. A queued foreground command (attachment fetch,
+  server-side search) also breaks IDLE so it can run on the same connection.
+</p>
+
+<p>
+  Sending goes out over SMTP from the same package, which also renders the
+  message: plain text, HTML, or Markdown rendered to HTML with a plain-text
+  alternative. Scheduled send and undo-send are an outbox table plus a
+  scheduler goroutine.
+</p>
+
+<p>
+  <strong>Threading</strong> is the standard <strong>JWZ</strong> container
+  algorithm over <code>Message-ID</code>, <code>References</code> and
+  <code>In-Reply-To</code> (<code>References</code> wins where the two
+  disagree). There is deliberately <em>no</em> subject fallback: merging
+  header-less mail that merely shares a subject collapsed unrelated
+  notification mail into one enormous thread, and it is not what Gmail does
+  either. Messages carrying no threading headers stand alone. Gmail's
+  <code>X-GM-THRID</code> is not used — the upstream IMAP library cannot fetch
+  it yet — and in practice JWZ threads Gmail conversations correctly anyway.
+</p>
+
+<p>
+  Incoming HTML bodies are <strong>sanitised</strong> before they are ever
+  rendered, and external resources are rewritten so nothing loads until you ask
+  for it.
+</p>
+
+<h2>Storage</h2>
+
+<p>
+  <code>internal/store</code> is SQLite and nothing else — no ORM, hand-written
+  SQL, schema managed by numbered migration files applied at boot. One file
+  holds messages and their bodies, folders, drafts, filters, sessions, app
+  settings, push subscriptions, OAuth tokens, API tokens and webhook rows.
+</p>
+
+<p>
+  It runs in WAL mode, which is what lets a second process open the same
+  database read-only while the server is live — that is how
+  <code>mimux licence status</code> can report on a running install without
+  touching it.
+</p>
+
+<p>
+  Message bodies are cached with an LRU and a per-account cap, and a warmer
+  prefetches bodies for the newest inbox page so the message you are about to
+  click is already local.
+</p>
+
+<h2>Search</h2>
+
+<p>Two searches share one query language.</p>
+
+<ul>
+  <li><strong>Local.</strong> An FTS5 virtual table over subject, snippet and
+    the address lists, kept in step with the <code>messages</code> table by
+    triggers. <code>internal/search</code> parses the query into terms and
+    builds the SQL. This is instant and covers everything that has been
+    synced.</li>
+  <li><strong>Deep.</strong> The same parsed query is mapped to IMAP SEARCH
+    criteria and fanned out to every relevant account's server. Results stream
+    back over SSE as each server answers, because one slow provider should not
+    hold up the rest. This is the escape hatch for mail too old or too rarely
+    synced to be in the local index.</li>
+</ul>
+
+<p>
+  The query language: bare words match anywhere; <code>from:</code>,
+  <code>to:</code>, <code>cc:</code>, <code>subject:</code>, <code>body:</code>,
+  <code>in:</code>, <code>label:</code> narrow to a field;
+  <code>is:unread</code>, <code>is:starred</code>, <code>has:attachment</code>;
+  <code>before:</code>/<code>after:</code> take <code>YYYY-MM-DD</code>;
+  <code>larger:</code>/<code>smaller:</code> take a size; quoted strings are
+  exact phrases; a leading <code>-</code> negates. Every term is ANDed — there
+  is no <code>OR</code>.
+</p>
+
+<h2>Filters</h2>
+
+<p>
+  <code>internal/filter</code> is a pure rules engine with no I/O, so it is
+  driven identically by the sync loop and by the HTTP layer. A rule is a list of
+  <strong>conditions</strong> ANDed together — field
+  (<code>from</code>, <code>to</code>, <code>subject</code>, <code>body</code>)
+  × operator (<code>contains</code>, <code>regex</code>) × value — and a list of
+  <strong>actions</strong> run when they all match:
+  <code>move</code>, <code>label</code>, <code>forward</code>,
+  <code>mark_read</code>, <code>star</code>, <code>delete</code>,
+  <code>notify</code>. Rules are evaluated in position order against incoming
+  mail; a rule with no conditions would match everything, so at least one is
+  required.
+</p>
+
+<h2>The free/pro split</h2>
+
+<p>
+  <code>pro/</code> is the separately licensed automation layer. Every file in
+  it carries <code>//go:build pro</code>, including the registration hook, so the
+  default build excludes the package from the build graph
+  <em>entirely</em> — not compiled, not linked, not present.
+</p>
+
+<pre><code>make build            # free binary — contains zero ELv2 code
+make build-pro        # commercial binary — AGPL client + ELv2 pro layer
+make verify-free      # proves the free binary links nothing from pro/
+make verify-licence   # proves every SPDX header is on the right side
+make verify-boundary  # proves pro/ binds via internal/ext, not internal/server</code></pre>
+
+<p>
+  All three verifications run in CI and in <code>make check</code>, so the split
+  is proven rather than claimed.
+</p>
+
+<h3>The boundary</h3>
+
+<p>
+  The pro layer binds to the client through <code>internal/ext</code>: one
+  struct, <code>ext.Deps</code>, handing it the mail manager, the store and the
+  config, plus a <code>Register</code> hook called from an <code>init()</code>.
+  It is <strong>not allowed to import <code>internal/server</code></strong>, and
+  <code>make verify-boundary</code> enforces that.
+</p>
+
+<p>
+  That rule is the reason there is no speculative "mail engine" interface.
+  Anything <code>pro/</code> needs that lives as a private method on
+  <code>*server.Server</code> has to move down into <code>internal/mail</code> or
+  <code>internal/store</code> first, where the HTML handler then calls the same
+  code. Shared operations end up in the domain layer because a real caller
+  needed them there, not because someone guessed in advance what an API would
+  want.
+</p>
+
+<p>
+  Extensions mount outside the session-cookie auth group. Nothing in
+  <code>pro/</code> ever reads a browser session: API callers authenticate with
+  a personal access token. See <a href="../automation/">The automation
+  layer</a>.
+</p>
+
+<h2>Licence enforcement, and what it does not touch</h2>
+
+<p>
+  Verification is offline and signature-only: an ed25519 public key is linked
+  into the binary, a signed key is presented, the signature verifies or it does
+  not. There is no phone-home, no activation call and no machine fingerprint —
+  the licence-selling service at
+  <a href="https://account.mimux.dev">account.mimux.dev</a> is published in the
+  same repository so you can check that for yourself.
+</p>
+
+<p>
+  The gate wraps exactly two route groups: <code>/api/v1/*</code> and
+  <code>/api/mcp</code>. <code>/api/health</code> and
+  <code>/api/v1/openapi.json</code> stay open unconditionally — a probe and the
+  documentation are not the product — and nothing in the mail client is behind
+  it at all. Sync, send, search and the whole web interface are AGPL code that
+  has no idea the licence file exists.
+</p>

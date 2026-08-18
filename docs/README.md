@@ -1,7 +1,7 @@
-# docs/ — the API reference site
+# docs/ — the documentation site
 
-The static site published at **<https://docs.mimux.dev>**: an OpenAPI reference
-for the mimux REST API.
+The static site published at **<https://docs.mimux.dev>**: prose documentation
+for mimux, plus the OpenAPI reference for its REST API.
 
 This directory is AGPL-3.0 like the rest of the repo root. The *spec it renders*
 lives at [`pro/openapi.json`](../pro/openapi.json) and is ELv2, because it
@@ -11,10 +11,27 @@ describes the pro layer. Nothing here is compiled into any binary.
 
 | Path | What it is |
 |---|---|
-| `src/index.html` | The page shell — mimux.dev's "correspondence" header and palette around Scalar. Loads `./openapi.json` and `./scalar.js`, both siblings in the built output. |
+| `src/shell.html` | The page template: `<head>`, the mimux.dev "correspondence" masthead, the sidebar slot and the footer. Every page is this file with four placeholders filled in. |
+| `src/style.css` | The whole site's stylesheet. Copied to `dist/style.css`. |
+| `src/pages/*.html` | One fragment per page: a metadata comment (`title`, `description`, optional `chrome: none`) followed by the body. **The file name is the slug.** |
 | `vendor/scalar-api-reference-<version>.js` | The Scalar standalone bundle, committed. The only third-party file here. |
 | `dist/fonts/` | Inter, Bricolage Grotesque and JetBrains Mono, copied from `www/src/fonts` at build time so the docs wear the same clothes as mimux.dev. |
 | `dist/` | **Committed build output.** This is what GitHub Pages serves, byte for byte. |
+
+### Adding a page
+
+Two steps, no exceptions:
+
+1. Drop a fragment in `src/pages/`. `cli.html` becomes `dist/cli/index.html`,
+   reachable at `/cli/`; `index.html` is the one special case and becomes the
+   site root.
+2. Add its slug and label to `NAV` in
+   [`scripts/docs_pages.py`](../scripts/docs_pages.py). That list is the site
+   map and the sidebar both.
+
+Fragments use relative links (`../mcp/`, `../openapi.json`), so the site works
+served from any prefix. `chrome: none` skips the prose wrapper and the footer —
+`reference.html` uses it, because Scalar wants to lay out its own page.
 
 ## Building
 
@@ -23,13 +40,22 @@ make docs        # assemble docs/dist
 make docs-check  # assemble, then fail if the committed dist is stale
 ```
 
-`make docs` runs [`scripts/docs.sh`](../scripts/docs.sh), which is a copy, not a
-build: no npm, no bundler, no network. It wipes `docs/dist` and assembles it from
+`make docs` runs [`scripts/docs.sh`](../scripts/docs.sh): a copy plus one
+stdlib-only Python pass. No npm, no bundler, no network, nothing to install. It
+wipes `docs/dist` and assembles it from
 
-- `src/index.html` → `dist/index.html`
+- `src/pages/*.html` + `src/shell.html` → `dist/<slug>/index.html`, via
+  `scripts/docs_pages.py`
+- `src/style.css` → `dist/style.css`
 - `pro/openapi.json` → `dist/openapi.json`
 - `vendor/scalar-api-reference-*.js` → `dist/scalar.js`
+- `www/src/fonts/*` → `dist/fonts/`
 - a `dist/CNAME` containing `docs.mimux.dev`
+
+The Python step exists only so the masthead, sidebar and footer live in one
+file instead of eleven. It has no inputs beyond those files — no timestamps, no
+directory-order dependence — so two runs produce byte-identical output, which is
+what makes the staleness rule below enforceable.
 
 To look at it locally, serve the directory — `file://` will not do, the page
 fetches `openapi.json` over HTTP:
@@ -49,8 +75,9 @@ The rule is enforced by the `staleness` job in
 docs` and then `git diff --exit-code docs/dist`. A diff fails the build and the
 deploy never runs.
 
-In practice: **whenever you touch `pro/openapi.json`, run `make docs` and commit
-`docs/dist` in the same commit.** `make docs-check` tells you if you forgot. It
+In practice: **whenever you touch anything under `docs/src`, `scripts/docs*`, or
+`pro/openapi.json`, run `make docs` and commit `docs/dist` in the same
+commit.** `make docs-check` tells you if you forgot. It
 is deliberately *not* wired into `make check` — CI owns that gate, and a stale
 `dist` should not block an unrelated local check run.
 

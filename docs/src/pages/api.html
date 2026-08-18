@@ -1,0 +1,305 @@
+<!--
+title: REST API guide
+description: A prose companion to the mimux OpenAPI reference — base URL, bearer auth, the error and collection envelopes, pagination, idempotency, and the common flows with curl.
+-->
+<h1>REST API guide <span class="pro-tag">pro</span></h1>
+<p class="lede">
+  The shape of the API, the conventions it keeps, and the handful of flows
+  everything else is built out of. For the field-by-field detail of every
+  endpoint, read the <a href="../reference/">API reference</a>.
+</p>
+
+<p>
+  This page assumes you have a token. If you do not, start at
+  <a href="../automation/">The automation layer</a>.
+</p>
+
+<h2>Base URL</h2>
+
+<p>
+  mimux is self-hosted, so there is no shared API host. The API is always mounted
+  under <code>/api</code> on the same origin as the web client:
+</p>
+
+<pre><code>https://mail.example.com/api/v1/...</code></pre>
+
+<p>
+  The binary serves its own spec at <code>/api/v1/openapi.json</code> —
+  unauthenticated, because a client that cannot yet authenticate is exactly the
+  one that needs to read it. That file is the same one this site renders, so the
+  documentation can never describe a different API than the one you are running.
+</p>
+
+<h2>Authentication</h2>
+
+<pre><code>Authorization: Bearer mimux_pat_...</code></pre>
+
+<p>
+  Every request. There is no session, no cookie, no login call and no refresh
+  token. A missing or malformed header is <strong>401</strong>
+  (<code>unauthorized</code>); a valid token without the required scope is
+  <strong>403</strong> (<code>insufficient_scope</code>), and the message names
+  the scope you are missing so you know which box to tick in Settings.
+</p>
+
+<p>
+  Verify a token at any time with <code>GET /api/v1/tokens/self</code>, which
+  requires no scope and returns the token's label and scope list.
+</p>
+
+<h2>Envelopes</h2>
+
+<h3>Errors</h3>
+
+<p>Every non-2xx response has the same shape, so failures parse without special-casing per endpoint.</p>
+
+<pre><code>{
+  "error": {
+    "code": "insufficient_scope",
+    "message": "This token is missing the mail:send scope."
+  }
+}</code></pre>
+
+<p>
+  Branch on <code>code</code>, never on <code>message</code> — the wording may
+  change between versions. The codes are
+  <code>invalid_request</code>, <code>unauthorized</code>,
+  <code>licence_required</code>, <code>licence_version</code>,
+  <code>insufficient_scope</code>, <code>not_found</code>,
+  <code>rate_limited</code>, <code>upstream</code>, <code>send_failed</code> and
+  <code>internal</code>. The licence codes carry a <code>details.url</code>
+  pointing at where to fix it.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Status</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>400</code></td><td>Bad request. Unknown JSON fields are rejected too — a typo'd field name fails loudly instead of being silently ignored.</td></tr>
+    <tr><td><code>401</code></td><td>Missing, malformed, unknown, revoked or expired token.</td></tr>
+    <tr><td><code>402</code></td><td>The pro licence does not currently allow the API. Mail is unaffected. See <a href="../automation/">the licence rules</a>.</td></tr>
+    <tr><td><code>403</code></td><td>Token authenticated, but lacks the scope.</td></tr>
+    <tr><td><code>429</code></td><td>Over the per-token rate limit. Honour <code>Retry-After</code>.</td></tr>
+    <tr><td><code>502</code></td><td>The upstream mail server refused — e.g. SMTP rejected a send.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Collections</h3>
+
+<pre><code>{ "data": [ ... ], "next_cursor": "" }</code></pre>
+
+<p>
+  <code>next_cursor</code> is an opaque string, or <code>""</code> when the
+  collection is exhausted. Endpoints that are not paginated always return
+  <code>""</code> — the field is present regardless, so a client never has to
+  ask whether this particular collection pages.
+</p>
+
+<h2>Pagination</h2>
+
+<p>
+  <code>GET /v1/messages</code> pages with <code>limit</code> (1–500, default
+  100) and <code>cursor</code>. Feed the previous response's
+  <code>next_cursor</code> back in; stop when it comes back empty. A
+  <code>limit</code> outside the range is a <strong>400</strong> — it is not
+  silently clamped.
+</p>
+
+<pre><code>curl -s -H "Authorization: Bearer $MIMUX_TOKEN" \
+  "$BASE/api/v1/messages?account=work&amp;unread=true&amp;limit=50"</code></pre>
+
+<p>
+  Filters on that endpoint: <code>folder</code> (a folder id, which takes
+  precedence over <code>account</code>), <code>account</code> (that account's
+  inbox), <code>unread</code>, <code>starred</code>, <code>since</code> (RFC
+  3339), and substring matches on <code>from</code>, <code>to</code> and
+  <code>subject</code>. The reference documents the lenient parsing of each
+  honestly, including the cases where an unparseable value is ignored rather
+  than rejected.
+</p>
+
+<h2>Idempotency</h2>
+
+<p>
+  The three mutating POSTs that create something —
+  <code>/v1/messages/send</code>, <code>/v1/drafts</code> and
+  <code>/v1/filters</code> — accept an <code>Idempotency-Key</code> header. A
+  repeat of the same key on the same route with the same token replays the
+  stored response instead of executing again, and the replay is marked with
+  <code>Idempotency-Replayed: true</code>.
+</p>
+
+<pre><code>curl -X POST "$BASE/api/v1/messages/send" \
+  -H "Authorization: Bearer $MIMUX_TOKEN" \
+  -H "Idempotency-Key: deploy-2026-08-18-green" \
+  -H "Content-Type: application/json" \
+  -d '{"to":["bob@example.com"],"subject":"Deploy is green","body":"All checks passed."}'</code></pre>
+
+<p>
+  Only 2xx responses are stored — a failed call is safe to re-execute — and
+  entries live for 24 hours. The cache is <strong>in memory</strong>, so keys do
+  not survive a restart: at-most-once per process, not per install.
+</p>
+
+<h2>Common flows</h2>
+
+<h3>Read the inbox</h3>
+
+<pre><code># unread across one account's inbox
+GET /v1/messages?account=work&amp;unread=true          # mail:read
+
+# one message, with body and attachment list
+GET /v1/messages/{id}?body=both                     # mail:read
+
+# an attachment by index
+GET /v1/messages/{id}/attachments/{n}               # mail:read</code></pre>
+
+<p>
+  Folder ids come from <code>GET /v1/folders</code>, which returns each
+  account's tree with <code>special_use</code> marking
+  inbox/sent/drafts/archive/spam/trash. Account names come from
+  <code>GET /v1/accounts</code>, which also reports live sync state and unread
+  counts — worth checking before you trust freshness.
+</p>
+
+<h3>Triage</h3>
+
+<pre><code>PATCH  /v1/messages/{id}          {"read":true}          # mail:modify
+PATCH  /v1/messages/{id}          {"starred":true}
+PATCH  /v1/messages/{id}          {"folder_id":42}       # same account only
+POST   /v1/messages/{id}/archive
+POST   /v1/messages/{id}/spam
+DELETE /v1/messages/{id}                                 # move to Trash</code></pre>
+
+<p>
+  <code>PATCH</code> applies only the fields present;
+  <code>labels_add</code> is applied before <code>labels_remove</code>. The
+  three move routes answer <code>{"status":"ok","folder_id":…}</code> with the
+  folder the message now lives in. These are optimistic: mimux updates its own
+  store and returns, then applies the change on the IMAP server behind the
+  response.
+</p>
+
+<h3>Search</h3>
+
+<p>Local search answers immediately:</p>
+
+<pre><code>curl -X POST "$BASE/api/v1/messages/search" \
+  -H "Authorization: Bearer $MIMUX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"from:alice is:unread after:2026-01-01","limit":50}'</code></pre>
+
+<p>
+  Deep search asks the IMAP servers themselves. It answers
+  <strong>202</strong> with a job, which you then poll:
+</p>
+
+<pre><code>POST /v1/messages/search   {"query":"invoice","mode":"deep"}
+  -> 202 {"id":"9f2c...","status":"running","query":"invoice","started_at":"..."}
+
+GET  /v1/search/jobs/9f2c...
+  -> 200 {"id":"9f2c...","status":"done","results":[ ... ]}</code></pre>
+
+<p>
+  A job whose IMAP searches all errored still ends <code>done</code>, with empty
+  results — there is no failure status. Jobs live in a small in-memory ring, so
+  poll promptly and do not expect one to still be there tomorrow.
+</p>
+
+<p>
+  The query language is the same one the web UI's search box takes; it is
+  described on the <a href="../architecture/">Architecture</a> page.
+</p>
+
+<h3>Send</h3>
+
+<pre><code>POST /v1/messages/send                                   # mail:send
+{
+  "to": ["alice@example.com"],
+  "subject": "Re: quarterly report",
+  "body": "**Numbers attached.**",
+  "mode": "markdown",
+  "in_reply_to": 41207,
+  "attachments": [
+    {"filename":"q3.csv","content_type":"text/csv","data":"YSxiLGMK"}
+  ]
+}</code></pre>
+
+<p>
+  <code>in_reply_to</code> is a <strong>mimux message id</strong>, not a
+  <code>Message-ID</code> header — mimux reads the original's headers and builds
+  the threading itself, and can resolve the sending account from it. Attachment
+  <code>data</code> is base64; the combined decoded size is capped at 25&nbsp;MiB.
+  <code>mode</code> is <code>plain</code> (default), <code>html</code> or
+  <code>markdown</code>; markdown is rendered to HTML with a plain-text
+  alternative, exactly as the compose form does it.
+</p>
+
+<p>
+  Sending now answers <strong>200</strong>
+  <code>{"status":"sent","message_id":"&lt;...&gt;"}</code> — that
+  <code>message_id</code> is the RFC 5322 header value, not a mimux id. Adding
+  <code>schedule_at</code> puts it in the outbox instead and answers
+  <strong>202</strong> <code>{"status":"scheduled","outbox_id":…,"send_at":…}</code>.
+  There is no API to read, edit or cancel the outbox yet.
+</p>
+
+<h3>Drafts</h3>
+
+<pre><code>POST  /v1/drafts        # mail:send — creates the same row the compose form uses
+PATCH /v1/drafts/{id}</code></pre>
+
+<p>
+  Note the asymmetry with send: draft recipients are comma-separated
+  <em>strings</em>, where <code>SendRequest</code> takes arrays. Drafts are
+  local to mimux — they are not appended to the IMAP Drafts folder.
+</p>
+
+<p>
+  A draft is also how an agent proposes mail without being able to send it; see
+  <a href="../mcp/">MCP server</a>.
+</p>
+
+<h3>Filters</h3>
+
+<pre><code>GET  /v1/filters        # mail:read
+POST /v1/filters        # mail:modify</code></pre>
+
+<p>
+  A rule is at least one condition (all ANDed) and at least one action.
+  Conditions are <code>field</code> ∈
+  {<code>from</code>, <code>to</code>, <code>subject</code>, <code>body</code>} ×
+  <code>op</code> ∈ {<code>contains</code>, <code>regex</code>} ×
+  <code>value</code>. Actions are <code>move</code>, <code>label</code>,
+  <code>forward</code>, <code>mark_read</code>, <code>star</code>,
+  <code>delete</code>, <code>notify</code>. <code>position</code> sets
+  evaluation order; an empty <code>account</code> means every account.
+</p>
+
+<h3>Webhooks</h3>
+
+<p>
+  Managed under <code>/v1/webhooks</code> with the
+  <code>webhooks:manage</code> scope, and documented on their own page:
+  <a href="../webhooks/">Webhooks</a>.
+</p>
+
+<h2>Health</h2>
+
+<pre><code>curl -s "$BASE/api/health"
+{"ok":true,"accounts":2}</code></pre>
+
+<p>
+  Unauthenticated and outside the licence gate, on purpose: a health probe that
+  needs a credential is a health probe nobody wires up. It exposes a count, not
+  any mail.
+</p>
+
+<h2>The full reference</h2>
+
+<p>
+  <a href="../reference/">The API reference</a> is generated from the spec the
+  binary itself serves, with request samples in curl, Python, JavaScript, Go,
+  Ruby and PHP for every operation.
+</p>

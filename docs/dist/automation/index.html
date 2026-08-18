@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>The automation layer — mimux docs</title>
+    <meta name="description" content="mimux pro — the REST API, MCP server and webhooks. API tokens and scopes, bearer auth, rate limiting, the licence key, the 14-day trial, and why mail never stops." />
+    <link rel="stylesheet" href="../style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav aria-label="Main">
+        <a class="brand" href="../">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E" alt="" width="26" height="26" />
+          <span>mimux</span>
+          <small>docs</small>
+        </a>
+        <ul>
+          <li class="hide-sm"><a href="https://mimux.dev/agents/">Automation</a></li>
+          <li class="hide-sm"><a href="https://mimux.dev/pricing/">Pricing</a></li>
+          <li><a href="https://github.com/mattmezza/mimux">GitHub</a></li>
+          <li><a class="cta" href="https://mimux.dev/#install">Get mimux</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Documentation">
+<p class="nav-group">Start here</p>
+<ul>
+<li><a href="../">Overview</a></li>
+<li><a href="../how-it-works/">How mimux works</a></li>
+<li><a href="../architecture/">Architecture</a></li>
+<li><a href="../install/">Installation</a></li>
+</ul>
+<p class="nav-group">Using mimux</p>
+<ul>
+<li><a href="../interfaces/">Web UI, PWA, notifications</a></li>
+<li><a href="../cli/">Command line</a></li>
+</ul>
+<p class="nav-group">Automation (pro)</p>
+<ul>
+<li><a href="../automation/" class="here" aria-current="page">The automation layer</a></li>
+<li><a href="../api/">REST API guide</a></li>
+<li><a href="../reference/">API reference</a></li>
+<li><a href="../mcp/">MCP server</a></li>
+<li><a href="../webhooks/">Webhooks</a></li>
+</ul>
+</nav>
+      <div class="content">
+        <main class="prose" id="content">
+<h1>The automation layer <span class="pro-tag">pro</span></h1>
+<p class="lede">
+  Everything a human does in mimux is free, forever. When something other than a
+  human needs to drive the mailbox, that is the pro layer: a REST API, an MCP
+  server, and webhooks.
+</p>
+
+<p>Read this page before the <a href="../api/">API guide</a> or the
+<a href="../mcp/">MCP page</a> — it is where the credentials come from.</p>
+
+<h2>What you get</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Surface</th><th>Mounted at</th><th>For</th></tr></thead>
+  <tbody>
+    <tr><td><a href="../api/">REST API</a></td><td><code>/api/v1</code></td><td>Scripts, integrations, anything that speaks HTTP and JSON.</td></tr>
+    <tr><td><a href="../mcp/">MCP server</a></td><td><code>/api/mcp</code></td><td>AI agents, over streamable HTTP or the bundled stdio bridge.</td></tr>
+    <tr><td><a href="../webhooks/">Webhooks</a></td><td>outbound</td><td>Signed POSTs to your URL when mail arrives, so nothing has to poll.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  All three share one credential model, one scope set and one domain layer.
+  The MCP server is the REST API wearing the protocol an agent already speaks.
+</p>
+
+<h2>Running a pro build</h2>
+
+<p>
+  The pro layer ships as a separate image and separate binaries, because the
+  free ones do not contain it at all. Swap the image and add your key:
+</p>
+
+<pre><code>services:
+  mimux:
+    image: ghcr.io/mattmezza/mimux:pro   # or :v0.20-pro to pin
+    environment:
+      - MIMUX_LICENCE_KEY=mimuxlic1....  # from account.mimux.dev</code></pre>
+
+<p>
+  Binaries are attached to each release as
+  <code>mimux-pro-&lt;os&gt;-&lt;arch&gt;</code>. Alternatively, paste the key into
+  <strong>Settings → API</strong> instead of setting the environment variable —
+  the environment wins when both are present, so an install that provisions its
+  licence from the environment never has to clear a stale database row.
+</p>
+
+<h2>The licence</h2>
+
+<p>
+  Verification is <strong>offline and signature-only</strong>. An ed25519 public
+  key is linked into the binary at build time; a key you paste is verified
+  against it. There is no phone-home, no activation call and no machine
+  fingerprint. Keys are bought and re-sent at
+  <a href="https://account.mimux.dev">account.mimux.dev</a>.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>State</th><th>What happens</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Trial</strong></td><td>A pro build with no usable key runs for <strong>14 days</strong> from its first pro boot. Responses carry an <code>X-Mimux-Trial</code> header counting down.</td></tr>
+    <tr><td><strong>Annual licence</strong></td><td>Works until it expires, then keeps working through a <strong>14-day grace period</strong> during which responses carry <code>X-Mimux-Licence-Warning</code>. After that the API and MCP pause.</td></tr>
+    <tr><td><strong>Perpetual licence</strong></td><td>Covers builds up to its watermark version, forever. A newer build is not covered, and says so out loud rather than degrading silently.</td></tr>
+    <tr><td><strong>Invalid key</strong></td><td>Treated as no key at all: the trial rules apply and the status line explains why the key was ignored, rather than hard-failing the install over a mangled paste.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  When the licence does not allow it, <code>/api/v1/*</code> and
+  <code>/api/mcp</code> answer <strong>402</strong> with error code
+  <code>licence_required</code> or <code>licence_version</code>, and a message
+  naming the fix. Two endpoints stay open unconditionally:
+  <code>/api/health</code> and <code>/api/v1/openapi.json</code> — a probe and
+  the documentation are not the product.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Mail itself never stops.</strong> Licensed, expired or absent, the
+    client keeps syncing, sending, searching and rendering. The licence gate
+    wraps two route groups in <code>pro/</code> and nothing else; the mail client
+    is AGPL code that has no idea it exists.
+  </p>
+</div>
+
+<p>
+  <code>mimux licence status</code> prints exactly where an install stands, and
+  exits <code>0</code> when the API is answering and <code>1</code> when it is
+  not — which makes it one line in a monitoring script. See
+  <a href="../cli/">Command line</a>.
+</p>
+
+<h2>API tokens</h2>
+
+<p>
+  Machine access authenticates with a <strong>personal access token</strong>
+  created in <strong>Settings → API</strong>. Browser session cookies are never
+  accepted by the API; the pro routes mount outside the cookie auth group
+  entirely.
+</p>
+
+<ul>
+  <li>Tokens start with <code>mimux_pat_</code>.</li>
+  <li>The secret is shown <strong>once</strong>, at creation. Only its argon2id
+    hash is stored — there is no way to recover it, only to make another.</li>
+  <li>Each token has a label, an optional expiry, a scope set, and a last-used
+    timestamp (written at most once a minute, because it is a write on a read
+    path).</li>
+  <li><strong>Revoking takes effect immediately.</strong> Every request re-reads
+    the token row and re-checks revoked/expired state, so nothing has to be
+    invalidated or waited out.</li>
+</ul>
+
+<h3>Scopes</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Scope</th><th>Grants</th></tr></thead>
+  <tbody>
+    <tr><td><code>mail:read</code></td><td>Read mail: list and read messages, folders, search, read filters.</td></tr>
+    <tr><td><code>mail:send</code></td><td>Send mail, and create or update drafts.</td></tr>
+    <tr><td><code>mail:modify</code></td><td>Change mail: read/star flags, labels, move, archive, spam, trash — and create filter rules.</td></tr>
+    <tr><td><code>accounts:read</code></td><td>Read the account list and its sync state.</td></tr>
+    <tr><td><code>webhooks:manage</code></td><td>Manage webhook endpoints, including reading them.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  A token's scopes are a space-separated subset of those five; an unrecognised
+  scope is dropped on the way in, so a typo can never be stored and later
+  honoured as a grant. A token created with nothing ticked gets
+  <code>mail:read</code>, because a credential that authenticates and can do
+  nothing is worse than useless.
+</p>
+
+<p>
+  Filters follow the mail scopes rather than getting one of their own — they
+  govern how mail is handled. Webhooks are the exception:
+  <code>webhooks:manage</code> covers reading them too, because a list of
+  endpoints is a list of places this mailbox already talks to.
+</p>
+
+<p>
+  Grant the narrowest set that works. An agent that triages but must never send
+  gets <code>mail:read mail:modify</code> and physically cannot send — on the
+  MCP surface the send tools are not even listed.
+</p>
+
+<h2>Authenticating</h2>
+
+<pre><code>curl -H "Authorization: Bearer $MIMUX_TOKEN" \
+     https://mail.example.com/api/v1/tokens/self</code></pre>
+
+<pre><code>{"label":"triage bot","scopes":["mail:read","mail:modify"]}</code></pre>
+
+<p>
+  <code>GET /api/v1/tokens/self</code> needs no scope by design: it tells a
+  client what its own credential may do, which is exactly what a client with a
+  too-narrow token needs in order to find that out.
+</p>
+
+<h2>Rate limiting</h2>
+
+<p>
+  Each token gets a continuously refilling bucket, <code>120</code> requests per
+  minute by default. Change it with <code>MIMUX_API_RATE_LIMIT</code>; set it to
+  <code>0</code> to switch limiting off entirely.
+</p>
+
+<p>
+  Over the limit is <strong>429</strong> with code <code>rate_limited</code> and
+  a <code>Retry-After</code> header in whole seconds. The licence is checked
+  <em>before</em> the token, everywhere, so a 402 never spends a request from
+  your budget.
+</p>
+
+<h2>Where to go next</h2>
+
+<ul class="cards">
+  <li><a href="../api/"><strong>REST API guide</strong><span>Envelopes, pagination, idempotency, and the common flows end to end.</span></a></li>
+  <li><a href="../mcp/"><strong>MCP server</strong><span>Wire up an agent. Nine tools, scope-filtered, with a two-step send.</span></a></li>
+  <li><a href="../webhooks/"><strong>Webhooks</strong><span>Signed deliveries, retries, and the delivery log.</span></a></li>
+</ul>
+</main>
+        <footer class="site-footer">
+  <p>mimux is a self-hosted email client. The client is AGPL-3.0; the automation
+  layer in <code>pro/</code> is Elastic Licence 2.0 &mdash; see
+  <a href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">LICENSING.md</a>.</p>
+  <p><a href="https://mimux.dev/">mimux.dev</a> &middot;
+  <a href="https://github.com/mattmezza/mimux">Source</a> &middot;
+  <a href="https://account.mimux.dev">Licences</a></p>
+</footer>
+      </div>
+    </div>
+  </body>
+</html>

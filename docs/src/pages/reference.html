@@ -1,0 +1,28 @@
+<!--
+title: API reference
+description: The generated OpenAPI reference for the mimux REST API — every endpoint, every field, with request samples in curl, Python, JavaScript, Go, Ruby and PHP.
+chrome: none
+-->
+<!--
+  Scalar's standalone bundle auto-mounts by finding this element. Everything is
+  local: ../scalar.js is vendored in the repo and ../openapi.json is copied out
+  of pro/ at build time — the same file the binary serves at
+  /api/v1/openapi.json. No CDN, no network at runtime, no backend.
+-->
+<script
+  id="api-reference"
+  data-url="../openapi.json"
+  data-configuration='{
+    "darkMode": false,
+    "theme": "none",
+    "layout": "modern",
+    "hideModels": false,
+    "hideDarkModeToggle": true,
+    "defaultHttpClient": { "targetKey": "shell", "clientKey": "curl" },
+    "metaData": {
+      "title": "mimux API reference",
+      "description": "REST API of the mimux pro layer."
+    }
+  }'
+></script>
+<script src="../scalar.js"></script>

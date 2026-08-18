@@ -1,0 +1,225 @@
+<!--
+title: MCP server
+description: Connect an AI agent to mimux over MCP — streamable HTTP at /api/mcp or the bundled stdio bridge, nine scope-filtered tools, and a two-step send that never sends without an explicit second call.
+-->
+<h1>MCP server <span class="pro-tag">pro</span></h1>
+<p class="lede">
+  The same product as the REST API, wearing the protocol an agent already
+  speaks. Identical tokens, identical scopes, the same domain layer underneath.
+</p>
+
+<h2>Connecting</h2>
+
+<h3>Streamable HTTP (preferred)</h3>
+
+<pre><code>POST https://mail.example.com/api/mcp
+Authorization: Bearer mimux_pat_...</code></pre>
+
+<p>
+  The transport is <strong>stateless</strong>: no session table, no sticky
+  routing, every POST self-contained. That is why it sits behind exactly the
+  same auth middleware as the JSON API with nothing extra — the bearer token on
+  each request is the whole session.
+</p>
+
+<p>
+  There is no standalone GET event stream; a client that opens one gets a
+  <code>405</code>. Configure your MCP client for streamable HTTP without the
+  separate SSE channel.
+</p>
+
+<h3>The stdio bridge</h3>
+
+<p>
+  For clients that only speak stdio, the pro binary bundles a bridge. It speaks
+  MCP on stdin/stdout and forwards every call to a <em>running</em> mimux's
+  <code>/api/mcp</code>. It never opens the database, so it is safe to run while
+  the server is up — which is the point.
+</p>
+
+<pre><code>{
+  "mcpServers": {
+    "mimux": {
+      "command": "mimux",
+      "args": ["mcp"],
+      "env": {
+        "MIMUX_URL": "http://localhost:8083",
+        "MIMUX_TOKEN": "mimux_pat_..."
+      }
+    }
+  }
+}</code></pre>
+
+<p>
+  <code>MIMUX_URL</code> defaults to <code>http://localhost:8083</code>;
+  <code>MIMUX_TOKEN</code> is required. The bridge mirrors whatever the remote
+  session exposes — tools and resources, schemas passed through untouched — so
+  it never drifts from the HTTP endpoint. See <a href="../cli/">Command
+  line</a>.
+</p>
+
+<h2>Scopes are the tool list</h2>
+
+<p>
+  Each request builds a server exposing <strong>only the tools the presented
+  token's scopes allow</strong>. So <code>tools/list</code> <em>is</em> the
+  permission model: a missing tool tells the model that this credential cannot
+  do that, rather than letting it try and get an error back.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Scope</th><th>Tools it adds</th></tr></thead>
+  <tbody>
+    <tr><td><code>accounts:read</code></td><td><code>list_accounts</code></td></tr>
+    <tr><td><code>mail:read</code></td><td><code>list_folders</code>, <code>search_mail</code>, <code>read_message</code>, and the <code>mimux://inbox/summary</code> resource</td></tr>
+    <tr><td><code>mail:modify</code></td><td><code>mark_read</code>, <code>star_message</code>, <code>move_message</code></td></tr>
+    <tr><td><code>mail:send</code></td><td><code>draft_reply</code>, <code>send_draft</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Nine tools in total. Mint a token with the narrowest set that does the job:
+  an agent given <code>mail:read mail:modify</code> is not "asked" not to send —
+  it is never shown a tool that can.
+</p>
+
+<h2>The tools</h2>
+
+<h3>Reading</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>list_accounts</code></td><td>The configured accounts with live sync state (ok/syncing/error), last sync time and message/unread counts. Use it to learn account names, and to check whether mail is syncing before trusting freshness.</td></tr>
+    <tr><td><code>list_folders</code></td><td>The folder tree per account: id, name, special role (inbox/sent/archive/spam/trash), unread count. Folder ids are what <code>move_message</code> and search filters take. Omit <code>account</code> for every tree.</td></tr>
+    <tr><td><code>search_mail</code></td><td>Structured search results: id, account, folder_id, from, subject, date, snippet, flags.</td></tr>
+    <tr><td><code>read_message</code></td><td>One message by id: headers, flags, labels, attachment list, and the body as plain text (<code>format=html</code> returns sanitised HTML instead).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <strong>Long bodies page.</strong> <code>read_message</code> returns a capped
+  chunk; when <code>truncated</code> is true, call again with
+  <code>offset</code> set to the returned <code>next_offset</code>. A truncated
+  body is never silently cut — the flag is always there to be checked.
+</p>
+
+<p>
+  <strong>Deep search is a job.</strong> <code>search_mail</code> defaults to the
+  local index, which is fast and usually enough. <code>deep=true</code> asks the
+  IMAP servers directly; the tool waits about 15 seconds and then, if the fan-out
+  has not finished, returns <code>status: "running"</code> with a
+  <code>job_id</code>. Poll by calling the tool again with the same query — a
+  finished job answers instantly from cache.
+</p>
+
+<p>
+  The query language is mimux's own:
+  <code>from:</code>, <code>to:</code>, <code>subject:</code>, <code>body:</code>,
+  <code>is:unread</code>, <code>is:starred</code>, <code>has:attachment</code>,
+  <code>before:</code>/<code>after:</code> with <code>YYYY-MM-DD</code>, quoted
+  phrases, and <code>-</code> to negate. Bare words match anywhere. Everything
+  ANDs.
+</p>
+
+<h3>Triage</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>mark_read</code></td><td>Mark a message read (default) or unread with <code>read=false</code>.</td></tr>
+    <tr><td><code>star_message</code></td><td>Star (default) or unstar with <code>starred=false</code>. Starring is the polite way to flag something for the human without moving it.</td></tr>
+    <tr><td><code>move_message</code></td><td>Move to a <code>folder_id</code> from <code>list_folders</code>, or to a special <code>target</code>: <code>archive</code>, <code>spam</code> or <code>trash</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p>
+    <strong>Trash needs confirmation.</strong> <code>move_message</code> with
+    <code>target=trash</code> additionally requires <code>confirm=true</code>,
+    and the tool description tells the model to ask the human first. Archive is
+    the safe default for cleaning up an inbox — the worst realistic outcome of
+    an over-eager agent is one drag-and-drop to undo.
+  </p>
+</div>
+
+<h3>Sending, in two steps</h3>
+
+<p>
+  Outbound mail is deliberately split across two tools, and only the second one
+  sends.
+</p>
+
+<ol>
+  <li>
+    <strong><code>draft_reply</code></strong> creates a normal mimux draft — a
+    reply when <code>in_reply_to</code> is a message id (recipients, subject and
+    threading are derived from the original; <code>reply_all=true</code>
+    includes everyone), or a fresh mail when it is omitted (then <code>to</code>
+    is required). <strong>Nothing is sent.</strong> It returns the draft id and a
+    full preview of exactly what would go out, plus a note instructing the model
+    to show that preview to the human and get approval.
+  </li>
+  <li>
+    <strong><code>send_draft</code></strong> sends a previously created draft by
+    id, exactly as previewed, and then deletes the draft. This is the only tool
+    that sends mail.
+  </li>
+</ol>
+
+<p>
+  The split means "review before send" is a property of the surface, not a
+  prompt instruction that a model may or may not follow. If you never grant
+  <code>mail:send</code>, neither tool exists. If you want an agent to
+  <em>propose</em> mail without any chance of it going out, the pattern used by
+  the bundled example is to strip <code>send_draft</code> from the tool list
+  before the model ever sees it, and review the drafts in the mimux UI yourself.
+</p>
+
+<h2>The inbox summary resource</h2>
+
+<pre><code>mimux://inbox/summary</code></pre>
+
+<p>
+  JSON: per-account sync state and unread counts, the total unread across
+  accounts, and the newest unread messages. A cheap first call for an agent that
+  wants to know whether there is anything to do at all, without burning a search.
+  Requires <code>mail:read</code>.
+</p>
+
+<h2>A worked example</h2>
+
+<p>
+  The repository ships a single-file triage agent at
+  <a href="https://github.com/mattmezza/mimux/tree/main/examples/triage"><code>examples/triage</code></a>.
+  It connects over the streamable-HTTP endpoint, reads unread mail, stars what
+  needs a human, archives newsletters and notifications, and drafts — never
+  sends — replies where one is obvious. Everything it does is visible live in
+  the mimux UI while it runs.
+</p>
+
+<pre><code>export MIMUX_URL=http://localhost:8083
+export MIMUX_TOKEN=mimux_pat_...
+uv run triage.py</code></pre>
+
+<p>
+  It needs a token with <code>mail:read</code>, <code>mail:send</code> and
+  <code>mail:modify</code>, and an OpenAI-compatible model endpoint. Read the
+  script — it is short, and the safety model is the interesting part.
+</p>
+
+<h2>Errors</h2>
+
+<p>
+  The endpoint is behind the licence gate and the same per-token rate limit as
+  the REST API: a paused licence answers <strong>402</strong>, and an exhausted
+  bucket answers <strong>429</strong> with <code>Retry-After</code>. The licence
+  is checked before the token, so a 402 never spends a request from your budget.
+  See <a href="../automation/">The automation layer</a>.
+</p>

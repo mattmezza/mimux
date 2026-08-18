@@ -1,0 +1,462 @@
+/* SPDX-License-Identifier: AGPL-3.0-only
+   The mimux.dev "correspondence" shell: warm paper, warm ink, one vermilion
+   accent, an airmail stripe across the top. Fonts are copied into ./fonts/ by
+   scripts/docs.sh from www/src/fonts — nothing here is loaded off a network. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("./fonts/inter-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: optional;
+}
+@font-face {
+  font-family: "Bricolage Grotesque";
+  src: url("./fonts/bricolage-var.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/jbm-400.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+:root {
+  --paper: oklch(96.5% 0.012 85);
+  --paper-2: oklch(93% 0.018 83);
+  --card: oklch(98.8% 0.006 90);
+  --ink: oklch(25% 0.02 50);
+  --ink-mid: oklch(41% 0.018 50);
+  --ink-soft: oklch(49% 0.016 50);
+  --accent: oklch(52% 0.19 31);
+  --accent-bright: oklch(58% 0.19 32);
+  --post: oklch(48% 0.11 262);
+  --rule: oklch(25% 0.02 50 / 0.15);
+  --display: "Bricolage Grotesque", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+html, body { margin: 0; padding: 0; background: var(--paper); }
+body {
+  font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+  color: var(--ink);
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+/* The envelope edge. */
+body::before {
+  content: "";
+  display: block;
+  height: 7px;
+  background: repeating-linear-gradient(-45deg,
+    var(--accent-bright) 0 14px,
+    var(--paper) 14px 26px,
+    var(--post) 26px 40px,
+    var(--paper) 40px 52px);
+}
+
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  z-index: 60;
+  background: var(--ink);
+  color: var(--paper);
+  padding: 0.5rem 0.9rem;
+  border-radius: 6px;
+}
+
+/* --- masthead ------------------------------------------------------------ */
+
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--rule);
+  background: oklch(96.5% 0.012 85 / 0.92);
+  backdrop-filter: blur(8px);
+}
+.site-header nav {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  height: 4rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  text-decoration: none;
+}
+.brand img { border-radius: 6px; }
+.brand span {
+  font-family: var(--display);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  font-size: 1.125rem;
+}
+.brand small {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  border: 1px solid oklch(58% 0.19 32 / 0.5);
+  border-radius: 4px;
+  padding: 0.2rem 0.45rem;
+  rotate: -2deg;
+}
+.site-header ul {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+.site-header ul a {
+  display: inline-block;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.site-header ul a:hover { color: var(--ink); }
+.site-header ul a.cta {
+  color: var(--paper);
+  background: var(--ink);
+  box-shadow: 2px 2px 0 oklch(25% 0.02 50 / 0.22);
+  margin-left: 0.35rem;
+}
+.site-header ul a.cta:hover { background: var(--accent); }
+@media (max-width: 640px) {
+  .site-header ul a { padding: 0.5rem 0.5rem; }
+  .site-header ul .hide-sm { display: none; }
+}
+
+/* --- page frame ---------------------------------------------------------- */
+
+.layout {
+  max-width: 82rem;
+  margin: 0 auto;
+  padding: 0 1.25rem;
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+.content { min-width: 0; }
+
+.sidebar {
+  position: sticky;
+  top: 5rem;
+  padding: 2rem 0 3rem;
+  font-size: 0.9rem;
+  max-height: calc(100vh - 6rem);
+  overflow-y: auto;
+}
+.sidebar .nav-group {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--ink-soft);
+  margin: 1.5rem 0 0.5rem;
+}
+.sidebar .nav-group:first-child { margin-top: 0; }
+.sidebar ul {
+  list-style: none;
+  margin: 0 0 0.25rem;
+  padding: 0;
+  border-left: 1px solid var(--rule);
+}
+.sidebar li { margin: 0; }
+.sidebar a {
+  display: block;
+  padding: 0.3rem 0.75rem;
+  margin-left: -1px;
+  border-left: 2px solid transparent;
+  color: var(--ink-mid);
+  text-decoration: none;
+}
+.sidebar a:hover { color: var(--ink); background: oklch(25% 0.02 50 / 0.04); }
+.sidebar a.here {
+  color: var(--accent);
+  font-weight: 600;
+  border-left-color: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .sidebar {
+    position: static;
+    max-height: none;
+    padding: 1rem 0 0;
+    border-bottom: 1px solid var(--rule);
+    display: flex;
+    gap: 1.25rem;
+    overflow-x: auto;
+    padding-bottom: 0.5rem;
+  }
+  .sidebar .nav-group { display: none; }
+  .sidebar ul {
+    display: flex;
+    gap: 0.25rem;
+    border-left: 0;
+    margin: 0;
+  }
+  .sidebar a {
+    white-space: nowrap;
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    padding: 0.35rem 0.6rem;
+  }
+  .sidebar a.here { border-left: 0; border-bottom-color: var(--accent); }
+}
+
+/* --- prose --------------------------------------------------------------- */
+
+.prose {
+  max-width: 48rem;
+  padding: 2.5rem 0 4rem;
+}
+.prose > *:first-child { margin-top: 0; }
+
+.prose h1 {
+  font-family: var(--display);
+  font-size: clamp(2rem, 5vw, 2.75rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  margin: 0 0 0.75rem;
+}
+.prose h2 {
+  font-family: var(--display);
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  margin: 3rem 0 0.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--rule);
+}
+.prose h3 {
+  font-family: var(--display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 2rem 0 0.5rem;
+}
+.prose h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 1.5rem 0 0.35rem;
+}
+.prose .lede {
+  font-size: 1.15rem;
+  color: var(--ink-mid);
+  margin: 0 0 2rem;
+}
+.prose p, .prose ul, .prose ol { margin: 0 0 1rem; }
+.prose ul, .prose ol { padding-left: 1.25rem; }
+.prose li { margin: 0.3rem 0; }
+.prose li > ul, .prose li > ol { margin: 0.3rem 0; }
+
+.prose a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.prose a:hover { color: var(--ink); }
+
+.prose strong { font-weight: 650; }
+
+/* Ligatures off everywhere we show code: JetBrains Mono turns `--` and `<-`
+   into single narrower glyphs, which breaks the column grid an ASCII diagram
+   depends on. */
+.prose code, .prose pre { font-variant-ligatures: none; }
+
+.prose code {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  background: oklch(25% 0.02 50 / 0.06);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+}
+.prose pre {
+  font-family: var(--mono);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: var(--ink);
+  color: oklch(93% 0.012 85);
+  padding: 1rem 1.1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  margin: 0 0 1.25rem;
+  box-shadow: 3px 3px 0 oklch(25% 0.02 50 / 0.18);
+}
+.prose pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+  color: inherit;
+}
+.prose pre.diagram {
+  background: var(--card);
+  color: var(--ink-mid);
+  border: 1px solid var(--rule);
+  box-shadow: none;
+  font-size: 0.75rem;
+}
+
+.prose blockquote {
+  margin: 0 0 1.25rem;
+  padding: 0.75rem 1rem;
+  border-left: 3px solid var(--accent);
+  background: var(--card);
+  color: var(--ink-mid);
+}
+.prose blockquote p:last-child { margin-bottom: 0; }
+
+.table-wrap {
+  overflow-x: auto;
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--card);
+}
+.prose table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.875rem;
+}
+.prose th, .prose td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.55rem 0.85rem;
+  border-bottom: 1px solid var(--rule);
+}
+.prose th {
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.prose tbody tr:last-child td { border-bottom: 0; }
+.prose td code { white-space: nowrap; }
+
+/* A card grid, used on the overview page. */
+.cards {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.85rem;
+}
+.cards li { margin: 0; }
+.cards a {
+  display: block;
+  height: 100%;
+  padding: 1rem 1.1rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  text-decoration: none;
+  color: var(--ink);
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+.cards a:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+  color: var(--ink);
+}
+.cards strong {
+  display: block;
+  font-family: var(--display);
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  margin-bottom: 0.2rem;
+}
+.cards span {
+  display: block;
+  font-size: 0.875rem;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* A stamped label for "pro only" sections. */
+.pro-tag {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+  border: 1px solid oklch(58% 0.19 32 / 0.5);
+  border-radius: 4px;
+  padding: 0.15rem 0.4rem;
+  vertical-align: middle;
+  rotate: -2deg;
+  margin-left: 0.4rem;
+}
+
+.note {
+  margin: 0 0 1.25rem;
+  padding: 0.85rem 1rem;
+  background: var(--card);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--post);
+  border-radius: 0 8px 8px 0;
+  font-size: 0.925rem;
+  color: var(--ink-mid);
+}
+.note p:last-child { margin-bottom: 0; }
+.note strong { color: var(--ink); }
+
+/* --- footer -------------------------------------------------------------- */
+
+.site-footer {
+  max-width: 48rem;
+  margin: 0;
+  padding: 1.5rem 0 3rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.8125rem;
+  color: var(--ink-soft);
+}
+.site-footer p { margin: 0 0 0.4rem; }
+.site-footer a { color: var(--ink-mid); }
+.site-footer code { font-family: var(--mono); font-size: 0.9em; }
+
+/* --- Scalar, dressed in the house palette -------------------------------- */
+
+.scalar-app {
+  --scalar-font: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --scalar-font-code: var(--mono);
+  --scalar-color-accent: var(--accent);
+  --scalar-background-1: var(--paper);
+  --scalar-background-2: var(--paper-2);
+  --scalar-background-3: var(--card);
+  --scalar-background-accent: oklch(58% 0.19 32 / 0.08);
+  --scalar-color-1: var(--ink);
+  --scalar-color-2: var(--ink-mid);
+  --scalar-color-3: var(--ink-soft);
+  --scalar-border-color: var(--rule);
+}

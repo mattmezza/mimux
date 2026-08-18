@@ -1,0 +1,124 @@
+<!--
+title: How mimux works
+description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes you already have, get one unified inbox backed by one SQLite file. What mimux is and what it is not.
+-->
+<h1>How mimux works</h1>
+<p class="lede">
+  mimux does not host your mail. It connects to the mailboxes you already have,
+  keeps a local copy, and gives you one fast interface over all of them.
+</p>
+
+<h2>The model</h2>
+
+<p>
+  You already have mail somewhere — Gmail, Fastmail, Zoho, a mailbox at your
+  host, a self-run Dovecot. Those servers speak <strong>IMAP</strong> for reading
+  and <strong>SMTP</strong> for sending. mimux is a client for them: you give it
+  the credentials, it syncs the mail down, and from then on it is the thing you
+  look at.
+</p>
+
+<p>Four sentences describe the whole system:</p>
+
+<ul>
+  <li><strong>One binary.</strong> A single Go executable serves the web
+    interface, runs the sync workers and talks to the mail servers. No
+    application server, no queue, no separate worker process.</li>
+  <li><strong>One file.</strong> All state — accounts, credentials, downloaded
+    messages, folders, sessions, filters, saved searches, OAuth tokens, API
+    tokens — lives in one SQLite database, next to an auto-generated
+    <code>secret</code> file. Back up that directory and you have backed up
+    everything.</li>
+  <li><strong>One inbox.</strong> Every configured account feeds a unified
+    inbox, and each account also keeps its own view and its own folder tree.</li>
+  <li><strong>One user.</strong> mimux is single-user by design: one admin
+    account, created by the first-run wizard.</li>
+</ul>
+
+<h2>Zero configuration to boot</h2>
+
+<p>
+  There is no config file. The handful of settings that cannot live in the
+  database — where the database is, what to bind to, what the public URL is —
+  come from environment variables, each with a working default, so an install
+  with no environment at all boots and runs. Everything else is edited in the
+  <strong>Settings</strong> GUI and stored in the database: accounts and their
+  credentials, sync cadence, notification preferences, integration keys.
+</p>
+
+<p>
+  That means the first run is: start it, open it, create your admin user, add
+  an account. See <a href="../install/">Installation</a> for the details.
+</p>
+
+<h2>What syncing looks like</h2>
+
+<p>
+  Each account gets a background worker holding an IMAP connection. When the
+  server supports <strong>IDLE</strong>, that connection sits idle and the server
+  pushes a notification the moment something arrives; the worker wakes and
+  syncs. When it does not, or when IDLE drops, the worker falls back to
+  <strong>polling</strong> on the interval from <em>Settings → Syncing</em>. IDLE
+  is also broken deliberately whenever a foreground command needs the
+  connection — opening an attachment, running a server-side search — and
+  resumes afterwards.
+</p>
+
+<p>
+  Sync is one-directional-with-writeback rather than a full two-way mirror:
+  messages and flags come down, and your actions (read, star, move, delete) are
+  applied locally first and pushed to the server behind the request, so the
+  interface never waits on IMAP. Flag writes that fail are retried by the sync
+  loop.
+</p>
+
+<h2>What mimux is not</h2>
+
+<ul>
+  <li><strong>Not a mail server.</strong> It does not receive mail from the
+    internet, has no MX record, and delivers nothing itself. It is a client for
+    servers that do.</li>
+  <li><strong>Not a hosted service.</strong> There is no mimux account, no
+    central API host, no server of ours in the path. Your credentials go from
+    your machine to your mail provider.</li>
+  <li><strong>Not multi-tenant.</strong> One admin user per install. If two
+    people need mailboxes, run two installs.</li>
+  <li><strong>Not a groupware suite.</strong> Mail, with calendar invites
+    understood well enough to read and answer them.</li>
+</ul>
+
+<h2>Privacy defaults</h2>
+
+<ul>
+  <li>Remote images and every other external resource in an email are
+    <strong>blocked</strong> until you click <em>Load external content</em>, or
+    allow a sender permanently.</li>
+  <li>No CDNs, no analytics, no tracking: fonts, scripts and styles are all
+    bundled into the binary and served from it.</li>
+  <li>The optional AI and translation features are off until you add your own
+    API key, and both fail gracefully when unset.</li>
+</ul>
+
+<h2>Free, and pro</h2>
+
+<p>
+  Everything above is free and AGPL-3.0, permanently. The paid layer is
+  automation only: a REST API, an MCP server for agents, and webhooks. The line
+  is <em>who is driving</em> — a human is free, a machine is
+  <a href="../automation/">pro</a>. It is enforced with a Go build tag, so the
+  free binary does not contain the pro code at all rather than disabling it at
+  runtime; see <a href="../architecture/">Architecture</a>.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Known limitations as of v0.20.</strong> Drafts are local-only —
+    autosaved to SQLite, not appended to the IMAP Drafts folder, so they do not
+    follow you to another client. Offline mode is read-only: the service worker
+    falls back to your last-synced inbox, and any action needs the server.
+    Gmail label display and the <code>label:</code> filter action are dormant,
+    because the upstream go-imap v2 library cannot fetch
+    <code>X-GM-LABELS</code>/<code>X-GM-THRID</code> yet; threading falls back to
+    the standard JWZ algorithm, which works well.
+  </p>
+</div>

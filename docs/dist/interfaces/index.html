@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Web UI, PWA, notifications — mimux docs</title>
+    <meta name="description" content="The keyboard-driven mimux web interface and its full shortcut set, installing mimux as a PWA with an offline fallback, and notifications over Web Push or ntfy." />
+    <link rel="stylesheet" href="../style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav aria-label="Main">
+        <a class="brand" href="../">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E" alt="" width="26" height="26" />
+          <span>mimux</span>
+          <small>docs</small>
+        </a>
+        <ul>
+          <li class="hide-sm"><a href="https://mimux.dev/agents/">Automation</a></li>
+          <li class="hide-sm"><a href="https://mimux.dev/pricing/">Pricing</a></li>
+          <li><a href="https://github.com/mattmezza/mimux">GitHub</a></li>
+          <li><a class="cta" href="https://mimux.dev/#install">Get mimux</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Documentation">
+<p class="nav-group">Start here</p>
+<ul>
+<li><a href="../">Overview</a></li>
+<li><a href="../how-it-works/">How mimux works</a></li>
+<li><a href="../architecture/">Architecture</a></li>
+<li><a href="../install/">Installation</a></li>
+</ul>
+<p class="nav-group">Using mimux</p>
+<ul>
+<li><a href="../interfaces/" class="here" aria-current="page">Web UI, PWA, notifications</a></li>
+<li><a href="../cli/">Command line</a></li>
+</ul>
+<p class="nav-group">Automation (pro)</p>
+<ul>
+<li><a href="../automation/">The automation layer</a></li>
+<li><a href="../api/">REST API guide</a></li>
+<li><a href="../reference/">API reference</a></li>
+<li><a href="../mcp/">MCP server</a></li>
+<li><a href="../webhooks/">Webhooks</a></li>
+</ul>
+</nav>
+      <div class="content">
+        <main class="prose" id="content">
+<h1>Web UI, PWA and notifications</h1>
+<p class="lede">
+  The interface a human uses. All of it is free and always will be — the paid
+  layer is only for machines.
+</p>
+
+<h2>The web UI</h2>
+
+<p>
+  Open the base URL in any modern browser and sign in with the admin account
+  the first-run wizard created. What you get:
+</p>
+
+<ul>
+  <li>A <strong>unified inbox</strong> across every configured account, plus a
+    per-account view and a full folder tree per account
+    (inbox/sent/drafts/archive/spam/trash) with unread counts.</li>
+  <li><strong>Conversation threading</strong>, with the reading pane ordered
+    oldest first.</li>
+  <li><strong>Compose, reply, reply-all and forward</strong> over SMTP — plain
+    text, rich text or Markdown — with local draft autosave, undo-send and
+    scheduled send.</li>
+  <li><strong>Search</strong>: instant local full-text search, plus on-demand
+    deep IMAP search against the servers themselves, streamed back over SSE as
+    each result arrives.</li>
+  <li><strong>Filters</strong> under Settings: conditions on
+    from/to/subject/body, actions to move, label, forward, mark read, star,
+    delete or notify.</li>
+  <li><strong>AI compose/reply and translation</strong>, both optional and
+    bring-your-own-key (OpenRouter, Google Translate). Off until you add a key,
+    and both fail gracefully when unset.</li>
+  <li>Live updates without a refresh: new mail and sync-status changes arrive
+    over a Server-Sent Events stream.</li>
+</ul>
+
+<p>
+  Remote images and every other external resource in a message stay
+  <strong>blocked</strong> until you click <em>Load external content</em> or
+  allow a sender permanently.
+</p>
+
+<h2>Keyboard shortcuts</h2>
+
+<p>Press <code>?</code> anywhere to toggle this list in the app itself.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Action</th><th>Key</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><code>j</code> / <code>k</code></td><td>Next / previous message</td><td><code>R</code> / <code>A</code> / <code>F</code></td><td>Reply / reply all / forward</td></tr>
+    <tr><td><code>o</code> / <code>Enter</code></td><td>Open selected message</td><td><code>c</code></td><td>Compose</td></tr>
+    <tr><td><code>Esc</code></td><td>Back / close pane, dialog or search</td><td><code>/</code></td><td>Focus search</td></tr>
+    <tr><td><code>r</code> / <code>u</code></td><td>Mark read / unread</td><td><code>Tab</code> (in search)</td><td>Cycle search scope</td></tr>
+    <tr><td><code>s</code></td><td>Star / unstar selected</td><td><code>Esc</code> (in search)</td><td>Clear search, back to inbox</td></tr>
+    <tr><td><code>e</code></td><td>Archive</td><td><code>d</code> / <code>#</code></td><td>Delete</td></tr>
+    <tr><td><code>!</code></td><td>Mark as spam</td><td><code>?</code></td><td>Toggle the shortcut list</td></tr>
+    <tr><td><code>g</code> <code>i</code></td><td>Go to inbox</td><td><code>g</code> <code>s</code></td><td>Go to starred</td></tr>
+    <tr><td><code>g</code> <code>d</code></td><td>Go to drafts</td><td><code>g</code> <code>t</code></td><td>Go to sent</td></tr>
+    <tr><td><code>0</code></td><td>Unified inbox</td><td><code>1</code>–<code>9</code></td><td>Nth account's inbox</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Install it as an app</h2>
+
+<p>
+  mimux ships a web app manifest and a service worker, so any browser that
+  supports PWAs can install it: desktop Chrome/Edge offer an install button in
+  the address bar, and on iOS/iPadOS it is Share → <em>Add to Home Screen</em>.
+</p>
+
+<p>
+  <strong>Offline is read-only.</strong> The service worker falls back to your
+  last-synced inbox so the app opens and shows something useful without a
+  network, but every action — read, star, move, send — needs the server.
+</p>
+
+<div class="note">
+  <p>
+    Installing requires <strong>HTTPS with a real certificate</strong>. Browsers
+    refuse service workers on an insecure origin, so
+    <code>http://&lt;lan-ip&gt;:8083</code> will not install. See
+    <a href="../install/">Installation</a> for the reverse-proxy setup.
+  </p>
+</div>
+
+<h2>Notifications</h2>
+
+<p>
+  Off until you turn them on, in <strong>Settings → Notifications</strong>. Pick
+  <em>when</em> first:
+</p>
+
+<ul>
+  <li><strong>Off</strong> (default) — nothing is ever sent and no permission is
+    ever requested.</li>
+  <li><strong>Only what my filter rules say</strong> — a rule with the
+    <em>Notify me</em> action fires one. Set those up under
+    <em>Filters</em>.</li>
+  <li><strong>Every new message in an inbox.</strong></li>
+</ul>
+
+<p>
+  Either way mimux only notifies about new mail arriving in an
+  <strong>inbox</strong>: never your own sent mail, never the backlog downloaded
+  on a first sync, never a message that was already read elsewhere, and never
+  anything older than a day.
+</p>
+
+<p>Then pick <em>how</em>. The two transports are independent and can both be on.</p>
+
+<h3>Web Push</h3>
+
+<p>
+  <strong>Settings → Notifications → <em>Enable on this device</em></strong>.
+  Delivered from your own server, with the sender and subject encrypted
+  end-to-end to that browser. There is nothing to configure: the VAPID key pair
+  is generated on first use and stored in the database.
+</p>
+
+<p>Requirements:</p>
+
+<ul>
+  <li><strong>HTTPS with a real certificate.</strong> Browsers refuse both
+    service workers and push on an insecure origin.</li>
+  <li><strong>iPhone/iPad: install the web app first.</strong> Safari only
+    allows push for a web app added to the Home Screen (iOS 16.4+). Open mimux
+    from that icon and enable notifications there — it cannot work in a normal
+    Safari tab, in any browser on iOS.</li>
+  <li>The browser asks for permission <strong>once</strong>. If it is refused,
+    the button cannot ask again — reset Notifications for the site in the
+    browser's own settings.</li>
+</ul>
+
+<p>
+  Each browser/device subscribes separately and is listed with a Remove button.
+  Signing out drops that device's subscription. A subscription the push service
+  reports as gone (404/410) is deleted automatically.
+</p>
+
+<h3>ntfy</h3>
+
+<p>
+  <a href="https://ntfy.sh">ntfy</a> needs no permission, no HTTPS and no
+  installed app: put a topic URL
+  (<code>https://ntfy.sh/&lt;something-long-and-unguessable&gt;</code>, or your
+  own ntfy server) in the box, install the ntfy app, and subscribe to the same
+  topic. This is the fallback when Web Push is not available.
+</p>
+
+<p>
+  Anyone who knows the topic name can read the notifications, so self-host ntfy
+  if the sender and subject are sensitive.
+</p>
+
+<h3>Privacy</h3>
+
+<p>
+  Web Push payloads are encrypted end to end — the push service
+  (Apple/Google/Mozilla) relays ciphertext it cannot read. It does still see
+  that your device received a push, and when: metadata, not content. ntfy sees
+  the sender and subject in the clear unless you run it yourself.
+</p>
+
+<h2>Other ways in</h2>
+
+<ul class="cards">
+  <li><a href="../cli/"><strong>Command line</strong><span>The binary's subcommands — the server itself, and the pro helpers.</span></a></li>
+  <li><a href="../api/"><strong>REST API</strong><span>For scripts and integrations. Pro.</span></a></li>
+  <li><a href="../mcp/"><strong>MCP server</strong><span>For AI agents. Pro.</span></a></li>
+</ul>
+</main>
+        <footer class="site-footer">
+  <p>mimux is a self-hosted email client. The client is AGPL-3.0; the automation
+  layer in <code>pro/</code> is Elastic Licence 2.0 &mdash; see
+  <a href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">LICENSING.md</a>.</p>
+  <p><a href="https://mimux.dev/">mimux.dev</a> &middot;
+  <a href="https://github.com/mattmezza/mimux">Source</a> &middot;
+  <a href="https://account.mimux.dev">Licences</a></p>
+</footer>
+      </div>
+    </div>
+  </body>
+</html>

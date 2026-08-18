@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Installation — mimux docs</title>
+    <meta name="description" content="Install mimux with Docker Compose or a prebuilt binary — environment variables, first run, OAuth for Gmail and Zoho, HTTPS, the free and pro images, upgrading and backup." />
+    <link rel="stylesheet" href="../style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav aria-label="Main">
+        <a class="brand" href="../">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E" alt="" width="26" height="26" />
+          <span>mimux</span>
+          <small>docs</small>
+        </a>
+        <ul>
+          <li class="hide-sm"><a href="https://mimux.dev/agents/">Automation</a></li>
+          <li class="hide-sm"><a href="https://mimux.dev/pricing/">Pricing</a></li>
+          <li><a href="https://github.com/mattmezza/mimux">GitHub</a></li>
+          <li><a class="cta" href="https://mimux.dev/#install">Get mimux</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Documentation">
+<p class="nav-group">Start here</p>
+<ul>
+<li><a href="../">Overview</a></li>
+<li><a href="../how-it-works/">How mimux works</a></li>
+<li><a href="../architecture/">Architecture</a></li>
+<li><a href="../install/" class="here" aria-current="page">Installation</a></li>
+</ul>
+<p class="nav-group">Using mimux</p>
+<ul>
+<li><a href="../interfaces/">Web UI, PWA, notifications</a></li>
+<li><a href="../cli/">Command line</a></li>
+</ul>
+<p class="nav-group">Automation (pro)</p>
+<ul>
+<li><a href="../automation/">The automation layer</a></li>
+<li><a href="../api/">REST API guide</a></li>
+<li><a href="../reference/">API reference</a></li>
+<li><a href="../mcp/">MCP server</a></li>
+<li><a href="../webhooks/">Webhooks</a></li>
+</ul>
+</nav>
+      <div class="content">
+        <main class="prose" id="content">
+<h1>Installation</h1>
+<p class="lede">
+  Docker Compose is the intended path. A prebuilt binary works just as well if
+  you would rather not run a container.
+</p>
+
+<h2>Docker Compose</h2>
+
+<pre><code>services:
+  mimux:
+    image: ghcr.io/mattmezza/mimux:latest
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./data:/data
+    environment:
+      - MIMUX_DB=/data/mimux.db
+      - MIMUX_BASE_URL=http://localhost:8083
+      # - MIMUX_SECRET=...  # optional; auto-generated and persisted to /data/secret
+      - TZ=Europe/Zurich
+    restart: unless-stopped</code></pre>
+
+<pre><code>docker compose up</code></pre>
+
+<p>
+  Then open <a href="http://localhost:8083">http://localhost:8083</a>. Mount a
+  volume at <code>/data</code> — that directory is the entire installation.
+</p>
+
+<h3>Images</h3>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tag</th><th>What it is</th></tr></thead>
+  <tbody>
+    <tr><td><code>ghcr.io/mattmezza/mimux:latest</code></td><td>The free client. Moves with each release.</td></tr>
+    <tr><td><code>ghcr.io/mattmezza/mimux:v0.20</code></td><td>A pinned release. <code>0.20</code> without the <code>v</code> also works.</td></tr>
+    <tr><td><code>ghcr.io/mattmezza/mimux:pro</code></td><td>The client plus the automation layer. Moves with each release.</td></tr>
+    <tr><td><code>ghcr.io/mattmezza/mimux:v0.20-pro</code></td><td>A pinned pro release.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The free and pro images are genuinely different builds, not one image with a
+  feature switch: the free one does not contain the automation code at all. See
+  <a href="../automation/">The automation layer</a> for the licence key, and
+  <a href="../architecture/">Architecture</a> for how the split is enforced.
+</p>
+
+<h2>Prebuilt binaries</h2>
+
+<p>
+  Every release attaches static binaries for <code>linux/amd64</code>,
+  <code>linux/arm64</code> and <code>darwin/arm64</code>:
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>File</th><th>Build</th></tr></thead>
+  <tbody>
+    <tr><td><code>mimux-linux-amd64</code>, <code>mimux-linux-arm64</code>, <code>mimux-darwin-arm64</code></td><td>Free client</td></tr>
+    <tr><td><code>mimux-pro-linux-amd64</code>, <code>mimux-pro-linux-arm64</code>, <code>mimux-pro-darwin-arm64</code></td><td>Client + automation layer</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code>curl -fsSLo mimux https://github.com/mattmezza/mimux/releases/latest/download/mimux-linux-amd64
+chmod +x mimux
+./mimux</code></pre>
+
+<p>
+  With no environment set it creates <code>./data/mimux.db</code> and listens on
+  <code>0.0.0.0:8083</code>. <code>./mimux -version</code> prints the version and
+  exits.
+</p>
+
+<h2>First run</h2>
+
+<ol>
+  <li>Open the base URL. The first visit is a wizard that creates the single
+    <strong>admin account</strong> — this is the login for mimux itself, not for
+    any mailbox.</li>
+  <li><strong>Settings → Accounts → Add account.</strong> Pick a provider preset
+    (which fills in IMAP/SMTP hosts and ports) or enter hosts by hand, then
+    either a password / app password, or OAuth2 — see below.</li>
+  <li>The sync worker starts as soon as the account is saved. Add, edit and
+    remove accounts at any time; changes take effect immediately, with no
+    restart.</li>
+  <li>Optional: <strong>Settings → Integrations</strong> for a Google Translate
+    or OpenRouter key, <strong>Settings → Notifications</strong>,
+    <strong>Settings → Filters</strong>.</li>
+</ol>
+
+<p>
+  Removing an account also deletes its downloaded folders and messages from
+  mimux. Re-adding an account with the same name reattaches whatever is still on
+  the server at the next sync.
+</p>
+
+<h2>Environment variables</h2>
+
+<p>
+  These are the bootstrap settings — the ones that cannot live in the database,
+  because they are needed to find it. Every one has a working default.
+  Everything else is in the Settings GUI.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>MIMUX_DB</code></td><td><code>./data/mimux.db</code></td><td>SQLite database path, created if absent.</td></tr>
+    <tr><td><code>MIMUX_HOST</code></td><td><code>0.0.0.0</code></td><td>Bind address.</td></tr>
+    <tr><td><code>MIMUX_PORT</code></td><td><code>8083</code></td><td>Bind port.</td></tr>
+    <tr><td><code>MIMUX_BASE_URL</code></td><td><code>http://localhost:&lt;port&gt;</code></td><td>Public URL. Used for OAuth redirects and links in email; an <code>https://</code> value is what enables Secure cookies.</td></tr>
+    <tr><td><code>MIMUX_SECRET</code></td><td><em>generated</em></td><td>Session and CSRF signing secret. When unset it is generated once and persisted to a <code>secret</code> file next to the database, so sessions survive restarts.</td></tr>
+    <tr><td><code>MIMUX_AI_BASE_URL</code></td><td><em>OpenRouter</em></td><td>Any OpenAI-compatible chat-completions endpoint — another provider, or a local runner such as <code>http://llama:8080/v1</code>. <code>/chat/completions</code> is appended to the base. With this set, the OpenRouter key becomes optional.</td></tr>
+    <tr><td><code>MIMUX_API_RATE_LIMIT</code></td><td><code>120</code></td><td><span class="pro-tag">pro</span> API requests per token per minute. <code>0</code> disables limiting.</td></tr>
+    <tr><td><code>MIMUX_LICENCE_KEY</code></td><td><em>unset</em></td><td><span class="pro-tag">pro</span> Licence key. Takes precedence over the one saved in Settings → API. Free builds ignore it.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note">
+  <p>
+    <strong>It is <code>MIMUX_LICENCE_KEY</code>, with the British spelling and
+    the <code>_KEY</code> suffix.</strong> <code>MIMUX_LICENCE</code> is not read
+    by anything.
+  </p>
+</div>
+
+<p>
+  Upgrading from the old <code>sm</code> name? The <code>SM_*</code> variables
+  still work in v0.20 with a deprecation warning per variable, and are removed
+  in v0.21. See
+  <a href="https://github.com/mattmezza/mimux/blob/main/MIGRATION.md">MIGRATION.md</a>.
+</p>
+
+<h2>Run it behind HTTPS</h2>
+
+<p>
+  Put mimux behind a reverse proxy (Caddy, nginx, Traefik) and set
+  <code>MIMUX_BASE_URL</code> to the public URL. Two things depend on it:
+</p>
+
+<ul>
+  <li>Cookies are only marked <code>Secure</code> when the base URL starts with
+    <code>https://</code>.</li>
+  <li>Web Push and the service worker are refused by browsers on an insecure
+    origin, so <code>http://&lt;lan-ip&gt;:8083</code> cannot install as an app or
+    deliver push.</li>
+  <li>OAuth callbacks must match the redirect URI registered with the provider
+    exactly.</li>
+</ul>
+
+<p>
+  mimux is single-user with one admin password. Do not expose it to the internet
+  without HTTPS and a strong password.
+</p>
+
+<h2>OAuth setup (Gmail, Zoho)</h2>
+
+<p>For accounts using OAuth2 — choose <strong>OAuth2</strong> in the account editor:</p>
+
+<ol>
+  <li>
+    <strong>Create an OAuth client</strong> in the provider console:
+    <ul>
+      <li><strong>Gmail</strong> —
+        <a href="https://console.cloud.google.com/">Google Cloud Console</a> →
+        APIs &amp; Services → Credentials → <em>Create OAuth client ID</em> →
+        <em>Web application</em>. Enable the Gmail API for the project.
+        Requested scope: <code>https://mail.google.com/</code>.</li>
+      <li><strong>Zoho</strong> —
+        <a href="https://api-console.zoho.com/">Zoho API Console</a> →
+        <em>Add Client</em> → <em>Server-based Application</em>. Scopes:
+        <code>ZohoMail.accounts.READ ZohoMail.messages.ALL</code>. mimux uses the
+        <code>.com</code> region endpoints; adjust
+        <code>internal/mail/oauth.go</code> for other regions.</li>
+    </ul>
+  </li>
+  <li><strong>Set the authorised redirect URI</strong> to
+    <code>&lt;MIMUX_BASE_URL&gt;/oauth/callback</code>, e.g.
+    <code>https://mail.example.com/oauth/callback</code>. It must match
+    <code>MIMUX_BASE_URL</code> exactly.</li>
+  <li>In <strong>Settings → Accounts</strong>, add the account with auth
+    <strong>OAuth2</strong> and paste the client ID and client secret; save.</li>
+  <li>The account shows <strong>Connect</strong> — in the sidebar and in the
+    Accounts list — until authorised. Click it to grant consent. Tokens are
+    stored in the database and refreshed automatically; the sync worker
+    (re)starts on callback.</li>
+</ol>
+
+<p>
+  Gmail also works with an app password and <code>auth = "password"</code>, but
+  OAuth2 is the better path.
+</p>
+
+<h2>Upgrading</h2>
+
+<pre><code>docker compose pull &amp;&amp; docker compose up -d</code></pre>
+
+<p>
+  Schema migrations run at boot. There is no separate migration command and no
+  downtime window to plan for beyond the restart. Back up the data directory
+  first if the upgrade crosses a major version — it is one directory, so a
+  <code>cp -a</code> is a complete backup.
+</p>
+
+<h2>Backup</h2>
+
+<p>
+  Everything is in the data directory: <code>mimux.db</code> (plus its
+  <code>-wal</code>/<code>-shm</code> sidecars) and the <code>secret</code> file.
+  Copy the directory and you have accounts, credentials, message cache,
+  sessions, filters, saved searches, OAuth tokens and API tokens.
+</p>
+
+<p>
+  For something portable and human-readable, use <strong>Settings → Accounts →
+  Backup &amp; restore</strong>, which exports a JSON copy of the configuration.
+  It contains your passwords and API keys in plain text — treat the file
+  accordingly.
+</p>
+</main>
+        <footer class="site-footer">
+  <p>mimux is a self-hosted email client. The client is AGPL-3.0; the automation
+  layer in <code>pro/</code> is Elastic Licence 2.0 &mdash; see
+  <a href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">LICENSING.md</a>.</p>
+  <p><a href="https://mimux.dev/">mimux.dev</a> &middot;
+  <a href="https://github.com/mattmezza/mimux">Source</a> &middot;
+  <a href="https://account.mimux.dev">Licences</a></p>
+</footer>
+      </div>
+    </div>
+  </body>
+</html>

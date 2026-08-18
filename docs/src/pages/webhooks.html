@@ -1,0 +1,233 @@
+<!--
+title: Webhooks
+description: mimux webhooks — signed HMAC-SHA256 deliveries, the seven-step retry ladder with auto-disable, and the delivery log with replay.
+-->
+<h1>Webhooks <span class="pro-tag">pro</span></h1>
+<p class="lede">
+  mimux POSTs a small signed JSON body to your URL when something happens, so
+  nothing has to poll.
+</p>
+
+<h2>Setting one up</h2>
+
+<p>
+  Endpoints are managed in <strong>Settings → API</strong>, or over the REST API
+  with the <code>webhooks:manage</code> scope:
+</p>
+
+<pre><code>curl -X POST "$BASE/api/v1/webhooks" \
+  -H "Authorization: Bearer $MIMUX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/hooks/mimux","events":["message.received"]}'</code></pre>
+
+<div class="note">
+  <p>
+    <strong>The signing secret is in that response and in no other.</strong>
+    Store it now — nothing returns it again. To change it, delete the endpoint
+    and create another.
+  </p>
+</div>
+
+<p>
+  <code>url</code> must be an absolute <code>http</code>/<code>https</code> URL;
+  anything else is a <strong>400</strong>, and the delivery engine checks again
+  on the line that actually dials out. Unknown event names are dropped silently,
+  so check the <code>events</code> you get back. An endpoint subscribed to
+  nothing is legal and simply never fires — a test delivery still works.
+</p>
+
+<h2>Events</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Event</th><th>Fires when</th><th>Payload</th></tr></thead>
+  <tbody>
+    <tr><td><code>message.received</code></td><td>A new message lands in an account's <strong>inbox</strong>.</td><td>id, account, folder, folder_id, from, subject, date, snippet, message_id</td></tr>
+    <tr><td><code>message.sent</code></td><td>A message lands in an account's <strong>Sent</strong> folder.</td><td>id, account, to, subject, date, message_id</td></tr>
+    <tr><td><code>sync.error</code></td><td>An account goes into the error state, or changes its reason for being there.</td><td>account, error</td></tr>
+    <tr><td><code>search.completed</code></td><td>A deep search job finishes — the one API call whose answer arrives long after its response was written.</td><td>job_id, query, results (a count; fetch the messages with <code>GET /v1/search/jobs/{id}</code>)</td></tr>
+    <tr><td><code>ping</code></td><td>Only from the test endpoint. <strong>Not subscribable</strong>, which is why it is not in <code>events</code>.</td><td>&mdash;</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <code>sync.error</code> fires on the <em>edge</em> into the error state, not on
+  every sync-status broadcast while it stays broken — a provider that is down
+  for an hour is one event, not seven hundred.
+</p>
+
+<div class="note">
+  <p>
+    <strong>No message bodies, ever.</strong> <code>message.received</code>
+    carries a summary and a snippet. Bodies are large, and a webhook is the one
+    place mail leaves this machine without the user watching. Fetch the body
+    with <a href="../api/">the API</a> if you need it.
+  </p>
+</div>
+
+<h2>The delivery</h2>
+
+<pre><code>POST /your/url
+Content-Type: application/json
+User-Agent: mimux-webhooks/1
+X-Mimux-Event: message.received
+X-Mimux-Delivery-Id: 9f2c4a1e8b7d3056...
+X-Mimux-Signature: t=1755500000,v1=3a7f...
+
+{
+  "id": "9f2c4a1e8b7d3056...",
+  "event": "message.received",
+  "created_at": "2026-08-18T09:14:02Z",
+  "data": { ... }
+}</code></pre>
+
+<p>
+  The envelope is always those four fields; only <code>data</code> varies by
+  event. <code>X-Mimux-Delivery-Id</code> is stable across retries
+  <em>and</em> replays — <strong>deduplicate on it</strong>.
+</p>
+
+<h3>Verifying the signature</h3>
+
+<p>
+  <code>X-Mimux-Signature</code> is <code>t=&lt;unix&gt;,v1=&lt;hex&gt;</code>,
+  where the hex is <code>HMAC-SHA256(secret, "&lt;t&gt;.&lt;body&gt;")</code>.
+  The timestamp is inside the signed string, so a receiver that rejects an old
+  <code>t</code> cannot be fooled by re-stamping a captured delivery.
+</p>
+
+<pre><code>import hashlib, hmac, time
+
+def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
+    parts = dict(p.split("=", 1) for p in header.split(","))
+    t, v1 = parts["t"], parts["v1"]
+    if abs(time.time() - int(t)) &gt; tolerance:
+        return False
+    want = hmac.new(secret.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(want, v1)</code></pre>
+
+<p>
+  Sign the <strong>raw request body</strong>, byte for byte — not a re-serialised
+  parse of it. mimux renders the body once when the delivery is queued and stores
+  it verbatim; every attempt sends exactly those bytes, so a retry verifies the
+  same way the first try did. Only the signature's timestamp differs between
+  attempts, because it is computed per attempt.
+</p>
+
+<h2>Retries</h2>
+
+<p>
+  Reply <strong>2xx</strong> and the delivery is done. Anything else walks a
+  seven-step ladder, front-loaded because most failures are a receiver
+  restarting and most of the rest are a receiver that is down for the day:
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Attempt</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th></tr></thead>
+  <tbody>
+    <tr><th>Delay before it</th><td>0s</td><td>1m</td><td>5m</td><td>30m</td><td>2h</td><td>8h</td><td>14h</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Seven attempts spread over roughly 24.5 hours. Two rules sit outside the ladder:</p>
+
+<ul>
+  <li><strong><code>410 Gone</code> stops immediately.</strong> It is the
+    standard "this subscription is over" answer, and mimux honours it as one:
+    the delivery goes straight to <code>dead</code> with no further attempts.</li>
+  <li><strong>Everything else retries</strong> — timeouts, 5xx, 429, and the
+    other 4xx too, because a misconfigured receiver is usually misconfigured
+    temporarily.</li>
+</ul>
+
+<h3>Auto-disable</h3>
+
+<p>
+  When a delivery exhausts the whole ladder, it is marked <code>dead</code>
+  <strong>and the endpoint is switched off</strong>. A receiver that ignored us
+  for a day is not coming back on its own, and the alternative — keep queueing
+  into a black hole — buries the next real event under a hundred dead rows.
+</p>
+
+<p>
+  An auto-disabled endpoint carries <code>auto_disabled_at</code>. Fix the
+  receiver, then <code>PATCH</code> it back on, which clears the field:
+</p>
+
+<pre><code>curl -X PATCH "$BASE/api/v1/webhooks/7" \
+  -H "Authorization: Bearer $MIMUX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"active":true}'</code></pre>
+
+<p>
+  A paused or auto-disabled endpoint <strong>keeps its queue</strong>: pending
+  rows wait rather than being dropped, and go out when it is switched back on.
+</p>
+
+<h3>Transport limits</h3>
+
+<div class="table-wrap">
+<table>
+  <tbody>
+    <tr><th>Request timeout</th><td>10 seconds, end to end</td></tr>
+    <tr><th>Redirects followed</th><td>2 hops — enough for http→https and a path move; longer is a misconfigured receiver</td></tr>
+    <tr><th>Response body</th><td>Read a little so the connection can be reused, then discarded. Your reply is not ours to keep.</td></tr>
+    <tr><th>Drain interval</th><td>5 seconds for retries and leftovers; a fresh delivery is sent immediately when queued</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>The delivery log</h2>
+
+<pre><code>GET /v1/webhooks/{id}/deliveries</code></pre>
+
+<p>
+  The last 100 deliveries for an endpoint, each with its
+  <code>delivery_id</code>, event, <code>status</code>
+  (<code>pending</code> / <code>failed</code> / <code>ok</code> /
+  <code>dead</code>), attempt count, last HTTP status, last transport error, and
+  when the next attempt is due.
+</p>
+
+<h3>Replay</h3>
+
+<pre><code>POST /v1/webhooks/{id}/deliveries/{delivery_row_id}/replay</code></pre>
+
+<p>
+  Re-queues a delivery for immediate sending with a fresh retry budget. The body
+  and the <code>delivery_id</code> are unchanged, so a receiver that already
+  processed it recognises the duplicate. Use it after fixing a receiver that was
+  returning 500, or to re-deliver something you lost. Sending happens in the
+  background; the call returns as soon as the row is queued.
+</p>
+
+<h3>Test</h3>
+
+<pre><code>POST /v1/webhooks/{id}/test</code></pre>
+
+<p>
+  Queues a <code>ping</code> and sends it immediately — the way to prove the
+  URL, your signature check and your parser all work without waiting for real
+  mail. <code>ping</code> ignores the subscription list on purpose, so an
+  endpoint subscribed to nothing still receives its test. It goes through the
+  normal machinery, which means a failing ping walks the same ladder and can
+  auto-disable the endpoint like any other delivery.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Free builds have the endpoint table and the Settings UI, and nothing
+    that posts.</strong> The delivery engine lives in the pro layer; without it,
+    endpoints can be configured but never fire.
+  </p>
+</div>
+
+<h2>What gets logged</h2>
+
+<p>
+  Which endpoint, which event, and how it went. Never the payload, never the
+  secret, never the signature.
+</p>

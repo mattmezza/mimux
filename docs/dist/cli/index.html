@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Command line — mimux docs</title>
+    <meta name="description" content="Every subcommand the mimux binary has — running the server, the -version flag, the pro stdio MCP bridge, and mimux licence status." />
+    <link rel="stylesheet" href="../style.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <a class="skip" href="#content">Skip to content</a>
+    <header class="site-header">
+      <nav aria-label="Main">
+        <a class="brand" href="../">
+          <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='115' fill='%2318181b'/%3E%3Cpath fill='%234ade80' d='M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z'/%3E%3Cpath fill='%236366f1' d='M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z'/%3E%3C/svg%3E" alt="" width="26" height="26" />
+          <span>mimux</span>
+          <small>docs</small>
+        </a>
+        <ul>
+          <li class="hide-sm"><a href="https://mimux.dev/agents/">Automation</a></li>
+          <li class="hide-sm"><a href="https://mimux.dev/pricing/">Pricing</a></li>
+          <li><a href="https://github.com/mattmezza/mimux">GitHub</a></li>
+          <li><a class="cta" href="https://mimux.dev/#install">Get mimux</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <div class="layout">
+      <nav class="sidebar" aria-label="Documentation">
+<p class="nav-group">Start here</p>
+<ul>
+<li><a href="../">Overview</a></li>
+<li><a href="../how-it-works/">How mimux works</a></li>
+<li><a href="../architecture/">Architecture</a></li>
+<li><a href="../install/">Installation</a></li>
+</ul>
+<p class="nav-group">Using mimux</p>
+<ul>
+<li><a href="../interfaces/">Web UI, PWA, notifications</a></li>
+<li><a href="../cli/" class="here" aria-current="page">Command line</a></li>
+</ul>
+<p class="nav-group">Automation (pro)</p>
+<ul>
+<li><a href="../automation/">The automation layer</a></li>
+<li><a href="../api/">REST API guide</a></li>
+<li><a href="../reference/">API reference</a></li>
+<li><a href="../mcp/">MCP server</a></li>
+<li><a href="../webhooks/">Webhooks</a></li>
+</ul>
+</nav>
+      <div class="content">
+        <main class="prose" id="content">
+<h1>Command line</h1>
+<p class="lede">
+  The mimux binary has a deliberately small command line. Running it with no
+  arguments starts the server; there are exactly two subcommands, and both come
+  from the pro layer.
+</p>
+
+<h2>The whole surface</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Invocation</th><th>Build</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>mimux</code></td><td>any</td><td>Start the server. Opens the database, runs migrations, starts a sync worker per account, listens on <code>MIMUX_HOST:MIMUX_PORT</code>.</td></tr>
+    <tr><td><code>mimux -version</code></td><td>any</td><td>Print the version and exit.</td></tr>
+    <tr><td><code>mimux mcp</code></td><td>pro</td><td>Run the stdio MCP bridge against a <em>running</em> mimux.</td></tr>
+    <tr><td><code>mimux licence status</code></td><td>pro</td><td>Report this install's licence and whether the API is answering.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  That is the complete list. The free build's subcommand table is
+  <strong>empty</strong> — the two pro verbs are registered from files carrying
+  the <code>pro</code> build tag, so a free binary neither has them nor mentions
+  them.
+</p>
+
+<p>
+  An unrecognised verb exits <code>2</code> with
+  <code>mimux: unknown command "…"</code> rather than falling through and
+  booting the server. Booting touches the database, including one-time
+  migrations, which is a hostile response to a typo.
+</p>
+
+<h2><code>mimux</code> — the server</h2>
+
+<pre><code>mimux</code></pre>
+
+<p>
+  No arguments, no config file. Everything it needs to find its way comes from
+  the environment, each with a working default, so a fresh install with zero
+  environment variables boots and runs:
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>MIMUX_DB</code></td><td><code>./data/mimux.db</code></td></tr>
+    <tr><td><code>MIMUX_HOST</code></td><td><code>0.0.0.0</code></td></tr>
+    <tr><td><code>MIMUX_PORT</code></td><td><code>8083</code></td></tr>
+    <tr><td><code>MIMUX_BASE_URL</code></td><td><code>http://localhost:&lt;port&gt;</code></td></tr>
+    <tr><td><code>MIMUX_SECRET</code></td><td>generated once, persisted next to the database</td></tr>
+    <tr><td><code>MIMUX_AI_BASE_URL</code></td><td>OpenRouter</td></tr>
+    <tr><td><code>MIMUX_API_RATE_LIMIT</code> <span class="pro-tag">pro</span></td><td><code>120</code> requests per token per minute; <code>0</code> disables</td></tr>
+    <tr><td><code>MIMUX_LICENCE_KEY</code> <span class="pro-tag">pro</span></td><td>unset; takes precedence over the key saved in Settings → API</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Full descriptions are on the <a href="../install/">Installation</a> page. The
+  pre-rename <code>SM_*</code> names still work in v0.20, logging one
+  deprecation warning per variable, and are removed in v0.21.
+</p>
+
+<p>
+  On startup the process also renames a pre-rename <code>sm.db</code> (and its
+  <code>-wal</code>/<code>-shm</code> sidecars) to the <code>mimux.db</code> the
+  config points at, when the new file is absent and the old one is present. A
+  failed rename is fatal rather than ignored — silently booting onto an empty
+  database next to a populated one presents as total data loss.
+</p>
+
+<p>
+  <code>SIGINT</code> and <code>SIGTERM</code> trigger a clean shutdown: sync
+  workers stop and the HTTP server drains, with a 10-second timeout.
+</p>
+
+<h2><code>mimux mcp</code> — the stdio MCP bridge <span class="pro-tag">pro</span></h2>
+
+<p>
+  Speaks MCP on stdin/stdout and forwards every tool call to a running mimux's
+  <code>/api/mcp</code> endpoint. It exists for MCP clients — editors, desktop
+  apps — that cannot speak streamable HTTP themselves.
+</p>
+
+<p>
+  It <strong>never opens the database</strong>: one server process owns that.
+  So it is safe, and in fact required, to run it while the server is up.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td><code>MIMUX_URL</code></td><td><code>http://localhost:8083</code></td><td>Base URL of the running mimux.</td></tr>
+    <tr><td><code>MIMUX_TOKEN</code></td><td><em>required</em></td><td>An API token from Settings → API.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<pre><code>MIMUX_URL=http://localhost:8083 MIMUX_TOKEN=mimux_pat_... mimux mcp</code></pre>
+
+<p>
+  With no token it prints
+  <code>mimux mcp: set MIMUX_TOKEN to an API token from Settings → API</code>
+  and exits <code>1</code>. Two environment variables and a command is exactly
+  the shape of an MCP client's config block — see
+  <a href="../mcp/">MCP server</a> for one.
+</p>
+
+<h2><code>mimux licence status</code> <span class="pro-tag">pro</span></h2>
+
+<p>
+  Prints what this install makes of its licence. It reads the same config and
+  the same database the server does, but opens the store <strong>read-only</strong>,
+  so it runs happily alongside a live mimux and writes nothing.
+</p>
+
+<pre><code>$ mimux licence status
+status:    Annual licence, expires 2027-03-14 (m…o@example.com, from env).
+key:       MIMUX_LICENCE_KEY
+build:     v0.20-pro
+plan:      annual
+email:     m…o@example.com
+issued:    2026-03-14
+expires:   2027-03-14
+api:       answering</code></pre>
+
+<p>
+  <code>key:</code> is one of <code>MIMUX_LICENCE_KEY</code>,
+  <code>saved in Settings → API</code>, or <code>none configured</code>. With no
+  licence at all it prints a <code>trial:</code> line instead of the payload
+  fields — either when the trial started, or a note that the server stamps that
+  on its first pro boot. An expired annual licence inside its grace period adds
+  a <code>grace:</code> line; a perpetual licence adds a
+  <code>watermark:</code> line saying whether it covers this build.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Exit code</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>0</code></td><td>The API and MCP endpoints are answering.</td></tr>
+    <tr><td><code>1</code></td><td>They are paused, or the config/database could not be read.</td></tr>
+    <tr><td><code>2</code></td><td>Wrong usage — the only accepted form is <code>mimux licence status</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>That makes it one line in a monitoring script:</p>
+
+<pre><code>mimux licence status &gt;/dev/null || alert "mimux API is paused"</code></pre>
+
+<p>
+  Whatever it reports, <strong>mail keeps working</strong>. The licence gate
+  covers <code>/api/v1/*</code> and <code>/api/mcp</code> and nothing else.
+</p>
+
+<h2>Development targets</h2>
+
+<p>
+  Not part of the CLI, but worth knowing: the repository's <code>Makefile</code>
+  carries the developer entry points. <code>make help</code> lists them all.
+</p>
+
+<pre><code>make setup      # air, golangci-lint, npm deps
+make css        # Tailwind watcher (separate terminal)
+make dev        # hot-reloading server
+make build      # the free binary
+make build-pro  # the commercial binary
+make check      # lint, tests, and the three licence-split verifications
+make diagnose   # sanitised environment dump to paste into a bug report</code></pre>
+</main>
+        <footer class="site-footer">
+  <p>mimux is a self-hosted email client. The client is AGPL-3.0; the automation
+  layer in <code>pro/</code> is Elastic Licence 2.0 &mdash; see
+  <a href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md">LICENSING.md</a>.</p>
+  <p><a href="https://mimux.dev/">mimux.dev</a> &middot;
+  <a href="https://github.com/mattmezza/mimux">Source</a> &middot;
+  <a href="https://account.mimux.dev">Licences</a></p>
+</footer>
+      </div>
+    </div>
+  </body>
+</html>

@@ -1,0 +1,175 @@
+<!--
+title: Web UI, PWA, notifications
+description: The keyboard-driven mimux web interface and its full shortcut set, installing mimux as a PWA with an offline fallback, and notifications over Web Push or ntfy.
+-->
+<h1>Web UI, PWA and notifications</h1>
+<p class="lede">
+  The interface a human uses. All of it is free and always will be — the paid
+  layer is only for machines.
+</p>
+
+<h2>The web UI</h2>
+
+<p>
+  Open the base URL in any modern browser and sign in with the admin account
+  the first-run wizard created. What you get:
+</p>
+
+<ul>
+  <li>A <strong>unified inbox</strong> across every configured account, plus a
+    per-account view and a full folder tree per account
+    (inbox/sent/drafts/archive/spam/trash) with unread counts.</li>
+  <li><strong>Conversation threading</strong>, with the reading pane ordered
+    oldest first.</li>
+  <li><strong>Compose, reply, reply-all and forward</strong> over SMTP — plain
+    text, rich text or Markdown — with local draft autosave, undo-send and
+    scheduled send.</li>
+  <li><strong>Search</strong>: instant local full-text search, plus on-demand
+    deep IMAP search against the servers themselves, streamed back over SSE as
+    each result arrives.</li>
+  <li><strong>Filters</strong> under Settings: conditions on
+    from/to/subject/body, actions to move, label, forward, mark read, star,
+    delete or notify.</li>
+  <li><strong>AI compose/reply and translation</strong>, both optional and
+    bring-your-own-key (OpenRouter, Google Translate). Off until you add a key,
+    and both fail gracefully when unset.</li>
+  <li>Live updates without a refresh: new mail and sync-status changes arrive
+    over a Server-Sent Events stream.</li>
+</ul>
+
+<p>
+  Remote images and every other external resource in a message stay
+  <strong>blocked</strong> until you click <em>Load external content</em> or
+  allow a sender permanently.
+</p>
+
+<h2>Keyboard shortcuts</h2>
+
+<p>Press <code>?</code> anywhere to toggle this list in the app itself.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Action</th><th>Key</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><code>j</code> / <code>k</code></td><td>Next / previous message</td><td><code>R</code> / <code>A</code> / <code>F</code></td><td>Reply / reply all / forward</td></tr>
+    <tr><td><code>o</code> / <code>Enter</code></td><td>Open selected message</td><td><code>c</code></td><td>Compose</td></tr>
+    <tr><td><code>Esc</code></td><td>Back / close pane, dialog or search</td><td><code>/</code></td><td>Focus search</td></tr>
+    <tr><td><code>r</code> / <code>u</code></td><td>Mark read / unread</td><td><code>Tab</code> (in search)</td><td>Cycle search scope</td></tr>
+    <tr><td><code>s</code></td><td>Star / unstar selected</td><td><code>Esc</code> (in search)</td><td>Clear search, back to inbox</td></tr>
+    <tr><td><code>e</code></td><td>Archive</td><td><code>d</code> / <code>#</code></td><td>Delete</td></tr>
+    <tr><td><code>!</code></td><td>Mark as spam</td><td><code>?</code></td><td>Toggle the shortcut list</td></tr>
+    <tr><td><code>g</code> <code>i</code></td><td>Go to inbox</td><td><code>g</code> <code>s</code></td><td>Go to starred</td></tr>
+    <tr><td><code>g</code> <code>d</code></td><td>Go to drafts</td><td><code>g</code> <code>t</code></td><td>Go to sent</td></tr>
+    <tr><td><code>0</code></td><td>Unified inbox</td><td><code>1</code>–<code>9</code></td><td>Nth account's inbox</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Install it as an app</h2>
+
+<p>
+  mimux ships a web app manifest and a service worker, so any browser that
+  supports PWAs can install it: desktop Chrome/Edge offer an install button in
+  the address bar, and on iOS/iPadOS it is Share → <em>Add to Home Screen</em>.
+</p>
+
+<p>
+  <strong>Offline is read-only.</strong> The service worker falls back to your
+  last-synced inbox so the app opens and shows something useful without a
+  network, but every action — read, star, move, send — needs the server.
+</p>
+
+<div class="note">
+  <p>
+    Installing requires <strong>HTTPS with a real certificate</strong>. Browsers
+    refuse service workers on an insecure origin, so
+    <code>http://&lt;lan-ip&gt;:8083</code> will not install. See
+    <a href="../install/">Installation</a> for the reverse-proxy setup.
+  </p>
+</div>
+
+<h2>Notifications</h2>
+
+<p>
+  Off until you turn them on, in <strong>Settings → Notifications</strong>. Pick
+  <em>when</em> first:
+</p>
+
+<ul>
+  <li><strong>Off</strong> (default) — nothing is ever sent and no permission is
+    ever requested.</li>
+  <li><strong>Only what my filter rules say</strong> — a rule with the
+    <em>Notify me</em> action fires one. Set those up under
+    <em>Filters</em>.</li>
+  <li><strong>Every new message in an inbox.</strong></li>
+</ul>
+
+<p>
+  Either way mimux only notifies about new mail arriving in an
+  <strong>inbox</strong>: never your own sent mail, never the backlog downloaded
+  on a first sync, never a message that was already read elsewhere, and never
+  anything older than a day.
+</p>
+
+<p>Then pick <em>how</em>. The two transports are independent and can both be on.</p>
+
+<h3>Web Push</h3>
+
+<p>
+  <strong>Settings → Notifications → <em>Enable on this device</em></strong>.
+  Delivered from your own server, with the sender and subject encrypted
+  end-to-end to that browser. There is nothing to configure: the VAPID key pair
+  is generated on first use and stored in the database.
+</p>
+
+<p>Requirements:</p>
+
+<ul>
+  <li><strong>HTTPS with a real certificate.</strong> Browsers refuse both
+    service workers and push on an insecure origin.</li>
+  <li><strong>iPhone/iPad: install the web app first.</strong> Safari only
+    allows push for a web app added to the Home Screen (iOS 16.4+). Open mimux
+    from that icon and enable notifications there — it cannot work in a normal
+    Safari tab, in any browser on iOS.</li>
+  <li>The browser asks for permission <strong>once</strong>. If it is refused,
+    the button cannot ask again — reset Notifications for the site in the
+    browser's own settings.</li>
+</ul>
+
+<p>
+  Each browser/device subscribes separately and is listed with a Remove button.
+  Signing out drops that device's subscription. A subscription the push service
+  reports as gone (404/410) is deleted automatically.
+</p>
+
+<h3>ntfy</h3>
+
+<p>
+  <a href="https://ntfy.sh">ntfy</a> needs no permission, no HTTPS and no
+  installed app: put a topic URL
+  (<code>https://ntfy.sh/&lt;something-long-and-unguessable&gt;</code>, or your
+  own ntfy server) in the box, install the ntfy app, and subscribe to the same
+  topic. This is the fallback when Web Push is not available.
+</p>
+
+<p>
+  Anyone who knows the topic name can read the notifications, so self-host ntfy
+  if the sender and subject are sensitive.
+</p>
+
+<h3>Privacy</h3>
+
+<p>
+  Web Push payloads are encrypted end to end — the push service
+  (Apple/Google/Mozilla) relays ciphertext it cannot read. It does still see
+  that your device received a push, and when: metadata, not content. ntfy sees
+  the sender and subject in the clear unless you run it yourself.
+</p>
+
+<h2>Other ways in</h2>
+
+<ul class="cards">
+  <li><a href="../cli/"><strong>Command line</strong><span>The binary's subcommands — the server itself, and the pro helpers.</span></a></li>
+  <li><a href="../api/"><strong>REST API</strong><span>For scripts and integrations. Pro.</span></a></li>
+  <li><a href="../mcp/"><strong>MCP server</strong><span>For AI agents. Pro.</span></a></li>
+</ul>
