@@ -403,7 +403,7 @@
         <ol class="space-y-7 text-sm leading-relaxed">
           <li class="flex gap-4" data-reveal>
             <span class="font-mono text-accent-600 shrink-0 mt-0.5">01</span>
-            <p class="text-ink-600"><strong class="text-ink-950 font-medium">Start it.</strong> The compose file is the whole deployment: one container, one volume, one port.</p>
+            <p class="text-ink-600"><strong class="text-ink-950 font-medium">Start it.</strong> One command: the container runs with a named volume for persistence and opens on port 8083.</p>
           </li>
           <li class="flex gap-4" data-reveal="60">
             <span class="font-mono text-accent-600 shrink-0 mt-0.5">02</span>
@@ -418,12 +418,16 @@
         <figure class="panel" data-reveal="100">
           <figcaption class="panel-bar">
             <span>terminal</span>
-            <button type="button" data-copy="git clone https://github.com/mattmezza/mimux && cd mimux && docker compose up -d"
+            <button type="button" data-copy="docker run -d --name mimux -p 8083:8083 -v mimux-data:/data ghcr.io/mattmezza/mimux:latest"
                     class="font-mono text-[11px] text-screen-300 hover:text-screen-50 transition-colors cursor-pointer">copy</button>
           </figcaption>
-          <pre class="code"><code><span class="c"># the whole install</span>
-<span class="p">$</span> <span class="w">git clone https://github.com/mattmezza/mimux</span>
-<span class="p">$</span> <span class="w">cd mimux &amp;&amp; docker compose up -d</span>
+          <!-- The visible command is wrapped with shell continuations so it fits the
+     block without scrolling; data-copy above is the same command on one line,
+     which pastes cleanly into any shell. Same command, two presentations —
+     not drift. -->
+<pre class="code"><code><span class="c"># the whole install</span>
+<span class="p">$</span> <span class="w">docker run -d --name mimux -p 8083:8083 \</span>
+<span class="w">    -v mimux-data:/data ghcr.io/mattmezza/mimux:latest</span>
 
 <span class="c"># then open</span>
 <span class="w">http://localhost:8083</span></code></pre>
