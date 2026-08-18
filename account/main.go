@@ -276,7 +276,7 @@ key compiled into the binary and never contacts us. Nothing about your usage
 is reported anywhere.
 
 Lost it again? https://account.mimux.dev/retrieve
-Questions? mattmezza@gmail.com
+Questions? support@mimux.dev
 `
 
 func licenceEmail(p licencePayload, key string) string {
