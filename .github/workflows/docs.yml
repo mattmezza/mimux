@@ -1,0 +1,58 @@
+name: Docs
+
+# The API reference site at docs.mimux.dev. docs/dist is committed and deployed
+# as-is, so the only thing CI has to prove is that it is not stale.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "pro/openapi.json"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one in flight: a half-published site is
+# worse than a slightly late one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  staleness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # `make docs` is a copy, not a build — no Go, no Node, no network.
+      - name: Rebuild the site
+        run: make docs
+      - name: docs/dist must match its sources
+        run: |
+          # -N so a brand-new output file that was never committed shows up in
+          # the diff too, instead of hiding as untracked. The checkout is
+          # disposable, so staging intent-to-add costs nothing.
+          git add -N docs/dist
+          git diff --exit-code docs/dist || {
+            echo "::error::docs/dist is stale. Run 'make docs' and commit the result."
+            exit 1
+          }
+
+  deploy:
+    # NOTE: GitHub Pages needs a public repository. While mimux is private this
+    # job fails with a Pages-not-enabled error — expected until launch. The
+    # staleness gate above is the part that matters in the meantime.
+    needs: staleness
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/dist
+      - id: deployment
+        uses: actions/deploy-pages@v4

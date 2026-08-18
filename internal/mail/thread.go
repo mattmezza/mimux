@@ -264,3 +264,26 @@ func makeThread(msgs []store.Message) Thread {
 	}
 	return t
 }
+
+// Conversation returns the whole conversation containing message id. The
+// closure is over Message-IDs across every folder, not a list window: the
+// inbox list is scoped and capped, so Sent replies and older read members
+// would otherwise be missing. nil when the message can't be placed. Moved down
+// from internal/server so the HTML thread pane and the pro API share it.
+func (m *Manager) Conversation(id int64) *Thread {
+	var msgs []store.Message
+	if seed, err := m.st.MessageByID(id); err == nil && seed != nil {
+		msgs, _ = m.st.ThreadMessages(seed)
+	}
+	for _, t := range BuildThreads(msgs) {
+		for _, mm := range t.Messages {
+			// Match by membership, not RootID: the newest message of the full
+			// conversation is often a Sent reply, not the clicked list row.
+			if mm.ID == id {
+				tt := t
+				return &tt
+			}
+		}
+	}
+	return nil
+}

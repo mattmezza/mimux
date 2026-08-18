@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <pattern id="airmail" width="52" height="18" patternUnits="userSpaceOnUse" patternTransform="skewX(-30)">
+      <rect width="52" height="18" fill="#f6f1e7"/>
+      <rect x="0" width="14" height="18" fill="#c2452a"/>
+      <rect x="26" width="14" height="18" fill="#3d5a96"/>
+    </pattern>
+    <linearGradient id="mg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fdf9f0"/>
+      <stop offset="1" stop-color="#f9f3e6"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#f6f1e7"/>
+  <!-- faint ruled lines -->
+  <g stroke="#3a2f28" stroke-opacity="0.06" stroke-width="1">
+    <line x1="0" y1="120" x2="1200" y2="120"/><line x1="0" y1="180" x2="1200" y2="180"/>
+    <line x1="0" y1="240" x2="1200" y2="240"/><line x1="0" y1="300" x2="1200" y2="300"/>
+    <line x1="0" y1="360" x2="1200" y2="360"/><line x1="0" y1="420" x2="1200" y2="420"/>
+    <line x1="0" y1="480" x2="1200" y2="480"/><line x1="0" y1="540" x2="1200" y2="540"/>
+  </g>
+
+  <!-- airmail bands -->
+  <rect x="0" y="0" width="1200" height="16" fill="url(#airmail)"/>
+  <rect x="0" y="614" width="1200" height="16" fill="url(#airmail)"/>
+
+  <!-- envelope shadow -->
+  <rect x="296" y="136" width="640" height="384" rx="6" fill="#3a2f28" fill-opacity="0.16"/>
+  <!-- envelope -->
+  <g transform="rotate(-2 600 315)">
+    <rect x="284" y="122" width="640" height="384" rx="6" fill="url(#mg)" stroke="#3a2f28" stroke-width="2.5"/>
+    <!-- flap -->
+    <path d="M286 128 L604 330 L922 128" fill="none" stroke="#3a2f28" stroke-width="2" stroke-opacity="0.55"/>
+    <!-- address lines -->
+    <g stroke="#3a2f28" stroke-opacity="0.4" stroke-width="3" stroke-linecap="round">
+      <line x1="356" y1="392" x2="600" y2="392"/>
+      <line x1="356" y1="424" x2="668" y2="424"/>
+      <line x1="356" y1="456" x2="560" y2="456"/>
+    </g>
+
+    <!-- postage stamp with perforated edge -->
+    <g transform="translate(772 158) rotate(3)">
+      <rect x="0" y="0" width="112" height="132" fill="#c2452a"/>
+      <!-- perforation: bites of envelope colour along the edges -->
+      <g fill="#fdf9f0">
+        <circle cx="0" cy="0" r="7"/><circle cx="22" cy="0" r="7"/><circle cx="44" cy="0" r="7"/><circle cx="66" cy="0" r="7"/><circle cx="88" cy="0" r="7"/><circle cx="110" cy="0" r="7"/>
+        <circle cx="0" cy="132" r="7"/><circle cx="22" cy="132" r="7"/><circle cx="44" cy="132" r="7"/><circle cx="66" cy="132" r="7"/><circle cx="88" cy="132" r="7"/><circle cx="110" cy="132" r="7"/>
+        <circle cx="0" cy="22" r="7"/><circle cx="0" cy="44" r="7"/><circle cx="0" cy="66" r="7"/><circle cx="0" cy="88" r="7"/><circle cx="0" cy="110" r="7"/>
+        <circle cx="112" cy="22" r="7"/><circle cx="112" cy="44" r="7"/><circle cx="112" cy="66" r="7"/><circle cx="112" cy="88" r="7"/><circle cx="112" cy="110" r="7"/>
+      </g>
+      <rect x="14" y="14" width="84" height="104" fill="none" stroke="#fdf9f0" stroke-width="2.5"/>
+      <!-- the mimux m -->
+      <g transform="translate(20 30) scale(0.72)">
+        <polygon fill="#fdf9f0" points="24,28 36,28 50,46 64,28 76,28 76,74 64,74 64,44 50,62 36,44 36,74 24,74"/>
+      </g>
+    </g>
+
+    <!-- postmark cancellation: rings + waves, no text -->
+    <g stroke="#3a2f28" fill="none" stroke-opacity="0.62" transform="translate(700 240) rotate(-8)">
+      <circle cx="0" cy="0" r="64" stroke-width="4"/>
+      <circle cx="0" cy="0" r="46" stroke-width="2.5"/>
+      <g stroke-width="4" stroke-linecap="round">
+        <path d="M56 -34 q 40 10 84 -6"/>
+        <path d="M62 -12 q 44 12 92 -4"/>
+        <path d="M64 10 q 44 12 92 -2"/>
+        <path d="M58 32 q 40 12 84 0"/>
+      </g>
+    </g>
+  </g>
+</svg>

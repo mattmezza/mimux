@@ -1,0 +1,72 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mimux pro</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --fg: light-dark(#16181d, #e7e7e4);
+    --bg: light-dark(#fdfdfc, #16181d);
+    --muted: light-dark(#5d6472, #949aa6);
+    --line: light-dark(#e0e0dc, #2c3038);
+    --card: light-dark(#fff, #1c1f26);
+    --accent: light-dark(#1a4fd6, #7fa5ff);
+  }
+  * { box-sizing: border-box }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 44rem; margin: 0 auto; padding: 3rem 1.25rem 2rem }
+  h1 { font-size: 1.35rem; letter-spacing: -.01em; margin: 0 0 2rem }
+  h1 a { color: inherit; text-decoration: none }
+  h2 { font-size: 1.05rem; margin: 0 0 .35rem }
+  a { color: var(--accent) }
+  p { margin: 0 0 1rem }
+  .muted { color: var(--muted) }
+  .small { font-size: .875rem }
+  .plans { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); margin: 1.5rem 0 }
+  .card { border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: 1.25rem; display: flex; flex-direction: column }
+  .price { font-size: 1.6rem; font-weight: 600; margin: .25rem 0 .75rem }
+  .price span { font-size: .9rem; font-weight: 400; color: var(--muted) }
+  ul { margin: 0 0 1.25rem; padding-left: 1.1rem; color: var(--muted) }
+  li { font-size: .9rem }
+  form { margin-top: auto }
+  button {
+    font: inherit; font-weight: 500; cursor: pointer; width: 100%;
+    padding: .6rem 1rem; border-radius: 6px; border: 1px solid var(--accent);
+    background: var(--accent); color: light-dark(#fff, #101218);
+  }
+  button.ghost { background: transparent; color: var(--fg); border-color: var(--line) }
+  input[type=email] {
+    font: inherit; width: 100%; padding: .55rem .7rem; margin-bottom: .75rem;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+  }
+  .row { display: flex; gap: .6rem; flex-wrap: wrap }
+  .row button { width: auto; flex: 1 1 12rem }
+  .notice { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem 1rem; margin: 1.5rem 0 }
+  footer { border-top: 1px solid var(--line); margin-top: 3rem; padding-top: 1rem; color: var(--muted); font-size: .8rem }
+  footer a { color: inherit }
+</style>
+</head>
+<body>
+<main>
+  <h1><a href="/">mimux <span class="muted">pro</span></a></h1>
+  {{template "content" .}}
+  <footer>
+    <p>
+      Licences are verified offline. mimux never contacts this server, and this
+      server is never told what you do with it &mdash;
+      <a href="https://github.com/mattmezza/mimux/tree/main/account">read the code that runs here</a>.
+    </p>
+    <p>
+      Payment is handled by Stripe; no card details reach this service.
+      &middot; <a href="/retrieve">Lost your key?</a>
+      &middot; <a href="mailto:mattmezza@gmail.com">mattmezza@gmail.com</a>
+    </p>
+  </footer>
+</main>
+</body>
+</html>{{end}}

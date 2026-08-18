@@ -5,9 +5,15 @@ on:
   push:
     branches: [main]
     # Duplicated below on purpose: GitHub Actions does not support YAML anchors.
+    # docs/ and account/ have their own workflows (docs.yml, account.yml);
+    # examples/ is not Go. pro/** is NOT ignored: this gate runs it under both
+    # tag configs.
     paths-ignore:
       - "**/*.md"
       - "www/**"
+      - "docs/**"
+      - "account/**"
+      - "examples/**"
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
       - "pro/LICENSE"
@@ -15,6 +21,9 @@ on:
     paths-ignore:
       - "**/*.md"
       - "www/**"
+      - "docs/**"
+      - "account/**"
+      - "examples/**"
       - ".github/ISSUE_TEMPLATE/**"
       - "LICENSE"
       - "pro/LICENSE"

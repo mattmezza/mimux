@@ -14,16 +14,18 @@ single fact is what makes the arrangement below work; see
 | Path | Licence | What it is |
 |------|---------|------------|
 | `cmd/`, `internal/`, `web/` | **AGPL-3.0-only** | The mimux mail client. The whole thing. |
-| `pro/` | **Elastic Licence 2.0** (`pro/LICENSE`) | The commercial automation layer: REST API, MCP server, webhooks. |
-| `www/` | **AGPL-3.0-only** | Landing page and docs for mimux.dev. |
-| Everything else at the root | **AGPL-3.0-only** | Build files, CI, docs. |
+| `pro/` | **Elastic Licence 2.0** (`pro/LICENSE`) | The commercial automation layer: REST API, MCP server, webhooks, licence enforcement. |
+| `account/` | **Elastic Licence 2.0** (`account/LICENSE`) | The licence-selling service at account.mimux.dev. Runs only on the maintainer's infrastructure, never distributed; public so you can verify there is no phone-home. |
+| `docs/` | **AGPL-3.0-only** | The API reference site at docs.mimux.dev, generated from `pro/openapi.json`. |
+| `www/` | **AGPL-3.0-only** | Landing page for mimux.dev. |
+| Everything else at the root | **AGPL-3.0-only** | Build files, CI, docs, examples. |
 
 Every Go file carries an `SPDX-License-Identifier` header, so the split is
 machine-checkable:
 
 ```sh
 grep -rL 'SPDX-License-Identifier' --include='*.go' .   # should print nothing
-grep -rl 'LicenseRef-Elastic-2.0' --include='*.go' .    # should print only pro/
+grep -rl 'LicenseRef-Elastic-2.0' --include='*.go' .    # should print only pro/ and account/
 ```
 
 ## The free/pro line

@@ -31,6 +31,18 @@ single Go binary serving htmx + Alpine.js + Tailwind, talking IMAP and SMTP.
 - **Notifications** for new mail when mimux isn't open — Web Push straight from
   your server, or a POST to an [ntfy](https://ntfy.sh) topic (see below)
 
+## mimux pro — the automation layer
+
+Everything above is free, forever. If something *other than a human* needs to
+drive mimux, that is [mimux pro](LICENSING.md): a REST API
+(self-documented at `/api/v1/openapi.json`, rendered at
+[docs.mimux.dev](https://docs.mimux.dev)), an MCP server at `/api/mcp` so
+agents can search, read, triage and draft (never send without a second,
+explicit step), and signed webhooks with retries and a delivery log. Machine
+access authenticates with scoped API tokens from **Settings → API**; a pro
+build runs 14 days without a key, and mail itself never stops working,
+licensed or not. Keys at [account.mimux.dev](https://account.mimux.dev).
+
 ## Screenshots
 
 _(placeholder — drop PNGs/GIFs of the unified inbox, reading pane, and

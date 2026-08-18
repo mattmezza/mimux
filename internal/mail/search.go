@@ -177,3 +177,28 @@ func (m *Manager) SearchFolders(account string, q *search.SearchQuery) []store.F
 	}
 	return out
 }
+
+// SearchAccounts resolves which account names participate in a server search
+// under a scope. Moved down from internal/server so the SSE search UI and the
+// pro API's async search jobs resolve scope identically.
+func (m *Manager) SearchAccounts(scope search.Scope, account string, folderID int64) []string {
+	switch scope {
+	case search.ScopeFolder:
+		if f, _ := m.st.FolderByID(folderID); f != nil {
+			return []string{f.Account}
+		}
+		return nil
+	case search.ScopeAccount:
+		if account != "" {
+			return []string{account}
+		}
+		if f, _ := m.st.FolderByID(folderID); f != nil {
+			return []string{f.Account}
+		}
+	}
+	out := make([]string, 0, len(m.cfg.Accounts))
+	for _, a := range m.cfg.Accounts {
+		out = append(out, a.Name)
+	}
+	return out
+}

@@ -13,6 +13,9 @@
 //	MIMUX_BASE_URL public URL             (default http://localhost:<port>)
 //	MIMUX_SECRET   session/CSRF secret    (default: generated once, persisted next
 //	                                        to the DB so sessions survive restarts)
+//	MIMUX_API_RATE_LIMIT  API requests per token per minute (default 120, 0 = off)
+//	MIMUX_LICENCE_KEY     pro licence key; takes precedence over the one saved
+//	                        in Settings → API (free builds ignore it)
 //
 // The pre-rename SM_* names still work for one release — see Env.
 package config
@@ -35,6 +38,17 @@ import (
 type Config struct {
 	Server Server
 	DB     DB
+	API    API
+	// Version is the running build's version string, set by cmd/mimux at boot
+	// (it owns the -ldflags value). It rides here because the pro layer's
+	// licence check compares it against a perpetual licence's watermark, and
+	// cfg is what it already gets through ext.Deps.
+	Version string
+	// LicenceKey is MIMUX_LICENCE_KEY. Blank falls back to the key stored in
+	// the database. Bootstrap config like the rest of this struct: an install
+	// that provisions its licence from the environment should not have to reach
+	// into SQLite to do it.
+	LicenceKey string
 	// Accounts is a runtime snapshot of the DB-backed accounts, refreshed by the
 	// server whenever the account list changes. It is NOT parsed from any file —
 	// it exists so the HTTP layer and compose selector can read the current
@@ -52,6 +66,19 @@ type Server struct {
 type DB struct {
 	Path string
 }
+
+// API holds the machine-facing surface's bootstrap knobs. The endpoints are the
+// pro layer's (see pro/), but their configuration is ordinary bootstrap config
+// and lives here with the rest — the free build simply has nothing reading it.
+type API struct {
+	// RateLimitPerMinute is the per-token request budget. 0 disables limiting.
+	RateLimitPerMinute int
+}
+
+// DefaultAPIRateLimit is the per-token request budget when MIMUX_API_RATE_LIMIT
+// is unset: generous for a single user's own automation, low enough that a
+// runaway script cannot pin the mailbox.
+const DefaultAPIRateLimit = 120
 
 // Account is one email account. It lives in the DB now (see internal/store);
 // this type stays the in-memory representation the mail engine and templates use.
@@ -166,7 +193,16 @@ func Load() (*Config, error) {
 	cfg := &Config{
 		Server: Server{Host: "0.0.0.0", Port: 8083},
 		DB:     DB{Path: "./data/mimux.db"},
+		API:    API{RateLimitPerMinute: DefaultAPIRateLimit},
 	}
+	if v := Env("API_RATE_LIMIT"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("config: MIMUX_API_RATE_LIMIT %q: want a non-negative integer", v)
+		}
+		cfg.API.RateLimitPerMinute = n
+	}
+	cfg.LicenceKey = strings.TrimSpace(Env("LICENCE_KEY"))
 	if v := Env("DB"); v != "" {
 		cfg.DB.Path = v
 	}
@@ -231,3 +267,33 @@ const (
 	// plausibly click next. Anything older is fetched on open and cached then.
 	DefaultBodyCache = 200
 )
+
+// BareEmail strips a "Name <addr>" wrapper down to the address.
+func BareEmail(a string) string {
+	if i := strings.LastIndex(a, "<"); i >= 0 {
+		return strings.TrimSpace(strings.TrimSuffix(a[i+1:], ">"))
+	}
+	return strings.TrimSpace(a)
+}
+
+// AccountForAddress finds the account that owns a from-address — its primary
+// Email or one of its aliases — matched case-insensitively on the bare
+// address. Moved down from internal/server so compose routing and the pro
+// API's send endpoint resolve identities identically.
+func AccountForAddress(accounts []Account, addr string) (Account, bool) {
+	want := strings.ToLower(BareEmail(addr))
+	if want == "" {
+		return Account{}, false
+	}
+	for _, a := range accounts {
+		if strings.ToLower(a.Email) == want {
+			return a, true
+		}
+		for _, al := range a.Aliases {
+			if strings.ToLower(BareEmail(al.Email)) == want {
+				return a, true
+			}
+		}
+	}
+	return Account{}, false
+}

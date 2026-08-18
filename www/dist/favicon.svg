@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Vector of the mimux app icon (web/static/icons/icon-512.png). -->
+  <rect width="512" height="512" rx="115" fill="#18181b"/>
+  <path fill="#4ade80" d="M255 270 C 245 170 290 95 398 72 C 392 180 340 250 255 270 Z"/>
+  <path fill="#6366f1" d="M64 400 L64 258 Q64 216 104 226 L240 338 Q256 352 272 338 L408 226 Q448 216 448 258 L448 400 Q448 448 402 448 L110 448 Q64 448 64 400 Z"/>
+</svg>

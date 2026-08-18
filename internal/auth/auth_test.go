@@ -28,6 +28,46 @@ func TestPasswordHashVerify(t *testing.T) {
 	}
 }
 
+// base62 is math/big's alphabet for Text(62), which NewAPIToken encodes with.
+const base62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+func TestNewAPIToken(t *testing.T) {
+	seen := map[string]bool{}
+	for range 100 {
+		tok := NewAPIToken()
+		if !strings.HasPrefix(tok, APITokenPrefix) {
+			t.Fatalf("missing prefix: %s", tok)
+		}
+		body := strings.TrimPrefix(tok, APITokenPrefix)
+		// 32 random bytes in base62 is ~43 chars; a short one would mean the
+		// entropy source, not the encoding, went wrong.
+		if len(body) < 38 {
+			t.Fatalf("token body too short (%d): %s", len(body), body)
+		}
+		if i := strings.IndexFunc(body, func(c rune) bool { return !strings.ContainsRune(base62, c) }); i >= 0 {
+			t.Fatalf("non-base62 character %q in %s", body[i], body)
+		}
+		if seen[tok] {
+			t.Fatalf("duplicate token: %s", tok)
+		}
+		seen[tok] = true
+	}
+
+	// A token verifies against its own hash and nothing else — the property the
+	// API middleware relies on.
+	tok := NewAPIToken()
+	h, err := HashPassword(tok)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !VerifyPassword(tok, h) {
+		t.Error("token rejected against its own hash")
+	}
+	if VerifyPassword(NewAPIToken(), h) {
+		t.Error("a different token verified")
+	}
+}
+
 func TestCSRF(t *testing.T) {
 	ok := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	h := CSRF(ok)

@@ -24,6 +24,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	// VAPIDPublicKey generates the pair on first call — invisible, one-off, and
 	// it never prompts the user for anything.
 	pushDevices, _ := s.store.ListPushSubs()
+	apiTokens, _ := s.store.ListAPITokens()
+	webhooks, _ := s.webhookViews()
 	s.render(w, "settings", map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Prefs":        prefs,
@@ -41,12 +43,17 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"AvatarShapes": avatarShapes,
 		// Resolved mark colour, so the colour input always has a value even
 		// when icon_accent is blank ("inherit the app accent").
-		"IconMark":     iconMark(s.store.GetAppConfig()),
-		"Signatures":   sigs,
-		"Templates":    tpls,
-		"Identities":   s.identityLinks(),
-		"DBSize":       s.dbSizeHuman(),
-		"MessageCount": msgCount,
+		"IconMark":      iconMark(s.store.GetAppConfig()),
+		"Signatures":    sigs,
+		"Templates":     tpls,
+		"APITokens":     apiTokens,
+		"APIScopes":     store.APIScopes,
+		"Webhooks":      webhooks,
+		"WebhookEvents": store.WebhookEvents,
+		"Licence":       s.licenceView(),
+		"Identities":    s.identityLinks(),
+		"DBSize":        s.dbSizeHuman(),
+		"MessageCount":  msgCount,
 	})
 }
 

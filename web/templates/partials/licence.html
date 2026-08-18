@@ -1,0 +1,47 @@
+{{define "licence"}}
+{{/* The pro licence key. Same shape as the api_tokens manager: swapped whole
+     (outerHTML) after save or remove, controls carry form="settings-subform" so
+     they don't serialize the whole settings page. */}}
+<div id="licence" class="space-y-3">
+
+  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
+    {{if .Licence.Key}}
+    <div class="flex items-center gap-3">
+      <span class="min-w-0 flex-1">
+        <code class="block truncate text-[13px] font-mono text-zinc-100">{{.Licence.Key}}</code>
+        <span class="block text-xs text-zinc-500">Stored in this mimux. Only the pro build checks it.</span>
+      </span>
+      <button type="button" form="settings-subform"
+        hx-post="/settings/licence/remove" hx-target="#licence" hx-swap="outerHTML"
+        hx-confirm="Remove the licence key? The API and MCP endpoints stop once the trial or grace period is over."
+        class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Remove</button>
+    </div>
+    {{else}}
+    <p class="text-sm text-zinc-500">No licence key. The API and MCP endpoints run on a 14-day trial from the first pro boot.</p>
+    {{end}}
+
+    {{if .Licence.FromEnv}}
+    <p class="text-xs text-amber-400/90">MIMUX_LICENCE_KEY is set in the environment and takes precedence over anything saved here.</p>
+    {{end}}
+
+    <p class="text-xs {{if .Licence.Status}}text-zinc-400{{else}}text-zinc-500{{end}}">
+      {{if .Licence.Status}}{{.Licence.Status}}
+      {{else}}No status yet — the pro layer writes one when it starts. A free build never does.{{end}}
+    </p>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">{{if .Licence.Key}}Replace the key{{else}}Licence key{{end}}</span>
+      <input type="text" id="licence-key-field" name="licence_key" placeholder="mimuxlic1.…" autocomplete="off" spellcheck="false"
+        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 font-mono text-[13px] text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+
+    <div class="pt-1">
+      <button type="button"
+        form="settings-subform" hx-post="/settings/licence" hx-include="#licence-key-field"
+        hx-target="#licence" hx-swap="outerHTML"
+        hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not save the licence key')"
+        class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Save key</button>
+    </div>
+  </div>
+</div>
+{{end}}

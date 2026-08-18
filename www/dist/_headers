@@ -1,0 +1,26 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  # The only external origin permitted is the self-hosted Umami instance —
+  # the privacy claim in the footer depends on this staying exact.
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://analytics.casa.merola.co; connect-src 'self' https://analytics.casa.merola.co; img-src 'self'; style-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+
+/img/*.webp
+  Cache-Control: public, max-age=31536000, immutable
+
+/img/*.png
+  Cache-Control: public, max-age=31536000, immutable
+
+/img/*.jpg
+  Cache-Control: public, max-age=31536000, immutable
+
+/fonts/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/css/*
+  Cache-Control: public, max-age=3600
+
+/js/*
+  Cache-Control: public, max-age=3600

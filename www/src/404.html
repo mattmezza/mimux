@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Page not found — mimux</title>
+  <meta name="description" content="This page doesn't exist. The inbox you run yourself is still at mimux.dev.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f6f1e7">
+
+  <link rel="icon" href="/img/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/img/apple-touch-icon.png">
+
+  <link rel="preload" href="/fonts/inter-var.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/bricolage-var.woff2" as="font" type="font/woff2" crossorigin>
+  <!-- INLINE-CSS: www-build replaces this with the minified stylesheet, so the
+       page has zero render-blocking requests. -->
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="bg-paper-50 text-ink-700 font-sans antialiased">
+  <main class="relative min-h-screen flex items-center justify-center overflow-hidden">
+    <div aria-hidden="true" class="section-bg absolute inset-0 -z-10"></div>
+    <div class="text-center px-5 py-24">
+      <p class="font-mono text-sm text-accent-600">404 · no such folder</p>
+      <h1 class="display mt-4 text-4xl sm:text-6xl">This message was moved.</h1>
+      <p class="mt-5 text-ink-600 max-w-md mx-auto leading-relaxed">
+        Or it never existed. Either way, nothing here matches
+        <span class="font-mono text-ink-800">that</span> address.
+      </p>
+      <div class="mt-8 flex flex-wrap justify-center gap-3">
+        <a href="/" class="btn btn-primary">Back to the inbox</a>
+        <a href="https://docs.mimux.dev" class="btn btn-secondary">Search the docs</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

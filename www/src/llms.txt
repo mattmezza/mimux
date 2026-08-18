@@ -1,0 +1,32 @@
+# mimux
+
+> A self-hosted email gateway: connect any IMAP mailbox and reach it through
+> every interface — a fast, free web client (AGPL-3.0) for humans, and a paid
+> automation layer (REST API, MCP server, CLI, signed webhooks; GraphQL on the
+> roadmap) for scripts and AI agents. One Go binary, one SQLite file, on your
+> own hardware (€49/yr or €99 perpetual, per instance, 14-day free trial).
+
+## Pages
+
+- [Features](https://mimux.dev/features/): unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push.
+- [Automation & APIs](https://mimux.dev/agents/): the MCP server at /api/mcp, the REST API with OpenAPI spec, the CLI, signed webhooks, scoped tokens, two-step sending.
+- [Pricing](https://mimux.dev/pricing/): free client forever; pro €49/yr or €99 perpetual per instance; offline Ed25519 licence verification, no phone-home.
+- [About](https://mimux.dev/about/): built by Matteo Merola (Merola Software & Services, Zurich); the published free/pro line and why it can't move.
+- [Security](https://mimux.dev/security/): how to report vulnerabilities privately, scope, and mimux's security posture.
+
+## Docs
+
+- [Documentation](https://docs.mimux.dev): install, configuration, OAuth setup and the API reference (rendered from the OpenAPI spec the binary serves).
+
+## Source
+
+- [GitHub repository](https://github.com/mattmezza/mimux): the full source, AGPL-3.0 client plus the ELv2 pro layer.
+- [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md): which directory is under which licence, and how `make verify-free` proves the split.
+
+## Purchase
+
+- [Account portal](https://account.mimux.dev): licence purchase (Stripe) and key retrieval by email.
+
+## Contact
+
+- [Matteo Merola](mailto:mattmezza@gmail.com): maintainer. `mimux` is a trademark of Matteo Merola.

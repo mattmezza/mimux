@@ -34,6 +34,19 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
+// OpenReadOnly opens an existing database for reading: no migrations, no
+// writes (query_only is a hard stop, not a convention). WAL lets it run
+// alongside the server process that owns the file, which is what makes
+// `mimux licence status` safe to run while mimux is up.
+func OpenReadOnly(path string) (*Store, error) {
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=busy_timeout(5000)&_pragma=query_only(1)")
+	if err != nil {
+		return nil, err
+	}
+	db.SetMaxOpenConns(1)
+	return &Store{DB: db}, nil
+}
+
 func (s *Store) Close() error { return s.DB.Close() }
 
 func (s *Store) migrate() error {

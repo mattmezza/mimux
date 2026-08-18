@@ -1,0 +1,93 @@
+{{define "api_tokens"}}
+{{/* Personal access tokens for the API. Swapped whole (outerHTML) after create
+     or revoke — which also clears the create form, since the server re-renders
+     it empty. The controls carry form="settings-subform" for the same reason
+     the other sub-managers do: they sit inside the big settings form and would
+     otherwise serialize the entire page (API keys included) into every
+     request. */}}
+<div id="api-tokens" class="space-y-4">
+
+  {{if .NewSecret}}
+  {{/* The one and only time the plaintext is visible: the database holds an
+       argon2id hash, so there is nothing to show a second time. */}}
+  <div class="rounded-lg border border-indigo-500/40 bg-indigo-500/10 p-4 space-y-2">
+    <p class="text-sm font-semibold text-indigo-200">Your new token</p>
+    <div class="flex items-center gap-2">
+      <code class="flex-1 min-w-0 break-all rounded-md bg-zinc-950 border border-zinc-800 px-3 py-2 font-mono text-[13px] text-zinc-100">{{.NewSecret}}</code>
+      <button type="button" data-copy-addr="{{.NewSecret}}" data-copy-label="API token"
+        class="shrink-0 px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Copy</button>
+    </div>
+    <p class="text-xs text-indigo-200/80">This token is shown only once. Store it now — it cannot be retrieved again.</p>
+  </div>
+  {{end}}
+
+  <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
+    {{range .Tokens}}
+    <li class="flex items-center gap-3 px-3 py-2.5">
+      <span class="min-w-0 flex-1">
+        <span class="block text-sm text-zinc-100 truncate">
+          {{.Label}}
+          {{if .Revoked}}<span class="ml-1 text-xs text-red-400">revoked</span>
+          {{else if .Expired}}<span class="ml-1 text-xs text-amber-400">expired</span>{{end}}
+        </span>
+        <span class="block text-xs text-zinc-500 truncate">{{range .ScopeList}}<code class="mr-1">{{.}}</code>{{end}}</span>
+        <span class="block text-xs text-zinc-500">
+          Created {{absTime .CreatedAt}}
+          · Last used {{if .LastUsedAt.IsZero}}never{{else}}{{absTime .LastUsedAt}}{{end}}
+          · {{if .ExpiresAt.IsZero}}no expiry{{else}}expires {{absTime .ExpiresAt}}{{end}}
+        </span>
+      </span>
+      {{if .Live}}
+      <button type="button" form="settings-subform"
+        hx-post="/settings/api/{{.ID}}/revoke" hx-target="#api-tokens" hx-swap="outerHTML"
+        hx-confirm="Revoke the token “{{.Label}}”? Anything using it stops working immediately."
+        class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 transition-colors duration-150">Revoke</button>
+      {{end}}
+    </li>
+    {{else}}
+    <li class="px-3 py-4 text-sm text-zinc-500">No tokens yet. Create one below to let a script or an agent talk to mimux.</li>
+    {{end}}
+  </ul>
+
+  {{/* Create form — not a <form> (the settings page is one big form): posts via htmx. */}}
+  <div id="api-token-fields" class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
+    <h3 class="text-sm font-semibold text-zinc-100">New token</h3>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Label</span>
+      <input type="text" name="label" placeholder="e.g. Home Assistant"
+        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+    </label>
+
+    <div class="space-y-1">
+      <span class="block text-xs text-zinc-400">Scopes</span>
+      {{range .Scopes}}
+      <label class="flex items-center gap-2">
+        {{/* Read-only by default: a new token should not be able to send mail
+             because someone clicked past this. */}}
+        <input type="checkbox" name="scopes" value="{{.ID}}" {{if eq .ID "mail:read"}}checked{{end}}
+          class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+        <span class="text-sm text-zinc-200">{{.Label}}</span>
+        <code class="text-xs text-zinc-500">{{.ID}}</code>
+      </label>
+      {{end}}
+    </div>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Expires</span>
+      {{/* Native date input: no picker library, and the browser validates it. */}}
+      <input type="date" name="expires"
+        class="w-48 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+      <span class="block text-xs text-zinc-500">Leave blank for a token that never expires.</span>
+    </label>
+
+    <div class="pt-1">
+      <button type="button"
+        form="settings-subform" hx-post="/settings/api" hx-include="#api-token-fields"
+        hx-target="#api-tokens" hx-swap="outerHTML"
+        hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not create token')"
+        class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Create token</button>
+    </div>
+  </div>
+</div>
+{{end}}

@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-package server
+package store
 
 import (
 	"testing"
-
-	"github.com/mattmezza/mimux/internal/store"
 )
 
 func TestFolderTree(t *testing.T) {
-	folders := []store.Folder{
+	folders := []Folder{
 		{ID: 1, Name: "INBOX", SpecialUse: "inbox"},
 		{ID: 2, Name: "Work/Clients/Acme"},
 		{ID: 3, Name: "Work/Clients"},
 		{ID: 4, Name: "Work/Internal"},
 		{ID: 5, Name: "Receipts"},
 	}
-	roots := folderTree(folders)
+	roots := FolderTree(folders)
 	// Roots: Inbox (special leaf), Work (branch, no own folder), Receipts (leaf).
 	if len(roots) != 3 {
 		t.Fatalf("want 3 roots, got %d", len(roots))

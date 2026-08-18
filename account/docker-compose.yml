@@ -1,0 +1,28 @@
+services:
+  account:
+    build: .
+    # Loopback only. TLS is terminated by the reverse proxy in front of this,
+    # which also sets X-Forwarded-For — the per-IP rate limit trusts it, so the
+    # port must never be reachable from outside the box.
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - account-data:/data
+    # Real values live in account.env on the VPS, mode 600, never in git.
+    # See README.md for the full list.
+    env_file:
+      - account.env
+    environment:
+      - DB_PATH=/data/account.db
+      - LISTEN_ADDR=:8080
+      - TZ=Europe/Zurich
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  account-data:
