@@ -3,10 +3,17 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"crypto/ed25519"
 	"errors"
+	"html"
+	"io"
+	"mime"
+	"mime/multipart"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	netmail "net/mail"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -185,7 +192,11 @@ func smtpSink(t *testing.T) (port string, delivered chan string) {
 					if strings.TrimSpace(l) == "." {
 						break
 					}
-					body.WriteString(l)
+					// Undo the dot-stuffing net/smtp does on the way out, as a
+					// real server must: quoted-printable soft-wraps can put a
+					// dot at the start of a line, and a licence key is full of
+					// them.
+					body.WriteString(strings.TrimPrefix(l, "."))
 				}
 				say("250 queued")
 			case strings.HasPrefix(verb, "QUIT"):
@@ -275,5 +286,161 @@ func TestSMTPSenderTimesOut(t *testing.T) {
 		t.Logf("gave up after %s: %v", time.Since(start).Round(time.Millisecond), err)
 	case <-time.After(smtpTimeout + 10*time.Second):
 		t.Fatal("smtpSender is still waiting on a silent server: the deadline is not being set")
+	}
+}
+
+// sampleLicence is a real signed key of the real length — the thing that has to
+// survive the encoding — and the body that carries it.
+func sampleLicence(t *testing.T) (key, body string) {
+	t.Helper()
+	_, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := newLicence("buyer@example.com", planAnnual, "0.9.0", time.Now())
+	key, err = signLicence(priv, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return key, licenceEmail(p, key)
+}
+
+// alternatives parses a message the way a mail client does and returns the
+// decoded parts in order. mime/multipart undoes the quoted-printable itself,
+// which is the point: nothing here trusts the raw bytes.
+func alternatives(t *testing.T, raw []byte) (types, bodies []string) {
+	t.Helper()
+	msg, err := netmail.ReadMessage(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("parse message: %v", err)
+	}
+	mediatype, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatalf("parse Content-Type: %v", err)
+	}
+	if mediatype != "multipart/alternative" {
+		t.Fatalf("Content-Type = %q, want multipart/alternative", mediatype)
+	}
+	mr := multipart.NewReader(msg.Body, params["boundary"])
+	for {
+		part, err := mr.NextPart()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatalf("next part: %v", err)
+		}
+		ct, _, err := mime.ParseMediaType(part.Header.Get("Content-Type"))
+		if err != nil {
+			t.Fatalf("part Content-Type: %v", err)
+		}
+		b, err := io.ReadAll(part)
+		if err != nil {
+			t.Fatalf("read part: %v", err)
+		}
+		types = append(types, ct)
+		bodies = append(bodies, string(b))
+	}
+	return types, bodies
+}
+
+// keyIn pulls the licence key back out of a part, the way a customer does:
+// whatever sits on the line that carries the prefix, unescaped.
+func keyIn(part string) string {
+	for line := range strings.SplitSeq(part, "\n") {
+		line = strings.TrimSpace(html.UnescapeString(strings.TrimSuffix(strings.TrimSpace(line), "</pre></div>")))
+		if i := strings.Index(line, keyPrefix+"."); i >= 0 {
+			return line[i:]
+		}
+	}
+	return ""
+}
+
+// TestMessageIsMultipartAlternative: both parts present, text first (the
+// least-preferred-first order that tells a client the HTML is the upgrade), and
+// the key comes back out of each byte for byte.
+func TestMessageIsMultipartAlternative(t *testing.T) {
+	key, body := sampleLicence(t)
+	raw, err := buildMessage("shop@mimux.dev", "buyer@example.com", "Your mimux pro licence key", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(raw), "Content-Transfer-Encoding: quoted-printable"); n != 2 {
+		t.Errorf("quoted-printable parts = %d, want both", n)
+	}
+
+	types, parts := alternatives(t, raw)
+	if len(types) != 2 || types[0] != "text/plain" || types[1] != "text/html" {
+		t.Fatalf("parts = %v, want [text/plain text/html]", types)
+	}
+	text, htm := parts[0], parts[1]
+
+	if got := strings.ReplaceAll(text, "\r\n", "\n"); got != body {
+		t.Errorf("text part is not the body that went in:\n%q", got)
+	}
+	if got := keyIn(text); got != key {
+		t.Errorf("key out of the text part:\n got %q\nwant %q", got, key)
+	}
+	if got := keyIn(htm); got != key {
+		t.Errorf("key out of the HTML part:\n got %q\nwant %q", got, key)
+	}
+	if strings.Contains(htm, "oklch(") {
+		t.Error("HTML part uses oklch(), which most mail clients cannot read")
+	}
+	for _, unwanted := range []string{"<img", "<link", "@font-face", "display:flex", "display:grid"} {
+		if strings.Contains(htm, unwanted) {
+			t.Errorf("HTML part contains %q", unwanted)
+		}
+	}
+	// SMTP allows 998 bytes per line before the CRLF; quoted-printable exists
+	// so the key does not have to be wrapped by hand to stay under it.
+	for _, line := range strings.Split(string(raw), "\r\n") {
+		if len(line) > 998 {
+			t.Errorf("line of %d bytes exceeds the SMTP limit: %.80q…", len(line), line)
+		}
+	}
+}
+
+// TestMessageHeaderGuards: the recipient comes from a form, and CR or LF in any
+// of the three interpolated headers is an injected header, not a bad address.
+func TestMessageHeaderGuards(t *testing.T) {
+	for _, c := range []struct{ name, from, to, subject string }{
+		{"recipient", "shop@mimux.dev", "victim@example.com\r\nBcc: someone@example.com", "s"},
+		{"subject", "shop@mimux.dev", "buyer@example.com", "s\r\nBcc: someone@example.com"},
+		{"sender", "shop@mimux.dev\r\nBcc: someone@example.com", "buyer@example.com", "s"},
+	} {
+		if _, err := buildMessage(c.from, c.to, c.subject, "body"); err == nil {
+			t.Errorf("%s: injected header accepted", c.name)
+		}
+	}
+}
+
+// TestSMTPSenderDeliversMultipart: the key must survive the real client too —
+// quoted-printable soft wraps, dot-stuffing and all.
+func TestSMTPSenderDeliversMultipart(t *testing.T) {
+	key, body := sampleLicence(t)
+	port, delivered := smtpSink(t)
+	send := smtpSender(config{smtpHost: "127.0.0.1", smtpPort: port, smtpFrom: "shop@mimux.dev"})
+
+	if err := send("buyer@example.com", "Your mimux pro licence key", body); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	select {
+	case got := <-delivered:
+		_, raw, ok := strings.Cut(got, "\n\n") // past the sink's envelope log
+		if !ok {
+			t.Fatalf("no message in:\n%s", got)
+		}
+		types, parts := alternatives(t, []byte(raw))
+		if len(types) != 2 {
+			t.Fatalf("parts = %v, want two", types)
+		}
+		for i, part := range parts {
+			if got := keyIn(part); got != key {
+				t.Errorf("%s part came off the wire with\n got %q\nwant %q", types[i], got, key)
+			}
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("nothing reached the sink")
 	}
 }

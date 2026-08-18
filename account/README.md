@@ -88,6 +88,16 @@ help — the id is already claimed. On `SIGTERM` the process stops accepting
 requests and waits, briefly, for sends still in flight; anything still retrying
 past that bound is abandoned to `/retrieve` rather than held on to.
 
+Every message goes out as `multipart/alternative`: the plain text first, since
+that is the part that has to work everywhere, then the same words rendered in
+the house style. One renderer builds the HTML from the text, so the two cannot
+drift — blank lines separate paragraphs and a four-space indent is a licence key
+or a link, which is how the bodies were already written. Both parts are
+quoted-printable, so a key travels as one unbroken line and comes out the far
+end byte for byte regardless of what wraps it in between. The HTML fetches
+nothing: no web fonts, no stylesheet, no images, and in particular no tracking
+pixel, which would say the opposite of everything else here.
+
 ## Pricing and currency
 
 [`pricing.json`](pricing.json) is the whole price list — the figures are not

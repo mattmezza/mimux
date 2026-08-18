@@ -320,6 +320,7 @@ key compiled into the binary and never contacts us. Nothing about your usage
 is reported anywhere.
 
 Lost it again? https://account.mimux.dev/retrieve
+
 Questions? support@mimux.dev, or https://account.mimux.dev/support
 `
 
