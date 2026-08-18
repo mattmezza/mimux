@@ -1,6 +1,10 @@
 services:
   account:
-    build: .
+    # Pulled, not built: the VPS holds this file and account.env and nothing
+    # else — no checkout, no source. Published by .github/workflows/account.yml
+    # on an account-v* release. The package is PRIVATE, so the box needs
+    # `docker login ghcr.io` once (see README).
+    image: ghcr.io/mattmezza/mimux-account:latest
     # Loopback only. TLS is terminated by the reverse proxy in front of this,
     # which also sets X-Forwarded-For — the per-IP rate limit trusts it, so the
     # port must never be reachable from outside the box.

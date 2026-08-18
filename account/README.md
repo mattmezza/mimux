@@ -5,7 +5,9 @@ keys, emails them, and re-sends them when someone loses one. That is the whole
 job.
 
 It runs on one VPS, it is mine, and it is **never distributed**. It is not in
-any release, any Docker image, or any binary you can download. It is licensed
+any mimux release and not in any binary you can download. It is built into a
+Docker image so the VPS has something to pull, but that image is **private** on
+ghcr.io and exists only to move this service onto my own box. It is licensed
 ELv2 (see [`LICENSE`](LICENSE)) like `pro/`, and it imports nothing from the
 parent Go module — `account/` is its own module on purpose.
 
@@ -151,15 +153,22 @@ somewhere that is not this machine.
 TLS is terminated by the reverse proxy already on the box (Caddy/nginx); this
 service speaks plain HTTP on loopback and handles no certificates.
 
-```sh
-# on the VPS, first time
-git clone https://github.com/mattmezza/mimux.git && cd mimux/account
-cp account.env.example account.env    # or write it by hand from the table above
-chmod 600 account.env
-docker compose up -d --build
+The VPS holds two files — `docker-compose.yml` and `account.env` — and no
+checkout. The image is pulled from ghcr.io, where the Account workflow publishes
+it on every `account-v*` release (`make release-account name=account-v0.1`).
 
-# subsequently
-git pull && docker compose up -d --build
+```sh
+# on the VPS, first time. The package is private, so authenticate once with a
+# GitHub PAT that has read:packages — it is stored in ~/.docker/config.json.
+echo "$GHCR_PAT" | docker login ghcr.io -u mattmezza --password-stdin
+
+mkdir -p ~/apps/account.mimux.dev && cd ~/apps/account.mimux.dev
+# copy docker-compose.yml and account.env here by hand
+chmod 600 account.env
+docker compose up -d
+
+# subsequently, after an account-v* release has published a new :latest
+docker compose pull && docker compose up -d
 docker compose logs -f account
 ```
 
