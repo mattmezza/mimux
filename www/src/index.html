@@ -471,20 +471,24 @@
             Something other than a human driving it — the API, the MCP server, webhooks — is
             the paid layer.
           </p>
+          <div class="mt-7 cur-switch" role="group" aria-label="Display prices in">
+            <button type="button" data-currency="eur" aria-pressed="true">€ EUR</button>
+            <button type="button" data-currency="usd" aria-pressed="false">$ USD</button>
+          </div>
         </div>
 
         <div class="mt-12 grid md:grid-cols-2 gap-5 max-w-3xl">
           <div class="card p-7 flex flex-col" data-reveal>
             <h3 class="font-display font-semibold text-ink-950">The client</h3>
-            <p class="mt-4 font-display text-4xl font-bold text-ink-950">€0</p>
+            <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$0">€0</span></p>
             <p class="mt-1 font-mono text-xs text-ink-500">forever · AGPL-3.0</p>
             <p class="mt-5 text-sm text-ink-600 leading-relaxed">The complete mail client: sync, search, compose, filters, PWA, push, AI compose with your own key. Nothing held back.</p>
             <a href="https://github.com/mattmezza/mimux" class="btn btn-secondary mt-7">Get the client</a>
           </div>
           <div class="card p-7 flex flex-col border-accent-500/40" data-reveal="80">
             <h3 class="font-display font-semibold text-ink-950">mimux pro</h3>
-            <p class="mt-4 font-display text-4xl font-bold text-ink-950">€49<span class="text-lg text-ink-500 font-normal">/year</span></p>
-            <p class="mt-1 font-mono text-xs text-ink-500">or €99 once, perpetual · 14-day free trial</p>
+            <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$49">€49</span><span class="text-lg text-ink-500 font-normal">/year</span></p>
+            <p class="mt-1 font-mono text-xs text-ink-500">or <span data-usd="$99">€99</span> once, perpetual · 14-day free trial</p>
             <p class="mt-5 text-sm text-ink-600 leading-relaxed">REST API, MCP server and signed webhooks over your whole inbox. Licensed per instance, verified offline.</p>
             <a href="/pricing/" class="btn btn-primary mt-7">See pricing</a>
           </div>

@@ -24,6 +24,33 @@
     });
   }
 
+  // Currency switch. Prices ship as EUR in the HTML and carry their USD twin in
+  // data-usd; the choice is stored so it survives a hop between pages. This is a
+  // deferred script, so it runs before DOMContentLoaded — no flash of EUR.
+  var prices = document.querySelectorAll("[data-usd]");
+  var curBtns = document.querySelectorAll("[data-currency]");
+  if (prices.length) {
+    var setCurrency = function (cur) {
+      prices.forEach(function (el) {
+        if (!el.getAttribute("data-eur")) el.setAttribute("data-eur", el.textContent);
+        el.textContent = el.getAttribute(cur === "usd" ? "data-usd" : "data-eur");
+      });
+      curBtns.forEach(function (b) {
+        b.setAttribute("aria-pressed", b.getAttribute("data-currency") === cur ? "true" : "false");
+      });
+    };
+    var stored = null;
+    try { stored = localStorage.getItem("mimux.currency"); } catch (e) { /* private mode */ }
+    if (stored === "usd") setCurrency("usd");
+    curBtns.forEach(function (b) {
+      b.addEventListener("click", function () {
+        var cur = b.getAttribute("data-currency");
+        setCurrency(cur);
+        try { localStorage.setItem("mimux.currency", cur); } catch (e) { /* private mode */ }
+      });
+    });
+  }
+
   // Copy-to-clipboard buttons: <button data-copy="text to copy">
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
     var label = btn.textContent;

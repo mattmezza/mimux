@@ -179,6 +179,12 @@
           MCP server, webhooks — is paid. Nothing ever crosses from the free side to the
           paid side.
         </p>
+        <div class="mt-8 flex justify-center">
+          <div class="cur-switch" role="group" aria-label="Display prices in">
+            <button type="button" data-currency="eur" aria-pressed="true">€ EUR</button>
+            <button type="button" data-currency="usd" aria-pressed="false">$ USD</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -187,7 +193,7 @@
       <div class="grid md:grid-cols-3 gap-5 items-stretch">
         <div class="card p-7 flex flex-col" data-reveal>
           <h2 class="font-display font-semibold text-ink-950">The client</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€0</p>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$0">€0</span></p>
           <p class="mt-1 font-mono text-xs text-ink-500">forever · AGPL-3.0</p>
           <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>The complete mail client</li>
@@ -203,7 +209,7 @@
         <div class="stamp-card p-7 pt-9 pb-9 flex flex-col relative" data-reveal data-reveal="70">
           <span class="absolute -top-4 left-6 rubber !text-[10px] !px-2 !py-1 bg-paper-50 z-10">most popular</span>
           <h2 class="font-display font-semibold text-ink-950">Pro — annual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€49<span class="text-lg text-ink-500 font-normal">/year</span></p>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$49">€49</span><span class="text-lg text-ink-500 font-normal">/year</span></p>
           <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · cancel anytime</p>
           <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in the client</li>
@@ -219,7 +225,7 @@
 
         <div class="stamp-card p-7 pt-9 pb-9 flex flex-col" data-reveal data-reveal="140">
           <h2 class="font-display font-semibold text-ink-950">Pro — perpetual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-ink-950">€99<span class="text-lg text-ink-500 font-normal"> once</span></p>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$99">€99</span><span class="text-lg text-ink-500 font-normal"> once</span></p>
           <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · yours forever</p>
           <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in Pro annual</li>

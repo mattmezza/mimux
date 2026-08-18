@@ -240,6 +240,39 @@ h1, h2, h3 {
   background: var(--color-paper-200);
 }
 
+/* Currency switch: a segmented control that sits with the pricing copy — same
+   voice as the one on account.mimux.dev. Ink hairline, hard print shadow, mono
+   caps, the chosen segment inked solid. Buttons only: site.js swaps the price
+   text, and with JS off the EUR figures in the HTML are what ships. */
+.cur-switch {
+  display: inline-flex;
+  border: 1.5px solid var(--color-ink-950);
+  border-radius: 0.375rem;
+  background: var(--color-card);
+  box-shadow: 3px 3px 0 oklch(25% 0.02 50 / 0.14);
+  overflow: hidden;
+}
+.cur-switch button {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1;
+  padding: 0.5rem 0.85rem;
+  color: var(--color-ink-600);
+  cursor: pointer;
+  transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out);
+}
+.cur-switch button + button { border-left: 1.5px solid var(--color-ink-950); }
+.cur-switch button:hover { background: var(--color-paper-200); color: var(--color-ink-950); }
+.cur-switch button[aria-pressed="true"] {
+  background: var(--color-ink-950);
+  color: var(--color-paper-50);
+}
+/* The group clips its children, so the focus ring has to sit inside. */
+.cur-switch button:focus-visible { outline-offset: -4px; border-radius: 0; }
+
 /* Keyboard key chip: a typewriter key on paper. Inverts inside dark rows. */
 .kbd {
   font-family: var(--font-mono);
