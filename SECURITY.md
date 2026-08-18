@@ -16,7 +16,7 @@ issue is still there.
 
 1. Preferred: open a private [GitHub security
    advisory](https://github.com/mattmezza/mimux/security/advisories/new).
-2. Fallback, if you can't or won't use GitHub: email <mattmezza@gmail.com>.
+2. Fallback, if you can't or won't use GitHub: email <security@mimux.dev>.
 
 Include what you did, what happened, and what you think the impact is. A working
 proof of concept moves things along enormously.

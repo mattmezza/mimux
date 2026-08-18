@@ -79,4 +79,4 @@ ideas and bug reports about the pro layer are very welcome, code is not.
   [LICENSING.md](LICENSING.md).
 - This is a plain-language CLA modelled on the Apache ICLA. If you need your
   employer's legal team to review something with more ceremony, email
-  <mattmezza@gmail.com> and we will sort it out.
+  <legal@mimux.dev> and we will sort it out.

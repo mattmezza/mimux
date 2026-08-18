@@ -104,7 +104,7 @@ trap that only becomes visible years later.
 
 If you want to embed mimux in a product without opening your own source, the AGPL
 is not your only option — I can sell you a commercial licence, for the same
-reason described above. Email <mattmezza@gmail.com>.
+reason described above. Email <sales@mimux.dev>.
 
 ## Trademark
 

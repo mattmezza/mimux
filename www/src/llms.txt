@@ -29,4 +29,4 @@
 
 ## Contact
 
-- [Matteo Merola](mailto:mattmezza@gmail.com): maintainer. `mimux` is a trademark of Matteo Merola.
+- [Support](mailto:support@mimux.dev): general contact and licences. `mimux` is a trademark of Matteo Merola.

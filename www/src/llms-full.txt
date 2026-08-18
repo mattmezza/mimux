@@ -119,11 +119,11 @@ Full policy: <https://mimux.dev/privacy/>.
 
 Report vulnerabilities privately via GitHub security advisories
 (<https://github.com/mattmezza/mimux/security/advisories/new>) or
-<mailto:mattmezza@gmail.com>. Acknowledgement within 7 days. Only the latest
+<mailto:security@mimux.dev>. Acknowledgement within 7 days. Only the latest
 release receives fixes. Details: <https://mimux.dev/security/>.
 
 ## Company
 
 mimux is a product of Merola Software & Services, the independent software
 business of Matteo Merola — Wartauweg 19, 8049 Zurich, Switzerland.
-Contact: <mailto:mattmezza@gmail.com>.
+Contact: <mailto:support@mimux.dev>.
