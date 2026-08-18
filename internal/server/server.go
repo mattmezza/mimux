@@ -127,9 +127,17 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 }
 
 func (s *Server) Handler() http.Handler {
+	// Built first: the CSRF middleware needs their mount patterns, and chi
+	// wants every Use registered before the first route.
+	exts := s.extensions()
+	patterns := make([]string, 0, len(exts))
+	for _, e := range exts {
+		patterns = append(patterns, e.Pattern)
+	}
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
-	r.Use(auth.CSRF)
+	r.Use(csrfExcept(patterns))
 
 	staticFS, _ := fs.Sub(web.FS, "static")
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServerFS(staticFS)))
@@ -146,7 +154,10 @@ func (s *Server) Handler() http.Handler {
 
 	// Extensions (pro build only — nothing in the free build) mount outside the
 	// auth group below: they are machine-facing and bring their own auth.
-	s.mountExtensions(r)
+	for _, e := range exts {
+		r.Mount(e.Pattern, e.Handler)
+		slog.Info("extension mounted", "pattern", e.Pattern)
+	}
 
 	r.Get("/setup", s.handleSetupForm)
 	r.Post("/setup", s.handleSetup)
