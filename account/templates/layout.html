@@ -107,6 +107,20 @@ code {
   background: oklch(48% 0.11 262 / 0.07); padding: 0.12em 0.35em; border-radius: 3px;
 }
 
+/* Currency picker: two links styled as a segmented control. Links rather than
+   a <select>, so it works without JavaScript and each currency has a URL. */
+.currency-picker { display: inline-flex; margin: 1.5rem 0 0; border-radius: 0.375rem;
+  border: 1.5px solid oklch(25% 0.02 50 / 0.25); overflow: hidden }
+.cur {
+  font-family: var(--mono); font-size: 0.78rem; letter-spacing: 0.04em;
+  padding: 0.45rem 0.9rem; text-decoration: none; color: var(--ink-600);
+  background: var(--card); transition: background-color 140ms var(--ease-out);
+}
+.cur + .cur { border-left: 1.5px solid oklch(25% 0.02 50 / 0.25) }
+.cur:hover { background: var(--paper-200); color: var(--ink-950) }
+.cur-on { background: var(--ink-950); color: var(--paper-50) }
+.cur-on:hover { background: var(--ink-950); color: var(--paper-50) }
+
 .plans {
   display: grid; gap: 1.1rem; margin: 2rem 0 1.5rem;
   grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));

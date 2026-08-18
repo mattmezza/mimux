@@ -77,6 +77,27 @@ If the email fails after the licence is stored, the failure is logged and the
 customer can pull the key from `/retrieve`. Redelivering the event would not
 help — the id is already claimed.
 
+## Pricing and currency
+
+[`pricing.go`](pricing.go) is the whole price list. Each Checkout Session is
+built with `price_data`, so amounts live in that one table rather than in Stripe
+Price objects that can drift from it.
+
+| Plan | EUR | USD |
+|------|-----|-----|
+| Annual | €49 / year | $49 / year |
+| Perpetual | €99 once | $99 once |
+
+The buyer picks the currency on the page; the choice is a `?currency=` link, so
+it needs no JavaScript and each currency has its own URL. The forms submit the
+currency being displayed, and `/checkout` **rejects** anything not in the table
+rather than defaulting to euros — a silent fallback would charge someone in a
+currency they never saw.
+
+Adding a currency is one line in `currencies` and one entry per plan in
+`prices`. The amounts are deliberately the same numerals in both: the aim is a
+round, familiar price in each, not a tracked exchange rate.
+
 ## Configuration
 
 Everything is an environment variable. There is no config file.
@@ -85,11 +106,9 @@ Everything is an environment variable. There is no config file.
 |----------|----------|---------|------|
 | `STRIPE_SECRET_KEY` | yes | — | `sk_live_...` |
 | `STRIPE_WEBHOOK_SECRET` | yes | — | `whsec_...`, from the webhook endpoint you create below |
-| `STRIPE_PRICE_ANNUAL` | yes | — | `price_...` for €49/year recurring |
-| `STRIPE_PRICE_PERPETUAL` | yes | — | `price_...` for €99 one-time |
 | `LICENCE_SIGNING_KEY_B64` | yes | — | base64 of the 64-byte ed25519 private key. The service refuses to start without it. |
 | `BASE_URL` | yes | — | `https://account.mimux.dev` — used to build Stripe return URLs |
-| `CURRENT_VERSION` | yes | — | e.g. `v0.19`; becomes the licence watermark |
+| `CURRENT_VERSION` | yes | — | e.g. `v0.20`; becomes the licence watermark |
 | `SMTP_HOST` | yes | — | submission host |
 | `SMTP_FROM` | yes | — | envelope and header From |
 | `SMTP_PORT` | no | `587` | STARTTLS submission port. Implicit TLS (465) is not supported. |
@@ -127,11 +146,12 @@ somewhere that is not this machine.
 
 ## Stripe dashboard setup
 
-1. **Products.** Create two, in live mode:
-   - `mimux pro — annual`, recurring, €49, yearly → note the price id for
-     `STRIPE_PRICE_ANNUAL`.
-   - `mimux pro — perpetual`, one-time, €99 → note the price id for
-     `STRIPE_PRICE_PERPETUAL`.
+1. **Products: none to create.** Amounts are built into each Checkout Session
+   with `price_data` (see [`pricing.go`](pricing.go)), so there is no Product or
+   Price object in the dashboard and nothing to keep in sync. Changing a price
+   is a code change and a redeploy. Stripe records the amount on each
+   subscription it creates, so existing annual subscribers keep renewing at the
+   price they signed up at; a change applies to new checkouts only.
 2. **Webhook endpoint.** Developers → Webhooks → Add endpoint,
    `https://account.mimux.dev/stripe/webhook`, subscribed to exactly:
    - `checkout.session.completed`
@@ -143,8 +163,8 @@ somewhere that is not this machine.
 3. **Customer portal.** Settings → Billing → Customer portal: turn it on, allow
    cancellation and payment-method updates. Without this, the "manage
    subscription" flow errors.
-4. **Test mode first.** Do the whole thing with `sk_test_` keys, test price ids
-   and a test-mode webhook secret, then repeat in live mode. `stripe listen
+4. **Test mode first.** Do the whole thing with `sk_test_` keys and a test-mode
+   webhook secret, then repeat in live mode. `stripe listen
    --forward-to localhost:8080/stripe/webhook` gives you a local webhook secret
    for development.
 

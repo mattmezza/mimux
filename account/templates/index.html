@@ -7,10 +7,19 @@
   something other than a human drive your mailbox.
 </p>
 
+<div class="currency-picker" role="group" aria-label="Currency">
+  {{$cur := .Currency}}
+  {{range .Currencies}}
+    <a href="?currency={{.Code}}"
+       class="cur{{if eq .Code $cur}} cur-on{{end}}"
+       {{if eq .Code $cur}}aria-current="true"{{end}}>{{.Symbol}} {{.Label}}</a>
+  {{end}}
+</div>
+
 <div class="plans">
   <div class="card">
     <h2>Annual</h2>
-    <p class="price">&euro;49</p>
+    <p class="price">{{index .Prices "annual"}}</p>
     <p class="term">per year &middot; renews</p>
     <ul>
       <li>Every pro feature, always current</li>
@@ -19,13 +28,14 @@
     </ul>
     <form method="post" action="/checkout">
       <input type="hidden" name="plan" value="annual">
+      <input type="hidden" name="currency" value="{{.Currency}}">
       <button type="submit" class="btn">Buy annual</button>
     </form>
   </div>
 
   <div class="card">
     <h2>Perpetual</h2>
-    <p class="price">&euro;99</p>
+    <p class="price">{{index .Prices "perpetual"}}</p>
     <p class="term">once &middot; no renewal</p>
     <ul>
       <li>Yours forever, no renewal</li>
@@ -34,6 +44,7 @@
     </ul>
     <form method="post" action="/checkout">
       <input type="hidden" name="plan" value="perpetual">
+      <input type="hidden" name="currency" value="{{.Currency}}">
       <button type="submit" class="btn btn-secondary">Buy perpetual</button>
     </form>
   </div>
@@ -43,5 +54,6 @@
   Both plans are one licence key, emailed to you after payment. The key is an
   ed25519 signature that mimux checks locally; there is no activation, no seat
   count, and no server to be offline when you need to start the binary.
+  Prices exclude any VAT your country adds at checkout.
 </p>
 {{end}}

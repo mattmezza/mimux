@@ -54,8 +54,6 @@ type config struct {
 
 	stripeSecret   string
 	webhookSecret  string
-	priceAnnual    string
-	pricePerpetual string
 
 	smtpHost string
 	smtpPort string
@@ -142,8 +140,6 @@ func loadConfig() (config, error) {
 		dbPath:         env("DB_PATH", "/data/account.db"),
 		stripeSecret:   os.Getenv("STRIPE_SECRET_KEY"),
 		webhookSecret:  os.Getenv("STRIPE_WEBHOOK_SECRET"),
-		priceAnnual:    os.Getenv("STRIPE_PRICE_ANNUAL"),
-		pricePerpetual: os.Getenv("STRIPE_PRICE_PERPETUAL"),
 		smtpHost:       os.Getenv("SMTP_HOST"),
 		smtpPort:       env("SMTP_PORT", "587"),
 		smtpUser:       os.Getenv("SMTP_USER"),
@@ -155,8 +151,6 @@ func loadConfig() (config, error) {
 		"CURRENT_VERSION":         c.currentVersion,
 		"STRIPE_SECRET_KEY":       c.stripeSecret,
 		"STRIPE_WEBHOOK_SECRET":   c.webhookSecret,
-		"STRIPE_PRICE_ANNUAL":     c.priceAnnual,
-		"STRIPE_PRICE_PERPETUAL":  c.pricePerpetual,
 		"LICENCE_SIGNING_KEY_B64": os.Getenv("LICENCE_SIGNING_KEY_B64"),
 		"SMTP_HOST":               c.smtpHost,
 		"SMTP_FROM":               c.smtpFrom,
@@ -275,7 +269,7 @@ func clientIP(r *http.Request) string {
 	return host
 }
 
-const emailFooter = `Paste the key into mimux under Settings, or set MIMUX_LICENCE.
+const emailFooter = `Paste the key into mimux under Settings, or set MIMUX_LICENCE_KEY.
 
 Verification is entirely offline: mimux checks the signature against a public
 key compiled into the binary and never contacts us. Nothing about your usage
@@ -302,7 +296,7 @@ func licenceEmail(p licencePayload, key string) string {
 func renewalEmail(p licencePayload, key string) string {
 	return "Your mimux pro subscription renewed, so here is a fresh licence key:\n\n    " + key +
 		"\n\nIt replaces the previous one — swap it in under Settings, or in\n" +
-		"MIMUX_LICENCE. The old key keeps working until it expires, so there is\n" +
+		"MIMUX_LICENCE_KEY. The old key keeps working until it expires, so there is\n" +
 		"no rush and no downtime.\n\n" +
 		fmt.Sprintf("Valid until %s.\n\n", time.Unix(*p.ExpiresAt, 0).UTC().Format("2 January 2006")) +
 		emailFooter
@@ -330,7 +324,31 @@ func (a *app) parseTemplates() error {
 }
 
 func (a *app) page(name string) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) { a.render(w, name, nil) }
+	return func(w http.ResponseWriter, r *http.Request) { a.render(w, name, a.pageData(r)) }
+}
+
+// pageData is the currency the page is priced in, plus the rendered amounts.
+// The choice rides in ?currency=, so switching it is a plain link and the page
+// stays cacheable and JavaScript-free. An unknown or absent value falls back to
+// the first listed currency — unlike checkout, showing euros to someone who
+// asked for something we do not sell costs nothing and charges nobody.
+func (a *app) pageData(r *http.Request) map[string]any {
+	cur := currencies[0].Code
+	if q := r.URL.Query().Get("currency"); validCurrency(q) {
+		cur = q
+	}
+	amounts, err := priceList(cur)
+	if err != nil {
+		// Unreachable while pricing.go lists every plan in every currency; a
+		// blank price is still better than a 500 on the page that sells things.
+		slog.Error("price list", "currency", cur, "err", err)
+		amounts = map[string]string{}
+	}
+	return map[string]any{
+		"Currency":   cur,
+		"Currencies": currencies,
+		"Prices":     amounts,
+	}
 }
 
 func (a *app) render(w http.ResponseWriter, name string, data map[string]any) {

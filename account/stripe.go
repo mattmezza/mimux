@@ -19,20 +19,55 @@ import (
 // details are entered on stripe.com and never reach this service.
 func (a *app) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	plan := r.PostFormValue("plan")
-	var price, mode string
+	var mode string
 	switch plan {
 	case planAnnual:
-		price, mode = a.cfg.priceAnnual, string(stripe.CheckoutSessionModeSubscription)
+		mode = string(stripe.CheckoutSessionModeSubscription)
 	case planPerpetual:
-		price, mode = a.cfg.pricePerpetual, string(stripe.CheckoutSessionModePayment)
+		mode = string(stripe.CheckoutSessionModePayment)
 	default:
 		http.Error(w, "Unknown plan.", http.StatusBadRequest)
 		return
 	}
+	// Rejected rather than defaulted: a request naming a currency we do not
+	// sell in is not a request to charge euros, and guessing would take money
+	// in a currency the buyer never saw.
+	cur := r.PostFormValue("currency")
+	if !validCurrency(cur) {
+		http.Error(w, "Unknown currency.", http.StatusBadRequest)
+		return
+	}
+	unit, err := amount(plan, cur)
+	if err != nil {
+		http.Error(w, "Unknown plan.", http.StatusBadRequest)
+		return
+	}
+
+	// price_data builds the price into the session, so there are no Price or
+	// Product objects to create in the dashboard and nothing to fall out of step
+	// with pricing.go. Stripe still records what was charged on the resulting
+	// subscription, so renewals bill the amount the customer originally agreed
+	// to even if this table changes later.
+	item := &stripe.CheckoutSessionLineItemParams{
+		Quantity: stripe.Int64(1),
+		PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+			Currency:   stripe.String(cur),
+			UnitAmount: stripe.Int64(unit),
+			ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+				Name:        stripe.String(planName(plan)),
+				Description: stripe.String(planDescription(plan)),
+			},
+		},
+	}
+	if plan == planAnnual {
+		item.PriceData.Recurring = &stripe.CheckoutSessionLineItemPriceDataRecurringParams{
+			Interval: stripe.String("year"),
+		}
+	}
 
 	params := &stripe.CheckoutSessionParams{
 		Mode:       stripe.String(mode),
-		LineItems:  []*stripe.CheckoutSessionLineItemParams{{Price: stripe.String(price), Quantity: stripe.Int64(1)}},
+		LineItems:  []*stripe.CheckoutSessionLineItemParams{item},
 		SuccessURL: stripe.String(a.cfg.baseURL + "/success"),
 		CancelURL:  stripe.String(a.cfg.baseURL + "/cancel"),
 	}
@@ -41,7 +76,9 @@ func (a *app) handleCheckout(w http.ResponseWriter, r *http.Request) {
 	if mode == string(stripe.CheckoutSessionModePayment) {
 		params.CustomerCreation = stripe.String("always")
 	}
-	params.Metadata = map[string]string{"plan": plan}
+	// plan is what the webhook reads back to decide which licence to sign; it
+	// has never come from the price id, so inlining prices changes nothing there.
+	params.Metadata = map[string]string{"plan": plan, "currency": cur}
 
 	sess, err := checkout.New(params)
 	if err != nil {
