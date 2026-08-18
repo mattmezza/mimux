@@ -9,6 +9,13 @@ IMAGE   := ghcr.io/mattmezza/mimux
 dev: ## Run with hot reload (requires air)
 	$(shell go env GOPATH)/bin/air
 
+# Same air, same tmp/mimux, one build tag more. `dev` stays free on purpose:
+# it is the build most people run, and the one verify-free protects — reach for
+# this one when you are working on the API, MCP, webhooks or the CLI.
+.PHONY: dev-pro
+dev-pro: ## Run with hot reload, pro layer included
+	$(shell go env GOPATH)/bin/air --build.cmd "go build -tags pro -o ./tmp/mimux ./cmd/mimux"
+
 .PHONY: run
 run: ## Build and run locally
 	go run ./cmd/mimux
