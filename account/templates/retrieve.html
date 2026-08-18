@@ -28,6 +28,26 @@
       </div>
     </form>
   </div>
+  <script>
+  // The form is fully server-rendered and navigates on submit, so this only
+  // has to survive until the page unloads. Buttons are never given the
+  // disabled attribute (see layout.html): a disabled submit button drops its
+  // name/value from the POST, and the server tells "email me my key" apart
+  // from "manage subscription" by that value alone. pointer-events plus a
+  // class does the blocking instead, so the value still reaches the server.
+  (function () {
+    var form = document.querySelector(".panel form");
+    if (!form) return;
+    form.addEventListener("submit", function (e) {
+      if (form.classList.contains("is-busy")) { e.preventDefault(); return; }
+      form.classList.add("is-busy");
+      var btn = e.submitter;
+      if (btn) { btn.classList.add("is-busy"); btn.setAttribute("aria-busy", "true"); }
+      var btns = form.querySelectorAll(".btn");
+      for (var i = 0; i < btns.length; i++) btns[i].setAttribute("aria-disabled", "true");
+    });
+  })();
+  </script>
   <p class="small muted">
     Three requests an hour, per address and per network. Keys are never shown on
     this page, only sent to the address that bought them.

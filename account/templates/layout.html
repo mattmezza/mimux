@@ -149,6 +149,7 @@ code {
 
 form { margin-top: auto }
 .btn {
+  position: relative;
   display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
   font: inherit; font-weight: 550; font-size: 0.95rem; line-height: 1.2;
   padding: 0.7rem 1.35rem; border-radius: 0.375rem; cursor: pointer;
@@ -170,6 +171,30 @@ form { margin-top: auto }
 }
 .btn-secondary:hover { background: var(--paper-200); color: var(--ink-950);
   border-color: var(--ink-950); box-shadow: 3px 3px 0 oklch(25% 0.02 50 / 0.14) }
+
+/* In-flight state for /retrieve's two submit buttons. The label turns
+   transparent rather than being swapped out, so the button keeps its
+   existing box — no reflow, no markup change. A disabled attribute would
+   also work visually, but a disabled submit button is dropped from the POST
+   body, and this form's whole point is which button's name/value arrives at
+   the server, so pointer-events does the blocking instead. */
+.btn.is-busy { color: transparent; pointer-events: none }
+.btn.is-busy::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 1.05rem; height: 1.05rem;
+  border: 2px solid var(--paper-50); border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 700ms linear infinite;
+}
+.btn-secondary.is-busy::after { border-color: var(--ink-950); border-top-color: transparent }
+@keyframes btn-spin { to { transform: rotate(360deg) } }
+/* The other button in the row goes inert too — two concurrent submissions of
+   the same rate-limited form make no sense — but keeps its label, so it
+   reads as "waiting", not "also loading". */
+form.is-busy .btn:not(.is-busy) { opacity: 0.55; pointer-events: none }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::after { animation: none; opacity: 0.6 }
+}
 
 label { display: block; font-family: var(--mono); font-size: 0.72rem;
   letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-500); margin-bottom: 0.4rem }
