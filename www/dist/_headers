@@ -22,5 +22,7 @@
 /css/*
   Cache-Control: public, max-age=3600
 
+# Filenames are content-hashed at build time (site.<hash>.js), so a new build
+# is a new URL and this can never serve stale code.
 /js/*
-  Cache-Control: public, max-age=3600
+  Cache-Control: public, max-age=31536000, immutable
