@@ -79,24 +79,30 @@ help — the id is already claimed.
 
 ## Pricing and currency
 
-[`pricing.go`](pricing.go) is the whole price list. Each Checkout Session is
-built with `price_data`, so amounts live in that one table rather than in Stripe
-Price objects that can drift from it.
+[`pricing.json`](pricing.json) is the whole price list — the figures are not
+repeated in this README, because a table here would be one more thing to drift.
+[`pricing.go`](pricing.go) embeds that file and parses it at startup; each
+Checkout Session is built with `price_data`, so amounts live in that one file
+rather than in Stripe Price objects that can drift from it.
 
-| Plan | EUR | USD |
-|------|-----|-----|
-| Annual | €49 / year | $49 / year |
-| Perpetual | €99 once | $99 once |
+The marketing site reads the same file: `www/scripts/build.sh` substitutes
+`{{price:…}}` tokens in `www/src` at build time and fails the build on a token
+it cannot resolve, so mimux.dev cannot quote a price checkout will not honour.
+That is also why the file lives in `account/` rather than at the repo root —
+this service is its own Go module, built with `context: account`, and `go:embed`
+cannot reach outside its own directory. The www build runs from the repo root
+and can reach in.
 
 The buyer picks the currency on the page; the choice is a `?currency=` link, so
 it needs no JavaScript and each currency has its own URL. The forms submit the
-currency being displayed, and `/checkout` **rejects** anything not in the table
-rather than defaulting to euros — a silent fallback would charge someone in a
-currency they never saw.
+currency being displayed — including the buy forms on mimux.dev, which POST
+straight here — and `/checkout` **rejects** anything not in the table rather
+than defaulting to euros: a silent fallback would charge someone in a currency
+they never saw.
 
-Adding a currency is one line in `currencies` and one entry per plan in
-`prices`. The amounts are deliberately the same numerals in both: the aim is a
-round, familiar price in each, not a tracked exchange rate.
+Adding a currency is one entry in `currencies` and one per plan in `plans`. The
+amounts are deliberately the same numerals in both: the aim is a round, familiar
+price in each, not a tracked exchange rate.
 
 ## Configuration
 
@@ -147,9 +153,9 @@ somewhere that is not this machine.
 ## Stripe dashboard setup
 
 1. **Products: none to create.** Amounts are built into each Checkout Session
-   with `price_data` (see [`pricing.go`](pricing.go)), so there is no Product or
-   Price object in the dashboard and nothing to keep in sync. Changing a price
-   is a code change and a redeploy. Stripe records the amount on each
+   with `price_data` (see [`pricing.json`](pricing.json)), so there is no
+   Product or Price object in the dashboard and nothing to keep in sync.
+   Changing a price is an edit to that file, a redeploy, and a www rebuild. Stripe records the amount on each
    subscription it creates, so existing annual subscribers keep renewing at the
    price they signed up at; a change applies to new checkouts only.
 2. **Webhook endpoint.** Developers → Webhooks → Add endpoint,

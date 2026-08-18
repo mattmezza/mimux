@@ -215,6 +215,9 @@ h1, h2, h3 {
   font-weight: 550;
   font-size: 0.95rem;
   line-height: 1.2;
+  /* The buy buttons are <button> inside a form now, and preflight gives those
+     the default arrow — spelled out here so both shapes of .btn behave alike. */
+  cursor: pointer;
   transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out),
     color 160ms var(--ease-out), transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
 }

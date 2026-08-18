@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Pricing — mimux. Free client, flat-priced automation.</title>
-  <meta name="description" content="The mimux mail client is free and AGPL-3.0 forever. The automation layer — REST API, MCP server, CLI, webhooks — is €49/year or €99 once, per instance, with a 14-day free trial.">
+  <meta name="description" content="The mimux mail client is free and AGPL-3.0 forever. The automation layer — REST API, MCP server, CLI, webhooks — is {{price:annual:eur}}/year or {{price:perpetual:eur}} once, per instance, with a 14-day free trial.">
 
   <link rel="canonical" href="https://mimux.dev/pricing/">
 
@@ -12,7 +12,7 @@
   <meta property="og:site_name" content="mimux">
   <meta property="og:url" content="https://mimux.dev/pricing/">
   <meta property="og:title" content="Pricing — mimux. Free client, flat-priced automation.">
-  <meta property="og:description" content="The mail client is free and AGPL-3.0 forever. The automation layer is €49/year or €99 once, per instance, with a 14-day free trial.">
+  <meta property="og:description" content="The mail client is free and AGPL-3.0 forever. The automation layer is {{price:annual:eur}}/year or {{price:perpetual:eur}} once, per instance, with a 14-day free trial.">
   <meta property="og:locale" content="en_US">
   <meta property="og:image" content="https://mimux.dev/img/og.png">
   <meta property="og:image:type" content="image/png">
@@ -21,7 +21,7 @@
   <meta property="og:image:alt" content="A vermilion airmail envelope motif stamped on cream paper — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Pricing — mimux. Free client, flat-priced automation.">
-  <meta name="twitter:description" content="The mail client is free and AGPL-3.0 forever. The automation layer is €49/year or €99 once, per instance, with a 14-day free trial.">
+  <meta name="twitter:description" content="The mail client is free and AGPL-3.0 forever. The automation layer is {{price:annual:eur}}/year or {{price:perpetual:eur}} once, per instance, with a 14-day free trial.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
   <meta name="theme-color" content="#f6f1e7">
@@ -209,7 +209,7 @@
         <div class="stamp-card p-7 pt-9 pb-9 flex flex-col relative" data-reveal data-reveal="70">
           <span class="absolute -top-4 left-6 rubber !text-[10px] !px-2 !py-1 bg-paper-50 z-10">most popular</span>
           <h2 class="font-display font-semibold text-ink-950">Pro — annual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$49">€49</span><span class="text-lg text-ink-500 font-normal">/year</span></p>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="{{price:annual:usd}}">{{price:annual:eur}}</span><span class="text-lg text-ink-500 font-normal">/year</span></p>
           <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · cancel anytime</p>
           <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in the client</li>
@@ -220,12 +220,20 @@
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Scoped API tokens</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>All updates while active</li>
           </ul>
-          <a href="https://account.mimux.dev" class="btn btn-primary mt-7 w-full">Buy annual</a>
+          <!-- Posts straight to the shop's /checkout, which 303s to Stripe: one
+               click from here to the card form. The currency ships as EUR so a
+               visitor without JavaScript still submits one we sell in; site.js
+               rewrites it when the switch above is used. -->
+          <form action="https://account.mimux.dev/checkout" method="post" class="mt-7">
+            <input type="hidden" name="plan" value="annual">
+            <input type="hidden" name="currency" value="eur" data-currency-field>
+            <button type="submit" class="btn btn-primary w-full">Buy annual</button>
+          </form>
         </div>
 
         <div class="stamp-card p-7 pt-9 pb-9 flex flex-col" data-reveal data-reveal="140">
           <h2 class="font-display font-semibold text-ink-950">Pro — perpetual</h2>
-          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="$99">€99</span><span class="text-lg text-ink-500 font-normal"> once</span></p>
+          <p class="mt-4 font-display text-4xl font-bold text-ink-950"><span data-usd="{{price:perpetual:usd}}">{{price:perpetual:eur}}</span><span class="text-lg text-ink-500 font-normal"> once</span></p>
           <p class="mt-1 font-mono text-xs text-ink-500">per instance · ELv2 · yours forever</p>
           <ul class="mt-6 space-y-2.5 text-sm text-ink-600 flex-1">
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Everything in Pro annual</li>
@@ -233,7 +241,11 @@
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Covers all builds released within a year of purchase</li>
             <li class="flex gap-2.5"><span aria-hidden="true" class="text-ok-400">✓</span>Those builds run forever</li>
           </ul>
-          <a href="https://account.mimux.dev" class="btn btn-secondary mt-7 w-full">Buy perpetual</a>
+          <form action="https://account.mimux.dev/checkout" method="post" class="mt-7">
+            <input type="hidden" name="plan" value="perpetual">
+            <input type="hidden" name="currency" value="eur" data-currency-field>
+            <button type="submit" class="btn btn-secondary w-full">Buy perpetual</button>
+          </form>
         </div>
       </div>
 

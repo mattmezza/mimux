@@ -85,9 +85,9 @@ If something other than a human drives mimux, that is the paid layer:
 
 - **The client: €0, forever.** AGPL-3.0. Unlimited accounts and devices.
   Nothing is metered and nothing later moves behind a licence key.
-- **Pro annual: €49/year per instance.** Cancel anytime; keeps updating while
+- **Pro annual: {{price:annual:eur}}/year per instance.** Cancel anytime; keeps updating while
   active.
-- **Pro perpetual: €99 once per instance.** Covers every build released within
+- **Pro perpetual: {{price:perpetual:eur}} once per instance.** Covers every build released within
   one year of purchase; those builds run forever.
 - **Trial**: a pro build runs the full automation layer free for 14 days from
   first boot — no key, no card.

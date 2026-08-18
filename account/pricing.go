@@ -1,12 +1,21 @@
 // SPDX-License-Identifier: LicenseRef-Elastic-2.0
 package main
 
-import "fmt"
+import (
+	_ "embed"
+	"encoding/json"
+	"fmt"
+)
 
-// The price list. Prices are built into each Checkout Session with price_data
-// rather than referenced as Stripe Price objects, so there is nothing to create
-// in the dashboard and nothing to keep in sync between here and there: this
-// table is the only place an amount lives.
+// pricing.json is the price list, and the only place an amount lives. It sits
+// here rather than at the repo root because this service is its own Go module
+// built with `context: account` — go:embed cannot reach outside this directory.
+// www/scripts/build.sh reads the same file to stamp the figures into the
+// marketing site, so mimux.dev cannot quote a price checkout will not honour.
+//
+// Prices are built into each Checkout Session with price_data rather than
+// referenced as Stripe Price objects, so there is nothing to create in the
+// dashboard and nothing to keep in sync between here and there.
 //
 // Changing a price changes what new checkouts charge, immediately. Existing
 // annual subscriptions keep billing at the amount their subscription was
@@ -16,22 +25,35 @@ import "fmt"
 // Amounts are in the currency's smallest unit (cents for both). EUR and USD are
 // deliberately the same numerals: the point is to charge a round, familiar
 // number in each, not to track an exchange rate.
-var prices = map[string]map[string]int64{
-	planAnnual:    {"eur": 4900, "usd": 4900},
-	planPerpetual: {"eur": 9900, "usd": 9900},
-}
+//
+//go:embed pricing.json
+var pricingJSON []byte
 
-// currencies is the display order of the picker. A map has no order, so the
-// list that drives the UI is spelled out rather than ranged over `prices`.
-var currencies = []currency{
-	{Code: "eur", Symbol: "€", Label: "EUR"},
-	{Code: "usd", Symbol: "$", Label: "USD"},
-}
+// prices is plan → currency → minor units, and currencies is the display order
+// of the picker (JSON objects have no order, so the list is spelled out). Both
+// are filled from pricing.json at startup.
+var (
+	prices     map[string]map[string]int64
+	currencies []currency
+)
 
 type currency struct {
-	Code   string // lowercase ISO-4217, as Stripe wants it
-	Symbol string
-	Label  string
+	Code   string `json:"code"` // lowercase ISO-4217, as Stripe wants it
+	Symbol string `json:"symbol"`
+	Label  string `json:"label"`
+}
+
+func init() {
+	var table struct {
+		Currencies []currency                  `json:"currencies"`
+		Plans      map[string]map[string]int64 `json:"plans"`
+	}
+	// Embedded at build time: a failure here is a malformed pricing.json, and a
+	// service that cannot price anything must not start and take orders.
+	if err := json.Unmarshal(pricingJSON, &table); err != nil {
+		panic("pricing.json: " + err.Error())
+	}
+	currencies, prices = table.Currencies, table.Plans
 }
 
 // planName and planDescription are what Stripe shows on the Checkout page and

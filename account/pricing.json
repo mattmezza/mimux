@@ -1,0 +1,10 @@
+{
+  "currencies": [
+    { "code": "eur", "symbol": "€", "label": "EUR" },
+    { "code": "usd", "symbol": "$", "label": "USD" }
+  ],
+  "plans": {
+    "annual":    { "eur": 4900, "usd": 4900 },
+    "perpetual": { "eur": 9900, "usd": 9900 }
+  }
+}

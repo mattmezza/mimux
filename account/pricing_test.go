@@ -2,10 +2,15 @@
 package main
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
+
+	stripe "github.com/stripe/stripe-go/v86"
 )
 
 // Every plan must be priced in every currency we offer. A missing entry would
@@ -104,6 +109,55 @@ func TestCheckoutRejectsUnknownCurrency(t *testing.T) {
 		a.routes().ServeHTTP(w, r)
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("POST /checkout %q: status %d, want 400", body, w.Code)
+		}
+	}
+}
+
+// mimux.dev's buy buttons POST here cross-origin carrying nothing but plan and
+// currency, so this drives the handler with exactly what they send and reads
+// the session Stripe would have been given. Stripe is stubbed with a local
+// server: the assertion is on what left this process, which is the only part
+// we own — and it catches a price that stopped coming from pricing.json.
+func TestCheckoutSendsStripeWhatTheFormPosted(t *testing.T) {
+	a, _ := newTestApp(t)
+	var got url.Values
+	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		got, _ = url.ParseQuery(string(body))
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"cs_test","url":"https://checkout.stripe.com/c/pay/cs_test"}`))
+	}))
+	t.Cleanup(stub.Close)
+	stripe.Key = "sk_test_stub"
+	stripe.SetBackend(stripe.APIBackend, stripe.GetBackendWithConfig(stripe.APIBackend,
+		&stripe.BackendConfig{URL: stripe.String(stub.URL)}))
+	t.Cleanup(func() { stripe.SetBackend(stripe.APIBackend, nil); stripe.Key = "" })
+
+	for _, plan := range []string{planAnnual, planPerpetual} {
+		for _, c := range currencies {
+			body := "plan=" + plan + "&currency=" + c.Code
+			w := httptest.NewRecorder()
+			r := httptest.NewRequest(http.MethodPost, "/checkout", strings.NewReader(body))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			r.Header.Set("Origin", "https://mimux.dev") // as the cross-origin form sends it
+			a.routes().ServeHTTP(w, r)
+			if w.Code != http.StatusSeeOther {
+				t.Fatalf("POST /checkout %q: status %d, want 303", body, w.Code)
+			}
+			cents, err := amount(plan, c.Code)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for field, want := range map[string]string{
+				"line_items[0][price_data][currency]":    c.Code,
+				"line_items[0][price_data][unit_amount]": strconv.FormatInt(cents, 10),
+				"metadata[plan]":                         plan,
+				"metadata[currency]":                     c.Code,
+			} {
+				if got.Get(field) != want {
+					t.Errorf("POST /checkout %q: %s = %q, want %q", body, field, got.Get(field), want)
+				}
+			}
 		}
 	}
 }

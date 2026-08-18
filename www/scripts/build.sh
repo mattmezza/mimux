@@ -11,7 +11,7 @@ rsync -a --delete --exclude='app.css' --exclude='assets/' www/src/ www/dist/
 npx @tailwindcss/cli -i www/src/app.css -o www/dist/css/app.css --minify
 
 python3 - <<'EOF'
-import base64, glob, hashlib, re
+import base64, glob, hashlib, json, re
 
 css = open("www/dist/css/app.css").read()
 # The inlined stylesheet lives at the root, so ../ paths must become absolute.
@@ -34,9 +34,47 @@ js_tag = '<script defer src="/js/%s"></script>' % js_name
 
 pages = glob.glob("www/dist/**/*.html", recursive=True)
 assert pages, "no pages found in www/dist"
+
+# Prices come from account/pricing.json — the same file the shop embeds and
+# charges from. The site used to carry its own hand-typed figures, which is a
+# quote the checkout is under no obligation to honour. www/src keeps tokens
+# ({{price:annual:eur}} → €49, {{amount:…}} → the bare number for JSON-LD) and
+# they are stamped in here, so a page that cannot be priced fails the build
+# instead of shipping last year's number.
+pricing = json.load(open("account/pricing.json"))
+symbols = {c["code"]: c["symbol"] for c in pricing["currencies"]}
+TOKEN = re.compile(r"\{\{(price|amount):([a-z]+):([a-z]+)\}\}")
+
+def stamp_prices(path, text):
+    def one(m):
+        kind, plan, code = m.groups()
+        cents = pricing["plans"].get(plan, {}).get(code)
+        if cents is None or code not in symbols:
+            raise SystemExit(f"{path}: {m.group(0)} is not in account/pricing.json")
+        figure = f"{cents // 100}" if cents % 100 == 0 else f"{cents // 100}.{cents % 100:02d}"
+        return (symbols[code] + figure) if kind == "price" else figure
+    text = TOKEN.sub(one, text)
+    # A token the regex did not match (a typo, a missing field) would otherwise
+    # be served to a customer verbatim.
+    assert "{{" not in text, f"{path}: unresolved template token"
+    return text
+
+# The tokens are the only sanctioned way a price reaches a page: a figure typed
+# straight into www/src is a number nothing keeps in step with pricing.json.
+# €0/$0 is the free client, which the shop has no plan for and never will.
+priced = glob.glob("www/src/**/*.html", recursive=True) + glob.glob("www/src/*.txt")
+for src in priced:
+    for hit in re.finditer(r"[€$]\s?\d+(?:[.,]\d+)*", open(src).read()):
+        assert hit.group(0) in ("€0", "$0"), \
+            f"{src}: hardcoded price {hit.group(0)} — use a {{{{price:plan:currency}}}} token"
+
+for txt in ["www/dist/llms.txt", "www/dist/llms-full.txt"]:
+    stamped = stamp_prices(txt, open(txt).read())
+    open(txt, "w").write(stamped)
+
 scripted = 0
 for page in pages:
-    html = open(page).read()
+    html = stamp_prices(page, open(page).read())
     assert marker in html, f"stylesheet link marker missing from {page}"
     # style-src 'self' does NOT cover inline style attributes, and no hash can
     # whitelist them. Catching them here is the only thing standing between a

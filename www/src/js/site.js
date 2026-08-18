@@ -29,12 +29,18 @@
   // deferred script, so it runs before DOMContentLoaded — no flash of EUR.
   var prices = document.querySelectorAll("[data-usd]");
   var curBtns = document.querySelectorAll("[data-currency]");
-  if (prices.length) {
+  // The buy forms post cross-origin to the shop's /checkout, which rejects a
+  // currency it does not sell and charges the one it is given. So the hidden
+  // field follows the switch: without this, someone reading dollars would be
+  // charged the euro price they never saw.
+  var curFields = document.querySelectorAll("[data-currency-field]");
+  if (prices.length || curFields.length) {
     var setCurrency = function (cur) {
       prices.forEach(function (el) {
         if (!el.getAttribute("data-eur")) el.setAttribute("data-eur", el.textContent);
         el.textContent = el.getAttribute(cur === "usd" ? "data-usd" : "data-eur");
       });
+      curFields.forEach(function (f) { f.value = cur; });
       curBtns.forEach(function (b) {
         b.setAttribute("aria-pressed", b.getAttribute("data-currency") === cur ? "true" : "false");
       });
