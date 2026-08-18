@@ -13,6 +13,29 @@ dev: ## Run with hot reload (requires air)
 run: ## Build and run locally
 	go run ./cmd/mimux
 
+# account/ is its own module with its own env file (gitignored: it holds the
+# Stripe keys and the licence signing key). The overrides keep dev off the
+# container paths — /data needs root. BASE_URL is derived from the same port as
+# LISTEN_ADDR because Stripe builds its return URLs from it: let the two drift
+# and the post-checkout redirect lands on nothing. Override with
+# `make dev-account ACCOUNT_PORT=8080` if 8081 is busy — both follow.
+ACCOUNT_PORT ?= 8081
+
+.PHONY: dev-account
+dev-account: ## Run the account licence service locally (:8081; mimux itself is :8083)
+	@if [ ! -f account/account.env ]; then \
+		echo "account/account.env is missing — the service needs it to boot."; \
+		echo "  cp account/account.env.example account/account.env"; \
+		echo "  then fill in the Stripe test keys and LICENCE_SIGNING_KEY_B64,"; \
+		echo "  which you get from: cd account && go run . -genkey"; \
+		exit 1; \
+	fi
+	@mkdir -p data
+	@echo "account service → http://localhost:$(ACCOUNT_PORT)  (db: data/account-dev.db)"
+	@set -a; . ./account/account.env; set +a; \
+		cd account && DB_PATH=../data/account-dev.db \
+		LISTEN_ADDR=:$(ACCOUNT_PORT) BASE_URL=http://localhost:$(ACCOUNT_PORT) go run .
+
 .PHONY: css
 css: ## Build Tailwind CSS (watch mode)
 	npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --watch
