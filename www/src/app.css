@@ -1,53 +1,84 @@
+/* mimux.dev design system - dark carbon paper, one indigo accent,
+ * Space Grotesk display / Inter body / JetBrains Mono. All backdrops are
+ * pure CSS so no image can ever be the LCP element. */
 @import "tailwindcss" source(none);
 
-/* Scan only the marketing pages for class names — automatic content
-   detection is off so classes from web/templates never leak in. */
+/* Scan every marketing page for class names — automatic content detection is
+   off so classes from web/templates never leak in. */
 @source "./index.html";
+@source "./404.html";
+@source "./features/index.html";
+@source "./agents/index.html";
+@source "./pricing/index.html";
+@source "./about/index.html";
+@source "./privacy/index.html";
+@source "./terms/index.html";
+@source "./security/index.html";
+@source "./legal/index.html";
 
 @theme {
   /* Drop the default palette, font stacks and animation presets — the site
-     uses exactly one accent, one ink ramp, one paper ramp and two fonts.
-     Keeping the defaults would ship ~350 unused custom properties. */
+     uses exactly one accent, one ink ramp, one paper ramp and three fonts. */
   --color-*: initial;
   --font-*: initial;
   --animate-*: initial;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Space Grotesk", "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
 
   --color-white: #fff;
   --color-black: #000;
   --color-transparent: transparent;
 
-  /* One accent: indigo, the same hue the app ships with. */
-  --color-accent-300: #a5b4fc;
-  --color-accent-400: #818cf8;
-  --color-accent-500: #6366f1;
-  --color-accent-600: #4f46e5;
-  --color-accent-700: #4338ca;
+  /* Accent: indigo — the hue the app ships with, so site and product agree. */
+  --color-accent-200: oklch(87% 0.065 277);
+  --color-accent-300: oklch(78% 0.11 277);
+  --color-accent-400: oklch(68% 0.16 277);
+  --color-accent-500: oklch(58% 0.2 277);
+  --color-accent-600: oklch(51% 0.22 277);
+  --color-accent-700: oklch(45% 0.21 277);
 
-  /* Canvas ramp, a touch cooler than raw zinc. */
-  --color-ink-950: #09090c;
-  --color-ink-900: #101014;
-  --color-ink-850: #141419;
-  --color-ink-800: #1b1b21;
+  /* Second hue, used only inside gradients — never as a standalone accent. */
+  --color-glow-cyan: oklch(75% 0.12 220);
+  --color-glow-violet: oklch(55% 0.2 300);
 
-  --color-paper-100: #f4f4f5;
-  --color-paper-300: #d4d4d8;
-  --color-paper-400: #a1a1aa;
-  --color-paper-500: #8b8b93;
+  /* Canvas ramp: near-black with a faint blue-violet cast. */
+  --color-ink-950: oklch(13.5% 0.012 282);
+  --color-ink-900: oklch(16% 0.014 282);
+  --color-ink-850: oklch(18.5% 0.016 282);
+  --color-ink-800: oklch(22% 0.018 282);
+  --color-ink-700: oklch(28% 0.02 282);
+
+  --color-paper-50: oklch(97.5% 0.004 282);
+  --color-paper-200: oklch(88% 0.008 282);
+  --color-paper-400: oklch(72% 0.012 282);
+  --color-paper-500: oklch(60% 0.014 282);
+
+  --color-ok-400: oklch(78% 0.15 155);
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
 }
+
+/* ---------------------------------------------------------------- fonts */
 
 @font-face {
   font-family: "Inter";
   src: url("../fonts/inter-var.woff2") format("woff2");
   font-weight: 100 900;
   font-style: normal;
-  /* optional, not swap: a late font swap would push LCP to the swap time.
-     First paint may use the system fallback; the brand font appears from
-     the first repeat view. CLS stays zero either way (Inter metrics are
-     close to the system stack). */
+  /* optional, not swap: a late swap would push LCP to swap time. Inter's
+     metrics track the system stack, so CLS stays zero either way. */
   font-display: optional;
+}
+
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("../fonts/sg-var.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -74,24 +105,26 @@
   font-display: swap;
 }
 
+/* ---------------------------------------------------------------- base */
+
 html {
   scroll-behavior: smooth;
+  overflow-x: clip;
+}
+
+body {
+  overflow-x: clip;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  html {
-    scroll-behavior: auto;
-  }
+  html { scroll-behavior: auto; }
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-}
-
-body {
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
 }
 
 ::selection {
@@ -106,92 +139,301 @@ body {
   border-radius: 2px;
 }
 
-/* Hairline section label: `01 / what it is` */
-.sec-label {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--color-accent-400);
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-.sec-label::after {
-  content: "";
-  height: 1px;
-  flex: 0 0 3rem;
-  background: color-mix(in srgb, var(--color-accent-500) 45%, transparent);
+h1, h2, h3 {
+  overflow-wrap: anywhere;
+  min-width: 0;
 }
 
-/* Keyboard key chip — the visual signature, reused from the hero to pricing. */
+/* ---------------------------------------------------------------- components */
+
+/* Kicker: small mono label stacked above a heading. Used once per major
+   section, always vertical — never beside the heading. */
+.kicker {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-accent-300);
+}
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--color-paper-50);
+  text-wrap: balance;
+}
+
+/* Buttons — all four voices share geometry so rows of them align. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  padding: 0.7rem 1.35rem;
+  border-radius: 0.625rem;
+  font-weight: 550;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  transition: background-color 160ms var(--ease-out), border-color 160ms var(--ease-out),
+    transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  color: #fff;
+  background: linear-gradient(180deg, var(--color-accent-500), var(--color-accent-600));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.18), 0 1px 2px rgb(0 0 0 / 0.4),
+    0 0 0 1px var(--color-accent-700);
+}
+.btn-primary:hover {
+  background: linear-gradient(180deg, var(--color-accent-400), var(--color-accent-600));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.22), 0 4px 16px -4px oklch(58% 0.2 277 / 0.5),
+    0 0 0 1px var(--color-accent-700);
+}
+
+.btn-secondary {
+  color: var(--color-paper-50);
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.12);
+}
+.btn-secondary:hover {
+  background: rgb(255 255 255 / 0.1);
+  border-color: rgb(255 255 255 / 0.2);
+}
+
+/* Keyboard key chip — the visual signature carried over from the app. */
 .kbd {
   font-family: var(--font-mono);
   font-size: 0.6875rem;
   line-height: 1;
   padding: 0.3rem 0.45rem;
   border-radius: 0.3rem;
-  color: var(--color-paper-300);
+  color: var(--color-paper-200);
   background: var(--color-ink-800);
   border: 1px solid rgb(255 255 255 / 0.09);
   border-bottom-width: 2px;
   white-space: nowrap;
 }
 
-/* The one flourish: a scanline that sweeps the message list, like a cursor
-   moving through mail. Pure CSS, honoured by prefers-reduced-motion above. */
+/* Card: hairline border, near-invisible fill, accent breathes in on hover. */
+.card {
+  border-radius: 1rem;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  background: linear-gradient(180deg, rgb(255 255 255 / 0.03), rgb(255 255 255 / 0.012));
+  transition: border-color 200ms var(--ease-out), transform 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out);
+}
+.card-hover:hover {
+  border-color: oklch(58% 0.2 277 / 0.35);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px -16px rgb(0 0 0 / 0.7);
+}
+
+/* App/product panel: the crafted UI mocks. Real app chrome only — no fake
+   browser bars, no traffic lights. */
+.panel {
+  border-radius: 0.875rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: var(--color-ink-900);
+  box-shadow: 0 24px 64px -24px rgb(0 0 0 / 0.8), 0 0 0 1px rgb(0 0 0 / 0.4);
+  overflow: hidden;
+}
+.panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  background: var(--color-ink-850);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  color: var(--color-paper-500);
+}
+
+/* Code block */
+.code {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  overflow-x: auto;
+  padding: 1.1rem 1.25rem;
+}
+.code .c { color: var(--color-paper-500); }       /* comment */
+.code .p { color: var(--color-accent-300); }      /* prompt/punct */
+.code .s { color: oklch(80% 0.09 160); }          /* string */
+.code .k { color: oklch(78% 0.1 300); }           /* key */
+.code .w { color: var(--color-paper-50); }        /* emphasis */
+
+/* Hero backdrop: pure CSS — radial indigo bloom + hairline dot grid. Zero
+   bytes, so the hero can never have an image as its LCP element. */
+.hero-bg {
+  background:
+    radial-gradient(52rem 30rem at 70% -8%, oklch(58% 0.2 277 / 0.13), transparent 65%),
+    radial-gradient(40rem 24rem at 12% 4%, oklch(55% 0.2 300 / 0.07), transparent 65%),
+    radial-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px);
+  background-size: auto, auto, 28px 28px;
+  mask-image: linear-gradient(to bottom, black 68%, transparent);
+}
+
+/* Sectional bloom for inner-page headers — quieter than the hero. */
+.section-bg {
+  background:
+    radial-gradient(44rem 22rem at 50% -10%, oklch(58% 0.2 277 / 0.1), transparent 68%),
+    radial-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px);
+  background-size: auto, 28px 28px;
+  mask-image: linear-gradient(to bottom, black 62%, transparent);
+}
+
+/* Full-width hairline that fades at both ends. */
+.rule-fade {
+  height: 1px;
+  background: linear-gradient(to right, transparent, rgb(255 255 255 / 0.14), transparent);
+}
+
+/* The one flourish: a scanline sweeping the inbox mock, like a cursor moving
+   through mail. Pure CSS, collapsed by prefers-reduced-motion above. */
 .scanline {
   position: absolute;
   inset-inline: 0;
-  height: 2rem;
+  height: 2.25rem;
   top: 20%;
-  background: linear-gradient(
-    to bottom,
-    transparent,
-    color-mix(in srgb, var(--color-accent-500) 14%, transparent),
-    transparent
-  );
-  animation: scan 9s ease-in-out infinite;
+  background: linear-gradient(to bottom, transparent,
+    oklch(58% 0.2 277 / 0.14), transparent);
+  animation: scan 9s var(--ease-in-out) infinite;
   pointer-events: none;
 }
 @keyframes scan {
-  0%, 100% { top: 12%; opacity: 0; }
+  0%, 100% { top: 14%; opacity: 0; }
   8% { opacity: 1; }
-  50% { top: 72%; }
+  50% { top: 70%; }
   92% { opacity: 1; }
 }
 
-/* Dashed frames marking the spots where real product screenshots land. */
-.shot-frame {
-  border: 1px dashed rgb(255 255 255 / 0.22);
-  background:
-    repeating-linear-gradient(
-      -45deg,
-      transparent 0 18px,
-      rgb(255 255 255 / 0.025) 18px 19px
-    ),
-    var(--color-ink-900);
+/* Scroll reveal. site.js hides [data-reveal] elements just before observing
+   them, so with JS disabled nothing is ever hidden. */
+.reveal-init {
+  opacity: 0;
+  transform: translateY(18px);
+}
+.in-view {
+  opacity: 1;
+  transform: none;
+  transition: opacity 640ms var(--ease-out), transform 640ms var(--ease-out);
+  transition-delay: var(--reveal-delay, 0ms);
 }
 
-/* Hero backdrop: pure CSS — a faint indigo glow and hairline grid. Zero
-   bytes, so the hero can never have an image as its LCP element. */
-.hero-texture {
-  background:
-    radial-gradient(60rem 24rem at 78% 30%,
-      color-mix(in srgb, var(--color-accent-500) 9%, transparent),
-      transparent 70%),
-    repeating-linear-gradient(to bottom,
-      rgb(255 255 255 / 0.016) 0 1px, transparent 1px 56px);
-  mask-image: linear-gradient(to bottom, black 60%, transparent);
+/* Mobile nav: <details> disclosure, styled. */
+.nav-toggle summary { list-style: none; cursor: pointer; }
+.nav-toggle summary::-webkit-details-marker { display: none; }
+.nav-toggle[open] .nav-open-icon { display: none; }
+.nav-toggle:not([open]) .nav-close-icon { display: none; }
+
+/* FAQ accordion on <details>, native and animated where supported. */
+.faq {
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+}
+.faq summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.15rem 0.25rem;
+  font-weight: 550;
+  color: var(--color-paper-50);
+}
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after {
+  content: "+";
+  font-family: var(--font-mono);
+  color: var(--color-accent-300);
+  transition: rotate 200ms var(--ease-out);
+  flex: none;
+}
+.faq[open] summary::after { rotate: 45deg; }
+.faq .faq-a {
+  padding: 0 0.25rem 1.25rem;
+  color: var(--color-paper-400);
+  max-width: 65ch;
 }
 
-/* Below the fold, the generated scanline texture gets its moment: backdrop
-   for the automation section. CSS background, WebP with JPEG fallback. */
-.texture-band {
-  background-image: image-set(
-    url("../img/hero-1536.webp") type("image/webp"),
-    url("../img/hero-1536.jpg") type("image/jpeg")
-  );
-  background-size: cover;
-  background-position: center;
+/* Legal / long-form article. Legal pages are plain h2/h3/p/ul markup inside
+   <article class="prose-legal">. */
+.prose-legal {
+  color: var(--color-paper-400);
+  font-size: 0.98rem;
+  line-height: 1.75;
+}
+.prose-legal h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-paper-50);
+  font-size: 1.35rem;
+  margin-top: 2.75rem;
+  margin-bottom: 0.75rem;
+}
+.prose-legal h3 {
+  font-weight: 600;
+  color: var(--color-paper-50);
+  font-size: 1.05rem;
+  margin-top: 2rem;
+  margin-bottom: 0.5rem;
+}
+.prose-legal p { margin-bottom: 1rem; max-width: 70ch; }
+.prose-legal ul, .prose-legal ol { margin: 0 0 1rem; padding-left: 1.4rem; max-width: 70ch; }
+.prose-legal ul { list-style: disc; }
+.prose-legal ol { list-style: decimal; }
+.prose-legal li { margin-bottom: 0.4rem; }
+.prose-legal li::marker { color: var(--color-accent-400); }
+.prose-legal a {
+  color: var(--color-accent-300);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: oklch(58% 0.2 277 / 0.4);
+}
+.prose-legal a:hover { text-decoration-color: var(--color-accent-300); }
+.prose-legal strong { color: var(--color-paper-200); font-weight: 600; }
+.prose-legal code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--color-paper-200);
+  background: rgb(255 255 255 / 0.06);
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.35rem;
+}
+.prose-legal table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.92rem; }
+.prose-legal th, .prose-legal td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  vertical-align: top;
+}
+.prose-legal th { color: var(--color-paper-200); font-weight: 600; }
+
+/* Inline text link used across marketing pages. */
+.link {
+  color: var(--color-accent-300);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: oklch(58% 0.2 277 / 0.4);
+  transition: text-decoration-color 150ms var(--ease-out);
+}
+.link:hover { text-decoration-color: var(--color-accent-300); }
+
+/* Statement footer wordmark */
+.footer-mark {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 0.85;
+  font-size: clamp(4.5rem, 18vw, 15rem);
+  color: rgb(255 255 255 / 0.045);
+  user-select: none;
 }

@@ -11,12 +11,17 @@ rsync -a --delete --exclude='app.css' --exclude='assets/' www/src/ www/dist/
 npx @tailwindcss/cli -i www/src/app.css -o www/dist/css/app.css --minify
 
 python3 - <<'EOF'
+import glob
+
 css = open("www/dist/css/app.css").read()
 # The inlined stylesheet lives at the root, so ../ paths must become absolute.
 css = css.replace('url("../', 'url("/')
-html = open("www/dist/index.html").read()
 marker = '<link rel="stylesheet" href="/css/app.css">'
-assert marker in html, "stylesheet link marker missing from index.html"
-html = html.replace(marker, "<style>\n" + css + "\n</style>")
-open("www/dist/index.html", "w").write(html)
+pages = glob.glob("www/dist/**/*.html", recursive=True)
+assert pages, "no pages found in www/dist"
+for page in pages:
+    html = open(page).read()
+    assert marker in html, f"stylesheet link marker missing from {page}"
+    open(page, "w").write(html.replace(marker, "<style>\n" + css + "\n</style>"))
+print(f"inlined CSS into {len(pages)} pages")
 EOF

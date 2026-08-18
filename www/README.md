@@ -8,21 +8,30 @@ Pages at <https://mimux.dev>.
 
 ```
 www/
-  src/            # source of truth
-    index.html    # the whole site (one page)
-    app.css       # Tailwind v4 entry: @theme tokens + components
-    fonts/        # self-hosted, subsetted Inter + JetBrains Mono (OFL)
-    img/          # icons, og.png, hero texture (see ASSETS.md)
-    assets/       # raw generator output — source material, NOT shipped
+  src/                  # source of truth
+    index.html          # home
+    features/ agents/ pricing/ about/    # marketing pages
+    privacy/ terms/ security/ legal/     # policy pages
+    404.html            # Cloudflare Pages not-found page
+    app.css             # Tailwind v4 entry: @theme tokens + components
+    js/site.js          # progressive enhancement: reveal, copy, mobile nav
+    fonts/              # self-hosted Inter + Space Grotesk + JetBrains Mono (OFL)
+    img/                # icons, og.png (see ASSETS.md)
+    assets/             # raw generator output — source material, NOT shipped
     favicon.svg, site.webmanifest, robots.txt, sitemap.xml
     llms.txt, llms-full.txt
-    _headers      # Cloudflare Pages headers (CSP, caching)
+    _headers            # Cloudflare Pages headers (CSP, caching)
   scripts/
-    build.sh      # www-build implementation
-    serve.py      # local static server with gzip (Lighthouse-realistic)
-  dist/           # build output, committed, deployed as-is
-  ASSETS.md       # every image-generation command, reproducible
+    build.sh            # www-build implementation (inlines CSS into every page)
+    serve.py            # local static server with gzip (Lighthouse-realistic)
+  dist/                 # build output, committed, deployed as-is
+  ASSETS.md             # every image-generation command, reproducible
 ```
+
+The shared header/footer shell is duplicated verbatim across pages on purpose —
+no templating step, no build dependency. Editing the nav or footer means
+editing it in every `index.html` (10 files); `grep -rl "footer-mark" src` lists
+them.
 
 ## Develop
 

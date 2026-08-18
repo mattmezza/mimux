@@ -2,27 +2,30 @@
 
 > A fast, keyboard-driven email client you run yourself — one Go binary, one
 > SQLite file, no third party in the middle. The client is free and AGPL-3.0
-> forever; a paid automation layer (REST API, MCP server, webhooks) is on the
-> roadmap, so agents can act on an inbox that lives on your own hardware.
+> forever. mimux pro adds an automation layer — REST API, MCP server, signed
+> webhooks — so AI agents can act on an inbox that lives on your own hardware
+> (€49/yr or €99 perpetual, per instance, 14-day free trial).
+
+## Pages
+
+- [Features](https://mimux.dev/features/): unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push.
+- [Agents & API](https://mimux.dev/agents/): the MCP server at /api/mcp, the REST API with OpenAPI spec, signed webhooks, scoped tokens, two-step sending.
+- [Pricing](https://mimux.dev/pricing/): free client forever; pro €49/yr or €99 perpetual per instance; offline Ed25519 licence verification, no phone-home.
+- [About](https://mimux.dev/about/): built by Matteo Merola (Merola Software & Services, Zurich); the published free/pro line and why it can't move.
+- [Security](https://mimux.dev/security/): how to report vulnerabilities privately, scope, and mimux's security posture.
 
 ## Docs
 
-- [Documentation](https://docs.mimux.dev): install, configuration, OAuth setup and the API reference.
-- [Screenshots and quick start](https://mimux.dev/#install): one `docker compose up`, zero configuration to boot.
+- [Documentation](https://docs.mimux.dev): install, configuration, OAuth setup and the API reference (rendered from the OpenAPI spec the binary serves).
 
 ## Source
 
 - [GitHub repository](https://github.com/mattmezza/mimux): the full source, AGPL-3.0 client plus the ELv2 pro layer.
-- [Issues](https://github.com/mattmezza/mimux/issues): bug reports and questions; issues yes, PRs usually no.
+- [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md): which directory is under which licence, and how `make verify-free` proves the split.
 
-## Pricing
+## Purchase
 
-- [Pricing](https://mimux.dev/#pricing): the client is free forever; the automation layer will be €49/yr or €99 perpetual.
-- [Account portal](https://account.mimux.dev): licence purchase and management, opens when the pro layer ships.
-
-## Licence
-
-- [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md): which directory is under which licence, and how to verify the split.
+- [Account portal](https://account.mimux.dev): licence purchase (Stripe) and key retrieval by email.
 
 ## Contact
 

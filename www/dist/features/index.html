@@ -3,16 +3,16 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>mimux — self-hosted email client with an API for AI agents</title>
-  <meta name="description" content="A fast, keyboard-driven email client you run yourself — one Go binary, one SQLite file, zero config. Free and AGPL-3.0. Add the pro layer and your AI agents get a REST API, MCP server and webhooks on your own hardware.">
+  <title>Features — mimux, the self-hosted email client</title>
+  <meta name="description" content="Unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push. Every feature of mimux, free and AGPL-3.0.">
 
-  <link rel="canonical" href="https://mimux.dev/">
+  <link rel="canonical" href="https://mimux.dev/features/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="mimux">
-  <meta property="og:url" content="https://mimux.dev/">
-  <meta property="og:title" content="mimux — self-hosted email client with an API for AI agents">
-  <meta property="og:description" content="A fast, keyboard-driven email client you run yourself. One Go binary, one SQLite file, zero config. Free and AGPL-3.0 — and your agents get a REST API, MCP server and webhooks.">
+  <meta property="og:url" content="https://mimux.dev/features/">
+  <meta property="og:title" content="Features — mimux, the self-hosted email client">
+  <meta property="og:description" content="Unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push. Free and AGPL-3.0.">
   <meta property="og:locale" content="en_US">
   <meta property="og:image" content="https://mimux.dev/img/og.png">
   <meta property="og:image:type" content="image/png">
@@ -20,8 +20,8 @@
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="A glowing indigo envelope glyph on a dark background — the mimux mark.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="mimux — self-hosted email client with an API for AI agents">
-  <meta name="twitter:description" content="A fast, keyboard-driven email client you run yourself. One Go binary, one SQLite file, zero config. Free and AGPL-3.0.">
+  <meta name="twitter:title" content="Features — mimux, the self-hosted email client">
+  <meta name="twitter:description" content="Unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push. Free and AGPL-3.0.">
   <meta name="twitter:image" content="https://mimux.dev/img/og.png">
 
   <meta name="theme-color" content="#0b0b11">
@@ -53,32 +53,10 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "SoftwareApplication",
-        "@id": "https://mimux.dev/#app",
-        "name": "mimux",
-        "description": "A fast, keyboard-driven, self-hosted email client. One Go binary, one SQLite file, zero configuration. The client is free and AGPL-3.0; a paid automation layer adds a REST API, MCP server and webhooks for AI agents.",
-        "applicationCategory": "EmailClient",
-        "operatingSystem": "Docker, Linux, macOS, Windows (self-hosted); any modern browser",
-        "url": "https://mimux.dev/",
-        "license": "https://www.gnu.org/licenses/agpl-3.0.html",
-        "codeRepository": "https://github.com/mattmezza/mimux",
-        "offers": [
-          { "@type": "Offer", "name": "mimux client", "price": "0", "priceCurrency": "EUR", "description": "The complete mail client. Free and AGPL-3.0, forever." },
-          { "@type": "Offer", "name": "mimux pro — annual", "price": "49", "priceCurrency": "EUR", "url": "https://account.mimux.dev", "description": "REST API, MCP server and webhooks. Per instance, per year." },
-          { "@type": "Offer", "name": "mimux pro — perpetual", "price": "99", "priceCurrency": "EUR", "url": "https://account.mimux.dev", "description": "One payment, covers all builds released within one year of purchase, runs forever." }
-        ],
-        "author": { "@id": "https://mimux.dev/#org" }
-      },
-      {
-        "@type": "Organization",
-        "@id": "https://mimux.dev/#org",
-        "name": "Merola Software & Services",
-        "url": "https://matteo.merola.co/software",
-        "address": { "@type": "PostalAddress", "streetAddress": "Wartauweg 19", "postalCode": "8049", "addressLocality": "Zurich", "addressCountry": "CH" },
-        "founder": { "@type": "Person", "name": "Matteo Merola" }
-      }
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      { "@type": "ListItem", "position": 1, "name": "Home", "item": "https://mimux.dev/" },
+      { "@type": "ListItem", "position": 2, "name": "Features", "item": "https://mimux.dev/features/" }
     ]
   }
   </script>
@@ -99,7 +77,7 @@
       </a>
 
       <ul class="hidden md:flex items-center gap-1 text-sm font-medium">
-        <li><a href="/features/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Features</a></li>
+        <li><a href="/features/" aria-current="page" class="px-3 py-2 rounded-md text-paper-50">Features</a></li>
         <li><a href="/agents/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Agents</a></li>
         <li><a href="/pricing/" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Pricing</a></li>
         <li><a href="https://docs.mimux.dev" class="px-3 py-2 rounded-md text-paper-400 hover:text-paper-50 transition-colors">Docs</a></li>
@@ -121,7 +99,7 @@
             <svg class="nav-close-icon" aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M5 5l10 10M15 5L5 15"/></svg>
           </summary>
           <div class="absolute right-0 top-12 w-56 rounded-xl border border-white/10 bg-ink-900 shadow-2xl shadow-black/60 p-2 text-sm">
-            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Features</a>
+            <a href="/features/" class="block px-3 py-2.5 rounded-lg text-paper-50 bg-white/5">Features</a>
             <a href="/agents/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Agents</a>
             <a href="/pricing/" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Pricing</a>
             <a href="https://docs.mimux.dev" class="block px-3 py-2.5 rounded-lg text-paper-200 hover:bg-white/5">Docs</a>
@@ -135,314 +113,259 @@
 
   <main id="main-content">
 
-    <!-- ================================ Hero ================================ -->
+    <!-- ================================ Page hero ================================ -->
     <section class="relative overflow-hidden">
-      <div aria-hidden="true" class="hero-bg absolute inset-0 -z-10"></div>
-
-      <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 pb-20 sm:pt-24 sm:pb-28 grid lg:grid-cols-[1.05fr_1fr] gap-14 lg:gap-16 items-center">
-        <div>
-          <p class="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-1.5 font-mono text-xs text-paper-400">
-            <span class="size-1.5 rounded-full bg-ok-400"></span>
-            Open source · AGPL-3.0 · self-hosted
-          </p>
-          <h1 class="display mt-6 text-[2.6rem] leading-[1.04] sm:text-6xl lg:text-[4.1rem]">
-            Your mail. Your&nbsp;server. Your&nbsp;agents.
-          </h1>
-          <p class="mt-6 text-lg text-paper-400 max-w-xl text-pretty leading-relaxed">
-            mimux is a fast, keyboard-driven email client you run yourself. Point it at the
-            mailboxes you already have and triage everything from one unified inbox — then
-            hand your AI agents a scoped API to the same mail, on your hardware,
-            with no SaaS in the middle.
-          </p>
-          <div class="mt-8 flex flex-wrap items-center gap-3">
-            <a href="#install" class="btn btn-primary">Install in one command</a>
-            <a href="/agents/" class="btn btn-secondary">See the agent layer</a>
-          </div>
-          <p class="mt-6 font-mono text-xs text-paper-500">
-            docker compose up <span aria-hidden="true" class="text-accent-400">→</span> one Go binary
-            <span aria-hidden="true" class="text-accent-400">→</span> one SQLite file
-            <span aria-hidden="true" class="text-accent-400">→</span> zero config
-          </p>
-        </div>
-
-        <!-- Crafted inbox panel: hand-built app UI, no fake browser chrome. -->
-        <div class="panel relative" aria-hidden="true">
-          <div class="scanline"></div>
-          <div class="panel-bar">
-            <span>unified inbox · 3 accounts</span>
-            <span class="flex gap-1.5"><kbd class="kbd">/</kbd><kbd class="kbd">?</kbd></span>
-          </div>
-          <ul class="divide-y divide-white/5 text-sm">
-            <li class="flex items-center gap-3 px-4 py-3 bg-accent-500/10 border-l-2 border-accent-500">
-              <span class="font-mono text-[10px] text-paper-500 w-12 shrink-0">09:41</span>
-              <span class="min-w-0">
-                <span class="block truncate text-paper-50 font-medium">CI — release pipeline passed</span>
-                <span class="block truncate text-xs text-paper-500">All 214 checks green. Artifacts published…</span>
-              </span>
-              <span class="ml-auto shrink-0"><kbd class="kbd">Enter</kbd></span>
-            </li>
-            <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-paper-500 w-12 shrink-0">08:12</span>
-              <span class="min-w-0">
-                <span class="block truncate text-paper-200">Invoice #2451 — paid</span>
-                <span class="block truncate text-xs text-paper-500">filed by rule <span class="text-accent-300">invoices → Accounting</span></span>
-              </span>
-              <span class="ml-auto shrink-0"><kbd class="kbd">e</kbd></span>
-            </li>
-            <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-paper-500 w-12 shrink-0">07:58</span>
-              <span class="min-w-0">
-                <span class="block truncate text-paper-200">Re: quotes for the server rack</span>
-                <span class="block truncate text-xs text-paper-500">agent draft waiting for your review</span>
-              </span>
-              <span class="ml-auto shrink-0"><kbd class="kbd">R</kbd></span>
-            </li>
-            <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-paper-500 w-12 shrink-0">06:30</span>
-              <span class="min-w-0">
-                <span class="block truncate text-paper-400">Newsletter — this week in self-hosting</span>
-                <span class="block truncate text-xs text-paper-500">unread · 4 min read</span>
-              </span>
-              <span class="ml-auto shrink-0"><kbd class="kbd">d</kbd></span>
-            </li>
-            <li class="flex items-center gap-3 px-4 py-3 border-l-2 border-transparent">
-              <span class="font-mono text-[10px] text-paper-500 w-12 shrink-0">05:47</span>
-              <span class="min-w-0">
-                <span class="block truncate text-paper-200">OAuth token refreshed — Gmail</span>
-                <span class="block truncate text-xs text-paper-500">automatic · no action needed</span>
-              </span>
-              <span class="ml-auto shrink-0"><kbd class="kbd">s</kbd></span>
-            </li>
-          </ul>
-          <div class="flex items-center justify-between px-4 py-2 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">
-            <span>IMAP IDLE · synced 12s ago</span>
-            <span class="whitespace-nowrap"><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd> to move</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================ Facts strip ================================ -->
-    <section aria-label="mimux in numbers" class="border-y border-white/5 bg-ink-900/40">
-      <dl class="mx-auto max-w-6xl px-5 lg:px-8 py-8 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6">
-        <div data-reveal>
-          <dt class="font-mono text-xs text-paper-500 uppercase tracking-wider">Deploy</dt>
-          <dd class="mt-1 font-display text-2xl font-semibold text-paper-50">1 binary</dd>
-        </div>
-        <div data-reveal="60">
-          <dt class="font-mono text-xs text-paper-500 uppercase tracking-wider">State</dt>
-          <dd class="mt-1 font-display text-2xl font-semibold text-paper-50">1 SQLite file</dd>
-        </div>
-        <div data-reveal="120">
-          <dt class="font-mono text-xs text-paper-500 uppercase tracking-wider">Required config</dt>
-          <dd class="mt-1 font-display text-2xl font-semibold text-paper-50">0 lines</dd>
-        </div>
-        <div data-reveal="180">
-          <dt class="font-mono text-xs text-paper-500 uppercase tracking-wider">Telemetry</dt>
-          <dd class="mt-1 font-display text-2xl font-semibold text-paper-50">0 calls home</dd>
-        </div>
-      </dl>
-    </section>
-
-    <!-- ================================ Features ================================ -->
-    <section id="features" aria-labelledby="features-h" class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28">
-      <div class="max-w-2xl" data-reveal>
-        <p class="kicker">The client</p>
-        <h2 id="features-h" class="display mt-3 text-3xl sm:text-4xl">Everything a serious mail client owes you.</h2>
-        <p class="mt-4 text-paper-400 leading-relaxed">
-          The complete client is free and AGPL-3.0 — nothing on this page is held back,
-          metered, or waiting to be moved behind a licence key.
+      <div aria-hidden="true" class="section-bg absolute inset-0 -z-10"></div>
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 pt-16 sm:pt-24 pb-14 sm:pb-20">
+        <p class="kicker">Features</p>
+        <h1 class="display mt-3 text-4xl sm:text-5xl lg:text-6xl max-w-3xl">A complete client, not a demo.</h1>
+        <p class="mt-5 text-lg text-paper-400 max-w-2xl leading-relaxed">
+          Everything on this page ships in the free, AGPL-3.0 build. Nothing is metered,
+          nothing is held back to seed a paid tier, and nothing here will ever move behind
+          a licence key.
         </p>
       </div>
-
-      <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
-        <a href="/features/#inbox" class="card card-hover p-6 block" data-reveal>
-          <h3 class="font-display font-semibold text-paper-50">Unified inbox</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">Every account in one view — threading, unread counts and the full folder tree per account. IMAP IDLE keeps it live without a refresh.</p>
-        </a>
-        <a href="/features/#keyboard" class="card card-hover p-6 block" data-reveal="60">
-          <h3 class="font-display font-semibold text-paper-50">Keyboard-first triage</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">A full shortcut set — <kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd> <kbd class="kbd">e</kbd> <kbd class="kbd">R</kbd> <kbd class="kbd">/</kbd> — so an inbox of forty becomes an inbox of zero without touching the mouse.</p>
-        </a>
-        <a href="/features/#search" class="card card-hover p-6 block" data-reveal="120">
-          <h3 class="font-display font-semibold text-paper-50">Search that goes deep</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">Instant local full-text search, plus on-demand deep IMAP server search streamed back live as results arrive.</p>
-        </a>
-        <a href="/features/#compose" class="card card-hover p-6 block" data-reveal>
-          <h3 class="font-display font-semibold text-paper-50">Compose without regret</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">Plain text, rich text or Markdown. Draft autosave, undo-send and scheduled send — over your own SMTP.</p>
-        </a>
-        <a href="/features/#filters" class="card card-hover p-6 block" data-reveal="60">
-          <h3 class="font-display font-semibold text-paper-50">Filters &amp; rules</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">Conditions in, actions out: move, label, forward, mark read, star, delete, notify — running server-side on every incoming message.</p>
-        </a>
-        <a href="/features/#pwa" class="card card-hover p-6 block" data-reveal="120">
-          <h3 class="font-display font-semibold text-paper-50">An app on every device</h3>
-          <p class="mt-2 text-sm text-paper-400 leading-relaxed">Installs as a PWA with offline fallback. Web Push with end-to-end encrypted payloads from your server — or a POST to any ntfy topic.</p>
-        </a>
-      </div>
-
-      <div class="mt-8 flex" data-reveal>
-        <a href="/features/" class="link text-sm">Every feature, in detail →</a>
-      </div>
     </section>
 
-    <!-- ================================ Agents ================================ -->
-    <section id="agents" aria-labelledby="agents-h" class="relative border-y border-white/5 bg-ink-900/40 overflow-hidden">
-      <div aria-hidden="true" class="absolute inset-0 -z-10 opacity-60"
-           style="background: radial-gradient(50rem 26rem at 85% 20%, oklch(58% 0.2 277 / 0.1), transparent 65%)"></div>
-      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28 grid lg:grid-cols-2 gap-14 items-center">
+    <!-- ================================ Triage ================================ -->
+    <section id="inbox" aria-labelledby="inbox-h" class="border-t border-white/5">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
         <div data-reveal>
-          <p class="kicker">mimux pro</p>
-          <h2 id="agents-h" class="display mt-3 text-3xl sm:text-4xl">Give your agents an inbox. Keep it on your hardware.</h2>
+          <p class="kicker">Triage</p>
+          <h2 id="inbox-h" class="display mt-3 text-3xl sm:text-4xl">One inbox for every account you own.</h2>
           <p class="mt-4 text-paper-400 leading-relaxed">
-            Agent frameworks ship with web search and code execution — and no way into a
-            mailbox that doesn't route your mail through someone else's cloud. mimux pro is
-            that missing tool: a REST API, an MCP server and signed webhooks over the inbox
-            you already run.
+            Add as many accounts as you like — Gmail and Zoho over OAuth2, everything else
+            over passwords or app passwords. mimux keeps one IMAP connection per account,
+            holds it open with IDLE, and falls back to polling when a server can't. New
+            mail appears without a refresh.
           </p>
-          <ul class="mt-6 space-y-3.5 text-sm text-paper-400">
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">MCP server at <code class="font-mono text-accent-300">/api/mcp</code>.</strong> Search, read, triage and draft from Claude, or any MCP-capable client.</span></li>
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Sending takes two steps, by design.</strong> Agents draft; a separate, explicit call sends. No tool description can talk a model into skipping the checkpoint.</span></li>
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Scoped API tokens.</strong> Read-only for the triage bot, draft-only for the assistant — minted and revoked in Settings → API.</span></li>
+          <ul class="mt-6 space-y-3 text-sm text-paper-400">
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Conversation threading</strong> that follows references across accounts and folders.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">The full folder tree</strong> per account — inbox, sent, drafts, archive, spam, trash — plus a unified view across all of them.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Calendar invites</strong> render inline; accept or decline without leaving the message.</span></li>
           </ul>
-          <div class="mt-8 flex flex-wrap gap-3">
-            <a href="/agents/" class="btn btn-primary">Explore the agent layer</a>
-            <a href="https://docs.mimux.dev" class="btn btn-secondary">API reference</a>
-          </div>
         </div>
-
-        <figure class="panel" data-reveal="100">
-          <figcaption class="panel-bar"><span>claude — connected to your mimux</span><span class="text-ok-400">● live</span></figcaption>
-          <div class="code text-[0.8rem]">
-<pre><span class="c"># an agent triaging this morning's mail</span>
-<span class="p">▸</span> <span class="k">search_messages</span> <span class="s">query="is:unread"</span>
-<span class="w">  12 results — 3 invoices, 1 quote request, 8 newsletters</span>
-<span class="p">▸</span> <span class="k">move_message</span> <span class="s">folder="Accounting"</span> <span class="c">× 3</span>
-<span class="p">▸</span> <span class="k">create_draft</span> <span class="s">reply_to="Re: quotes for the server rack"</span>
-<span class="w">  draft saved — waiting for your review</span>
-<span class="c"># sending is a second, explicit step. Always.</span></pre>
+        <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
+          <div class="panel-bar"><span>accounts</span><span>3 connected</span></div>
+          <ul class="text-sm divide-y divide-white/5">
+            <li class="flex items-center justify-between px-4 py-3">
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">work@fastmail.com</span></span>
+              <span class="font-mono text-[10px] text-paper-500">IDLE · 12 unread</span>
+            </li>
+            <li class="flex items-center justify-between px-4 py-3">
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">me@gmail.com</span></span>
+              <span class="font-mono text-[10px] text-paper-500">OAuth2 · 3 unread</span>
+            </li>
+            <li class="flex items-center justify-between px-4 py-3">
+              <span class="flex items-center gap-3 min-w-0"><span class="size-2 rounded-full bg-ok-400 shrink-0"></span><span class="truncate text-paper-200">ops@myserver.io</span></span>
+              <span class="font-mono text-[10px] text-paper-500">IDLE · clear</span>
+            </li>
+          </ul>
+          <div class="px-4 py-2.5 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">
+            unified view <span class="text-accent-300">0</span> · per-account <span class="text-accent-300">1</span>–<span class="text-accent-300">9</span>
           </div>
         </figure>
       </div>
     </section>
 
-    <!-- ================================ Install ================================ -->
-    <section id="install" aria-labelledby="install-h" class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28">
-      <div class="max-w-2xl" data-reveal>
-        <p class="kicker">Install</p>
-        <h2 id="install-h" class="display mt-3 text-3xl sm:text-4xl">Running before your coffee is.</h2>
-        <p class="mt-4 text-paper-400 leading-relaxed">
-          No config file, no environment variables, no database server. Boot the container,
-          open the page, add your accounts.
-        </p>
+    <!-- ================================ Keyboard ================================ -->
+    <section id="keyboard" aria-labelledby="keyboard-h" class="border-t border-white/5 bg-ink-900/40">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
+        <div class="max-w-2xl" data-reveal>
+          <p class="kicker">Keyboard</p>
+          <h2 id="keyboard-h" class="display mt-3 text-3xl sm:text-4xl">Inbox forty to inbox zero, hands on the home row.</h2>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            Every action has a key. Press <kbd class="kbd">?</kbd> anywhere in the app for
+            the live version of this table.
+          </p>
+        </div>
+        <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-2 text-sm max-w-5xl" data-reveal data-reveal="80">
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Next / previous message</span><span class="shrink-0"><kbd class="kbd">j</kbd> <kbd class="kbd">k</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Open message</span><span class="shrink-0"><kbd class="kbd">o</kbd> <kbd class="kbd">Enter</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Reply / reply all / forward</span><span class="shrink-0"><kbd class="kbd">R</kbd> <kbd class="kbd">A</kbd> <kbd class="kbd">F</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Compose</span><span class="shrink-0"><kbd class="kbd">c</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Archive</span><span class="shrink-0"><kbd class="kbd">e</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Delete</span><span class="shrink-0"><kbd class="kbd">d</kbd> <kbd class="kbd">#</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Star / unstar</span><span class="shrink-0"><kbd class="kbd">s</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Mark read / unread</span><span class="shrink-0"><kbd class="kbd">r</kbd> <kbd class="kbd">u</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Mark as spam</span><span class="shrink-0"><kbd class="kbd">!</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Search</span><span class="shrink-0"><kbd class="kbd">/</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Go to inbox / starred / drafts / sent</span><span class="shrink-0"><kbd class="kbd">g</kbd> <kbd class="kbd">i</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">s</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">d</kbd><span class="text-paper-500 mx-0.5">·</span><kbd class="kbd">t</kbd></span></div>
+          <div class="flex items-center justify-between gap-4 py-2.5 border-b border-white/5"><span class="text-paper-400">Unified / nth account inbox</span><span class="shrink-0"><kbd class="kbd">0</kbd> <kbd class="kbd">1</kbd>–<kbd class="kbd">9</kbd></span></div>
+        </div>
       </div>
+    </section>
 
-      <div class="mt-12 grid lg:grid-cols-[1fr_1.1fr] gap-10 items-start">
-        <ol class="space-y-7 text-sm leading-relaxed">
-          <li class="flex gap-4" data-reveal>
-            <span class="font-mono text-accent-400 shrink-0 mt-0.5">01</span>
-            <p class="text-paper-400"><strong class="text-paper-50 font-medium">Start it.</strong> The compose file is the whole deployment: one container, one volume, one port.</p>
-          </li>
-          <li class="flex gap-4" data-reveal="60">
-            <span class="font-mono text-accent-400 shrink-0 mt-0.5">02</span>
-            <p class="text-paper-400"><strong class="text-paper-50 font-medium">Open it.</strong> The first visit walks you through creating your admin account. There is nothing else to bootstrap.</p>
-          </li>
-          <li class="flex gap-4" data-reveal="120">
-            <span class="font-mono text-accent-400 shrink-0 mt-0.5">03</span>
-            <p class="text-paper-400"><strong class="text-paper-50 font-medium">Point it at your mail.</strong> OAuth2 for Gmail and Zoho, app passwords everywhere else. Changes apply without a restart.</p>
-          </li>
-        </ol>
+    <!-- ================================ Search ================================ -->
+    <section id="search" aria-labelledby="search-h" class="border-t border-white/5">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <figure class="panel order-last lg:order-first" data-reveal data-reveal="100" aria-hidden="true">
+          <div class="panel-bar"><span>search</span><span>deep search: streaming</span></div>
+          <div class="px-4 py-3 border-b border-white/5 font-mono text-sm text-paper-200">
+            <span class="text-accent-300">/</span> rack quote <span class="text-paper-500">from:vendor</span>
+          </div>
+          <ul class="text-sm divide-y divide-white/5">
+            <li class="px-4 py-3"><span class="block truncate text-paper-200">Re: quotes for the server rack</span><span class="block truncate text-xs text-paper-500">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-paper-200">Rack PDU options + pricing</span><span class="block truncate text-xs text-paper-500">local index · 2 ms</span></li>
+            <li class="px-4 py-3"><span class="block truncate text-paper-400">Quote #Q-2207 — 42U enclosure</span><span class="block truncate text-xs text-accent-300">found on server · streamed just now</span></li>
+          </ul>
+          <div class="px-4 py-2.5 border-t border-white/5 bg-ink-850 font-mono text-[10px] text-paper-500">searching 3 accounts on the server…</div>
+        </figure>
+        <div data-reveal>
+          <p class="kicker">Search</p>
+          <h2 id="search-h" class="display mt-3 text-3xl sm:text-4xl">Instant locally. Exhaustive on demand.</h2>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            Everything mimux has synced is in a local full-text index, so most searches
+            return before you finish typing. When you need the archive from 2019, one key
+            fires a deep IMAP search on the server side — results stream into the same
+            list live as each account answers.
+          </p>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            No search appliance to run, no reindexing cron job. It's one more thing the
+            SQLite file quietly does for you.
+          </p>
+        </div>
+      </div>
+    </section>
 
-        <figure class="panel" data-reveal="100">
-          <figcaption class="panel-bar">
-            <span>terminal</span>
-            <button type="button" data-copy="git clone https://github.com/mattmezza/mimux && cd mimux && docker compose up -d"
-                    class="font-mono text-[11px] text-paper-400 hover:text-paper-50 transition-colors cursor-pointer">copy</button>
-          </figcaption>
-          <pre class="code"><code><span class="c"># the whole install</span>
-<span class="p">$</span> <span class="w">git clone https://github.com/mattmezza/mimux</span>
-<span class="p">$</span> <span class="w">cd mimux &amp;&amp; docker compose up -d</span>
-
-<span class="c"># then open</span>
-<span class="w">http://localhost:8083</span></code></pre>
+    <!-- ================================ Compose ================================ -->
+    <section id="compose" aria-labelledby="compose-h" class="border-t border-white/5 bg-ink-900/40">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <div data-reveal>
+          <p class="kicker">Compose</p>
+          <h2 id="compose-h" class="display mt-3 text-3xl sm:text-4xl">Write in Markdown. Send without regret.</h2>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            Reply, reply-all and forward over your own SMTP — in plain text, rich text or
+            Markdown, whichever the moment calls for. Drafts autosave locally as you type.
+          </p>
+          <ul class="mt-6 space-y-3 text-sm text-paper-400">
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Undo-send</strong> holds every message for a beat after you hit send — long enough to catch the missing attachment.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">Scheduled send</strong> for the reply you want to land Monday morning, not Saturday night.</span></li>
+            <li class="flex gap-3" id="ai"><span aria-hidden="true" class="text-accent-400 font-mono">→</span><span><strong class="text-paper-50 font-medium">AI compose &amp; translate, bring-your-own-key.</strong> Optional drafting via OpenRouter and translation via Google Translate. Off by default; your keys live in your database and requests go straight from your server to the provider you chose.</span></li>
+          </ul>
+        </div>
+        <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
+          <div class="panel-bar"><span>compose — markdown</span><span>draft saved 3s ago</span></div>
+          <div class="px-4 py-3 text-sm font-mono leading-relaxed text-paper-200">
+            <p class="text-paper-500"># To: vendor@rackworks.io</p>
+            <p class="mt-2">Thanks — option **B** works for us.</p>
+            <p class="mt-2">Could you confirm:</p>
+            <p>- lead time for the 42U enclosure</p>
+            <p>- shipping to Zurich</p>
+          </div>
+          <div class="flex items-center justify-between px-4 py-2.5 border-t border-white/5 bg-ink-850">
+            <span class="font-mono text-[10px] text-paper-500">sending in <span class="text-accent-300">8s</span>…</span>
+            <span class="font-mono text-[10px] text-accent-300">undo</span>
+          </div>
         </figure>
       </div>
     </section>
 
-    <!-- ================================ Why self-hosted ================================ -->
-    <section id="why" aria-labelledby="why-h" class="border-t border-white/5">
-      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28">
-        <div class="max-w-2xl" data-reveal>
-          <p class="kicker">Why self-hosted</p>
-          <h2 id="why-h" class="display mt-3 text-3xl sm:text-4xl">Nobody between you and your mail.</h2>
-        </div>
-
-        <div class="mt-12 grid sm:grid-cols-2 gap-x-10 gap-y-10 text-sm leading-relaxed">
-          <div class="border-l-2 border-accent-500/40 pl-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50 text-base">No account to create</h3>
-            <p class="mt-2 text-paper-400">mimux asks nobody's permission to read your mail. It speaks IMAP and SMTP directly to the providers you already use, with credentials that live in your SQLite file — not ours, because there is no "ours".</p>
+    <!-- ================================ Filters ================================ -->
+    <section id="filters" aria-labelledby="filters-h" class="border-t border-white/5">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24 grid lg:grid-cols-2 gap-12 items-center">
+        <figure class="panel order-last lg:order-first" data-reveal data-reveal="100" aria-hidden="true">
+          <div class="panel-bar"><span>filters</span><span>runs on incoming mail</span></div>
+          <div class="px-4 py-4 text-sm space-y-3">
+            <div class="flex flex-wrap items-center gap-2 font-mono text-xs">
+              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">from contains @billing</span>
+              <span class="text-paper-500">and</span>
+              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">subject contains invoice</span>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-xs text-paper-500">
+              <span aria-hidden="true" class="text-accent-400">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">move to Accounting</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">mark read</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 font-mono text-xs pt-2 border-t border-white/5">
+              <span class="rounded-md border border-white/10 bg-white/5 px-2 py-1 text-paper-200">from is alerts@uptime.io</span>
+            </div>
+            <div class="flex items-center gap-2 font-mono text-xs text-paper-500">
+              <span aria-hidden="true" class="text-accent-400">↳</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">notify</span>
+              <span class="rounded-md border border-accent-500/40 bg-accent-500/10 px-2 py-1 text-accent-200">star</span>
+            </div>
           </div>
-          <div class="border-l-2 border-accent-500/40 pl-6" data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50 text-base">No telemetry, provably</h3>
-            <p class="mt-2 text-paper-400">The application phones home to no one — no CDNs, no analytics, no update pings; everything is bundled in the binary. Even licence verification is an offline Ed25519 signature check. Remote images stay blocked until you say otherwise.</p>
-          </div>
-          <div class="border-l-2 border-accent-500/40 pl-6" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50 text-base">Open, all the way down</h3>
-            <p class="mt-2 text-paper-400">AGPL-3.0. One Go binary serving htmx and Alpine.js over SQLite — small enough to read end to end, boring enough to run for years. <code class="font-mono text-xs text-paper-200">make verify-free</code> proves the free build contains zero commercial code.</p>
-          </div>
-          <div class="border-l-2 border-accent-500/40 pl-6" data-reveal="60">
-            <h3 class="font-display font-semibold text-paper-50 text-base">Yours on bad days</h3>
-            <p class="mt-2 text-paper-400">If this project stopped tomorrow, nothing changes for you: the binary keeps running, the source is yours under the AGPL, and your mail was never locked anywhere to begin with. That is the whole point.</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ================================ Pricing teaser ================================ -->
-    <section id="pricing" aria-labelledby="pricing-h" class="border-t border-white/5 bg-ink-900/40">
-      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-20 sm:py-28">
-        <div class="max-w-2xl" data-reveal>
-          <p class="kicker">Pricing</p>
-          <h2 id="pricing-h" class="display mt-3 text-3xl sm:text-4xl">Free where you live. Paid where machines drive.</h2>
+        </figure>
+        <div data-reveal>
+          <p class="kicker">Filters</p>
+          <h2 id="filters-h" class="display mt-3 text-3xl sm:text-4xl">Rules that work while you don't.</h2>
           <p class="mt-4 text-paper-400 leading-relaxed">
-            The line is simple and it does not move: a human driving mimux is free, forever.
-            Something other than a human driving it — the API, the MCP server, webhooks — is
-            the paid layer.
+            A straightforward rule engine: conditions in, actions out — move, label,
+            forward, mark read, star, delete, notify. Rules run on your server as mail
+            arrives, so the sorting is already done on every device you open.
+          </p>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            No sieve scripts to learn, no per-device duplication, and when a rule files
+            something you can see exactly which rule did it.
           </p>
         </div>
+      </div>
+    </section>
 
-        <div class="mt-12 grid md:grid-cols-2 gap-5 max-w-3xl">
-          <div class="card p-7 flex flex-col" data-reveal>
-            <h3 class="font-display font-semibold text-paper-50">The client</h3>
-            <p class="mt-4 font-display text-4xl font-bold text-paper-50">€0</p>
-            <p class="mt-1 font-mono text-xs text-paper-500">forever · AGPL-3.0</p>
-            <p class="mt-5 text-sm text-paper-400 leading-relaxed">The complete mail client: sync, search, compose, filters, PWA, push, AI compose with your own key. Nothing held back.</p>
-            <a href="https://github.com/mattmezza/mimux" class="btn btn-secondary mt-7">Get the client</a>
+    <!-- ================================ PWA ================================ -->
+    <section id="pwa" aria-labelledby="pwa-h" class="border-t border-white/5 bg-ink-900/40">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
+        <div class="max-w-2xl" data-reveal>
+          <p class="kicker">Everywhere</p>
+          <h2 id="pwa-h" class="display mt-3 text-3xl sm:text-4xl">An app on your phone, without an app store.</h2>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            mimux installs as a PWA on desktop and mobile, with an offline fallback to
+            your last-synced inbox. Notifications reach you even when it's closed:
+          </p>
+        </div>
+        <div class="mt-10 grid sm:grid-cols-2 gap-5 max-w-3xl">
+          <div class="card p-6" data-reveal>
+            <h3 class="font-display font-semibold text-paper-50">Web Push, end-to-end encrypted</h3>
+            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Straight from your server to your devices. Payloads are encrypted, so the push relay in the middle sees noise, not your mail.</p>
           </div>
-          <div class="card p-7 flex flex-col border-accent-500/40" data-reveal="80">
-            <h3 class="font-display font-semibold text-paper-50">mimux pro</h3>
-            <p class="mt-4 font-display text-4xl font-bold text-paper-50">€49<span class="text-lg text-paper-500 font-normal">/year</span></p>
-            <p class="mt-1 font-mono text-xs text-paper-500">or €99 once, perpetual · 14-day free trial</p>
-            <p class="mt-5 text-sm text-paper-400 leading-relaxed">REST API, MCP server and signed webhooks over your whole inbox. Licensed per instance, verified offline.</p>
-            <a href="/pricing/" class="btn btn-primary mt-7">See pricing</a>
+          <div class="card p-6" data-reveal data-reveal="60">
+            <h3 class="font-display font-semibold text-paper-50">Or a POST to ntfy</h3>
+            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Already running ntfy for everything else in your homelab? Point mimux at a topic and new-mail notifications join the stream.</p>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- ================================ Final CTA ================================ -->
+    <!-- ================================ Ops ================================ -->
+    <section id="ops" aria-labelledby="ops-h" class="border-t border-white/5">
+      <div class="mx-auto max-w-6xl px-5 lg:px-8 py-16 sm:py-24">
+        <div class="max-w-2xl" data-reveal>
+          <p class="kicker">Operations</p>
+          <h2 id="ops-h" class="display mt-3 text-3xl sm:text-4xl">Boring to run. That's the feature.</h2>
+          <p class="mt-4 text-paper-400 leading-relaxed">
+            You will run this for years. It's built like it knows that.
+          </p>
+        </div>
+        <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div class="card p-6" data-reveal>
+            <h3 class="font-display font-semibold text-paper-50">Backup is <code class="font-mono text-accent-300 text-sm">cp</code></h3>
+            <p class="mt-2 text-sm text-paper-400 leading-relaxed">Accounts, credentials, cache, sessions, filters, tokens — one SQLite file holds all of it. Copy the directory, and you've backed up everything.</p>
+          </div>
+          <div class="card p-6" data-reveal data-reveal="60">
+            <h3 class="font-display font-semibold text-paper-50">Zero required config</h3>
+            <p class="mt-2 text-sm text-paper-400 leading-relaxed">No config file. A fresh install boots with zero environment variables; everything else is edited in the UI and applies without a restart.</p>
+          </div>
+          <div class="card p-6" data-reveal data-reveal="120">
+            <h3 class="font-display font-semibold text-paper-50">One small binary</h3>
+            <p class="mt-2 text-sm text-paper-400 leading-relaxed">A single Go binary serving htmx and Alpine.js. No node process, no Redis, no Postgres, no queue — nothing else to babysit at 2am.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================================ CTA ================================ -->
     <section aria-labelledby="cta-h" class="relative overflow-hidden border-t border-white/5">
       <div aria-hidden="true" class="absolute inset-0 -z-10"
            style="background: radial-gradient(46rem 24rem at 50% 110%, oklch(58% 0.2 277 / 0.16), transparent 70%)"></div>
-      <div class="mx-auto max-w-3xl px-5 lg:px-8 py-24 sm:py-32 text-center">
-        <h2 id="cta-h" class="display text-3xl sm:text-5xl" data-reveal>Own your inbox again.</h2>
-        <p class="mt-5 text-paper-400 leading-relaxed max-w-xl mx-auto" data-reveal="60">
-          One command, one binary, one SQLite file. Free for you, licensed for your robots.
+      <div class="mx-auto max-w-3xl px-5 lg:px-8 py-24 sm:py-28 text-center">
+        <h2 id="cta-h" class="display text-3xl sm:text-4xl" data-reveal>All of it, free. Today.</h2>
+        <p class="mt-5 text-paper-400 max-w-xl mx-auto" data-reveal data-reveal="60">
+          One command and this whole page is running on your hardware.
         </p>
-        <div class="mt-8 flex flex-wrap justify-center gap-3" data-reveal="120">
-          <a href="#install" class="btn btn-primary">Install mimux</a>
-          <a href="https://github.com/mattmezza/mimux" class="btn btn-secondary">Read the source</a>
+        <div class="mt-8 flex flex-wrap justify-center gap-3" data-reveal data-reveal="120">
+          <a href="/#install" class="btn btn-primary">Install mimux</a>
+          <a href="/agents/" class="btn btn-secondary">See the agent layer</a>
         </div>
       </div>
     </section>
