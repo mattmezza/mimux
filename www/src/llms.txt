@@ -1,0 +1,29 @@
+# mimux
+
+> A fast, keyboard-driven email client you run yourself — one Go binary, one
+> SQLite file, no third party in the middle. The client is free and AGPL-3.0
+> forever; a paid automation layer (REST API, MCP server, webhooks) is on the
+> roadmap, so agents can act on an inbox that lives on your own hardware.
+
+## Docs
+
+- [Documentation](https://docs.mimux.dev): install, configuration, OAuth setup and the API reference.
+- [Screenshots and quick start](https://mimux.dev/#install): one `docker compose up`, zero configuration to boot.
+
+## Source
+
+- [GitHub repository](https://github.com/mattmezza/mimux): the full source, AGPL-3.0 client plus the ELv2 pro layer.
+- [Issues](https://github.com/mattmezza/mimux/issues): bug reports and questions; issues yes, PRs usually no.
+
+## Pricing
+
+- [Pricing](https://mimux.dev/#pricing): the client is free forever; the automation layer will be €49/yr or €99 perpetual.
+- [Account portal](https://account.mimux.dev): licence purchase and management, opens when the pro layer ships.
+
+## Licence
+
+- [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md): which directory is under which licence, and how to verify the split.
+
+## Contact
+
+- [Matteo Merola](mailto:mattmezza@gmail.com): maintainer. `mimux` is a trademark of Matteo Merola.

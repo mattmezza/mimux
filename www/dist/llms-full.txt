@@ -1,0 +1,115 @@
+# mimux — the self-hosted inbox your agents can act on
+
+> A fast, keyboard-driven email client you run yourself — one Go binary, one
+> SQLite file, no third party in the middle. The client is free and AGPL-3.0
+> forever; a paid automation layer (REST API, MCP server, webhooks) is on the
+> roadmap, so agents can act on an inbox that lives on your own hardware.
+
+Canonical site: <https://mimux.dev/>. This document mirrors the full content of
+the landing page for language-model consumption.
+
+## What it is
+
+mimux is a fast, keyboard-driven email client you run yourself. Point it at the
+mailboxes you already have, and read, search, triage and send from one unified
+inbox — in the browser or as an installed PWA on your phone. Your mail, your
+credentials, your machine.
+
+- Source: <https://github.com/mattmezza/mimux>
+- Docs: <https://docs.mimux.dev>
+- Account and licences: <https://account.mimux.dev>
+
+## How you get it
+
+One command to boot, zero configuration to run:
+
+```sh
+docker compose up
+# then open http://localhost:8083
+```
+
+1. **Start it.** One container, one volume, one port.
+2. **Open it.** The first visit walks you through creating your admin account.
+3. **Point it at your mail.** Add accounts under Settings → Accounts — OAuth2
+   for Gmail and Zoho, app passwords everywhere else. Changes take effect
+   without a restart.
+
+One Go binary serves the UI (htmx + Alpine.js + Tailwind) and talks IMAP and
+SMTP; one SQLite file holds everything — accounts, credentials, message cache,
+sessions, filters, saved searches, OAuth tokens. Back up the directory and
+you have backed up everything.
+
+## What it does (all free, all shipping)
+
+- **Unified inbox** across every configured account, plus a per-account view.
+  Conversation threading, unread counts and the full folder tree per account.
+- **Background sync** — IMAP IDLE with polling fallback, one connection per
+  account. Gmail and Zoho over OAuth2, everything else over passwords.
+- **Search, streamed** — instant local full-text search, plus on-demand deep
+  IMAP server search returned over SSE as results arrive.
+- **Compose** — reply, reply-all and forward over SMTP in plain text, rich text
+  or Markdown, with local draft autosave, undo-send and scheduled send.
+- **Filters and rules** — conditions → actions (move, label, forward, mark
+  read, star, delete, notify), running on incoming mail on your server.
+- **Keyboard-first** — a full shortcut set: `j`/`k` to move, `e` archive,
+  `s` star, `R`/`A`/`F` reply/reply-all/forward, `/` search, `?` help.
+- **PWA and push** — installable as an app with an offline fallback to the
+  last-synced inbox. Web Push from your own server (end-to-end encrypted
+  payloads) or a POST to any ntfy topic.
+- **AI, bring-your-own-key** — optional AI compose/reply and translate
+  (OpenRouter, Google Translate). Off by default; keys stay in your database.
+- **Backup = cp** — all state is one SQLite file.
+
+## Why self-hosted
+
+- **No account to create.** mimux talks IMAP/SMTP directly to providers you
+  already use, with credentials that live in your SQLite file.
+- **No telemetry.** The application phones home to no one: no CDNs, no
+  analytics, no tracking — everything is bundled in the binary. Remote images
+  in emails stay blocked until you allow them.
+- **Open, all the way down.** AGPL-3.0. One Go binary over SQLite — small
+  enough to read end to end, boring enough to run for years.
+- **Yours on bad days.** If the author vanishes, the binary you run keeps
+  working and the source is yours.
+
+## What is coming (roadmap — not released)
+
+Agent frameworks can search the web and run code, but they cannot read your
+mail unless you hand your inbox to a SaaS intermediary. The mimux pro layer
+closes that gap on your own hardware:
+
+- **REST API** — messages, folders, search, send, drafts and filters over HTTP,
+  with an OpenAPI spec served from the binary.
+- **MCP server** — your inbox as a first-class tool for agents: read, search,
+  triage and draft from any MCP-capable client.
+- **Webhooks** — new mail and rule matches pushed to your automation: n8n,
+  Home Assistant, your own scripts.
+
+The line does not move: **a human driving mimux is free; a machine driving
+mimux is paid.** The paid layer is automation only, published in advance so its
+arrival is a plan being executed, not a surprise.
+
+## Pricing
+
+| | Client | Automation layer |
+|---|---|---|
+| Price | €0, forever | €49/yr or €99 perpetual — when it ships |
+| Licence | AGPL-3.0 | Elastic Licence 2.0 |
+| Includes | sync, search, compose, filters, calendar, PWA, push, AI compose/translate (BYO key) | REST API, MCP server, webhooks |
+
+The split is enforced by the build, not by trust: every file in `pro/` carries
+a `//go:build pro` tag, `make verify-free` proves the free binary links none of
+it, and [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md)
+explains the whole arrangement.
+
+## This page
+
+Self-hosted, cookieless analytics (Umami) run on the author's own server: no
+cookies, no third parties, no personal data — so no cookie banner. The page
+makes exactly one external request (the analytics script) and renders fully
+with JavaScript disabled.
+
+## Contact and legal
+
+`mimux` is a trademark of Matteo Merola, maintainer: mattmezza@gmail.com.
+Issues yes, pull requests usually no — see CONTRIBUTING.md in the repository.

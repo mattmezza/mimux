@@ -16,6 +16,9 @@ jobs:
 
   release:
     needs: check
+    # Client releases only: tags look like v0.19. www-v* tags deploy the site
+    # instead (see www.yml) and must never build or push a client image.
+    if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

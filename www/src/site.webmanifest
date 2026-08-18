@@ -1,0 +1,13 @@
+{
+  "name": "mimux",
+  "short_name": "mimux",
+  "description": "The self-hosted inbox your agents can act on.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090c",
+  "theme_color": "#09090c",
+  "icons": [
+    { "src": "/img/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/img/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

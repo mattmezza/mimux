@@ -1,0 +1,53 @@
+name: www
+
+# The marketing site at mimux.dev, deployed to Cloudflare Pages.
+on:
+  release:
+    types: [published]
+  pull_request:
+    paths:
+      - "www/**"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build www/dist
+        run: |
+          npm ci
+          make www-build
+      - name: Site sanity checks
+        run: |
+          test -f www/dist/index.html
+          test -f www/dist/sitemap.xml
+          test -f www/dist/robots.txt
+          test -f www/dist/llms.txt
+          test -f www/dist/llms-full.txt
+          test -f www/dist/img/og.png
+          ! grep -rn "script src=\"http" www/dist/index.html | grep -v analytics.casa.merola.co
+
+  deploy:
+    # Only www-v* releases deploy. Client releases (v*) are handled by
+    # release.yml and never touch Pages.
+    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'www-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build www/dist
+        run: |
+          npm ci
+          make www-build
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy www/dist --project-name=mimux-www

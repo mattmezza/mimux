@@ -1,0 +1,197 @@
+@import "tailwindcss" source(none);
+
+/* Scan only the marketing pages for class names — automatic content
+   detection is off so classes from web/templates never leak in. */
+@source "./index.html";
+
+@theme {
+  /* Drop the default palette, font stacks and animation presets — the site
+     uses exactly one accent, one ink ramp, one paper ramp and two fonts.
+     Keeping the defaults would ship ~350 unused custom properties. */
+  --color-*: initial;
+  --font-*: initial;
+  --animate-*: initial;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+
+  --color-white: #fff;
+  --color-black: #000;
+  --color-transparent: transparent;
+
+  /* One accent: indigo, the same hue the app ships with. */
+  --color-accent-300: #a5b4fc;
+  --color-accent-400: #818cf8;
+  --color-accent-500: #6366f1;
+  --color-accent-600: #4f46e5;
+  --color-accent-700: #4338ca;
+
+  /* Canvas ramp, a touch cooler than raw zinc. */
+  --color-ink-950: #09090c;
+  --color-ink-900: #101014;
+  --color-ink-850: #141419;
+  --color-ink-800: #1b1b21;
+
+  --color-paper-100: #f4f4f5;
+  --color-paper-300: #d4d4d8;
+  --color-paper-400: #a1a1aa;
+  --color-paper-500: #8b8b93;
+}
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  /* optional, not swap: a late font swap would push LCP to the swap time.
+     First paint may use the system fallback; the brand font appears from
+     the first repeat view. CLS stays zero either way (Inter metrics are
+     close to the system stack). */
+  font-display: optional;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/jbm-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/jbm-500.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("../fonts/jbm-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-accent-500);
+  color: #fff;
+}
+
+/* Visible focus everywhere — the product is keyboard-first, the site is too. */
+:focus-visible {
+  outline: 2px solid var(--color-accent-400);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Hairline section label: `01 / what it is` */
+.sec-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent-400);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.sec-label::after {
+  content: "";
+  height: 1px;
+  flex: 0 0 3rem;
+  background: color-mix(in srgb, var(--color-accent-500) 45%, transparent);
+}
+
+/* Keyboard key chip — the visual signature, reused from the hero to pricing. */
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  border-radius: 0.3rem;
+  color: var(--color-paper-300);
+  background: var(--color-ink-800);
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-bottom-width: 2px;
+  white-space: nowrap;
+}
+
+/* The one flourish: a scanline that sweeps the message list, like a cursor
+   moving through mail. Pure CSS, honoured by prefers-reduced-motion above. */
+.scanline {
+  position: absolute;
+  inset-inline: 0;
+  height: 2rem;
+  top: 20%;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--color-accent-500) 14%, transparent),
+    transparent
+  );
+  animation: scan 9s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes scan {
+  0%, 100% { top: 12%; opacity: 0; }
+  8% { opacity: 1; }
+  50% { top: 72%; }
+  92% { opacity: 1; }
+}
+
+/* Dashed frames marking the spots where real product screenshots land. */
+.shot-frame {
+  border: 1px dashed rgb(255 255 255 / 0.22);
+  background:
+    repeating-linear-gradient(
+      -45deg,
+      transparent 0 18px,
+      rgb(255 255 255 / 0.025) 18px 19px
+    ),
+    var(--color-ink-900);
+}
+
+/* Hero backdrop: pure CSS — a faint indigo glow and hairline grid. Zero
+   bytes, so the hero can never have an image as its LCP element. */
+.hero-texture {
+  background:
+    radial-gradient(60rem 24rem at 78% 30%,
+      color-mix(in srgb, var(--color-accent-500) 9%, transparent),
+      transparent 70%),
+    repeating-linear-gradient(to bottom,
+      rgb(255 255 255 / 0.016) 0 1px, transparent 1px 56px);
+  mask-image: linear-gradient(to bottom, black 60%, transparent);
+}
+
+/* Below the fold, the generated scanline texture gets its moment: backdrop
+   for the automation section. CSS background, WebP with JPEG fallback. */
+.texture-band {
+  background-image: image-set(
+    url("../img/hero-1536.webp") type("image/webp"),
+    url("../img/hero-1536.jpg") type("image/jpeg")
+  );
+  background-size: cover;
+  background-position: center;
+}

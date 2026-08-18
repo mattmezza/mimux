@@ -66,6 +66,20 @@ build-account: ## Build the account.mimux.dev licence service
 docs: ## Build the API docs site into docs/dist
 	@sh scripts/docs.sh
 
+##@ Website (mimux.dev)
+.PHONY: www
+www: ## Dev the marketing site: Tailwind watch + local static server
+	mkdir -p www/dist/css
+	rsync -a --delete --exclude='app.css' --exclude='assets/' www/src/ www/dist/
+	@trap 'kill 0' INT; \
+	npx @tailwindcss/cli -i www/src/app.css -o www/dist/css/app.css --watch & \
+	(cd www/dist && python3 ../www/scripts/serve.py 8732) & \
+	wait
+
+.PHONY: www-build
+www-build: ## Build the marketing site into www/dist
+	@sh www/scripts/build.sh
+
 # Deliberately NOT wired into `make check`: the Docs workflow owns this, and a
 # stale docs/dist should not block an unrelated `make check` on a laptop.
 .PHONY: docs-check
