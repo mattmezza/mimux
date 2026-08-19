@@ -102,13 +102,15 @@ func newWebhooks(deps ext.Deps) *webhooks {
 // were one loop, which meant a drain — up to webhookBatch POSTs of up to
 // webhookTimeout each — stopped the hub channel being read, and the hub drops
 // events it cannot hand over. Nine new messages during one slow drain silently
-// became nine webhooks nobody ever sent, with no replay to recover them.
+// became nine webhooks nobody ever sent, with no replay to recover them. The
+// subscription is durable on top of that: a burst that outruns even this reader
+// makes the broadcaster wait rather than silently drop.
 //
 // Started from routes() and living as long as the process — ext.Extension has
 // no shutdown hook and there is nothing to shut down: every piece of state is in
 // SQLite, so a restart resumes mid-ladder.
 func (e *webhooks) run(ctx context.Context) {
-	events, unsubscribe := e.mail.Subscribe()
+	events, unsubscribe := e.mail.SubscribeDurable()
 	defer unsubscribe()
 	// Capacity 1, dropped when full: the nudge says "there is something due",
 	// not "there are N due", and drain reads the queue itself.

@@ -4,6 +4,7 @@ package mail
 import (
 	"strconv"
 	"testing"
+	"time"
 )
 
 // TestBroadcastKeepsNewest pins the drop policy for a subscriber that has
@@ -32,5 +33,35 @@ func TestBroadcastKeepsNewest(t *testing.T) {
 	}
 	if last := got[len(got)-1]; last != newest {
 		t.Errorf("newest event delivered = %q, want the last one broadcast: a dropped tail leaves the tab stale forever", last)
+	}
+}
+
+// TestDurableSubscriberLosesNothing: the webhook engine's events are actions to
+// take once, not "re-read the world" hints, and nothing replays them — so a
+// slow durable subscriber must make the broadcaster wait, not drop.
+func TestDurableSubscriberLosesNothing(t *testing.T) {
+	h := newHub()
+	ch, unsubscribe := h.subscribeDurable()
+	defer unsubscribe()
+
+	const n = 100
+	done := make(chan []string)
+	go func() {
+		var got []string
+		for i := 0; i < n; i++ {
+			time.Sleep(time.Millisecond) // slower than the broadcaster
+			got = append(got, (<-ch).Data)
+		}
+		done <- got
+	}()
+	for i := 0; i < n; i++ {
+		h.broadcast(Event{Type: "message-new", Data: strconv.Itoa(i)})
+	}
+
+	got := <-done
+	for i, d := range got {
+		if d != strconv.Itoa(i) {
+			t.Fatalf("event %d = %q: a durable subscriber lost an event", i, d)
+		}
 	}
 }

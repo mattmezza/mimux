@@ -181,8 +181,14 @@ func (m *Manager) AnySyncing() bool {
 	return false
 }
 
-// Subscribe returns an event channel and an unsubscribe func for SSE.
+// Subscribe returns an event channel and an unsubscribe func for SSE. Lossy:
+// a subscriber that falls behind loses its oldest events.
 func (m *Manager) Subscribe() (<-chan Event, func()) { return m.hub.subscribe() }
+
+// SubscribeDurable is Subscribe for a consumer that acts on each event once and
+// has no way to notice a missing one — the webhook engine. The broadcaster
+// waits for it instead of dropping.
+func (m *Manager) SubscribeDurable() (<-chan Event, func()) { return m.hub.subscribeDurable() }
 
 // Wake nudges an account worker to retry — used after an OAuth authorization
 // completes so a worker parked in the "authorize needed" state reconnects.
