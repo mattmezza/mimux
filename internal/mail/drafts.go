@@ -44,33 +44,41 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 	if a == nil {
 		return fmt.Errorf("unknown account %q", d.Account)
 	}
-	in := ComposeInput{
-		To: SplitAddrList(d.To), Cc: SplitAddrList(d.Cc), Bcc: SplitAddrList(d.Bcc),
-		Subject: d.Subject, Body: d.Body, Mode: d.Mode, InReplyTo: d.InReplyTo,
-		MessageID: d.MessageID, KeepBcc: true,
-	}
-	if d.InReplyTo != "" {
-		in.References = "<" + d.InReplyTo + ">"
-	}
-	// The draft's files go up with it, so the copy on the phone is the whole
-	// unfinished message. BuildMessage already multiparts for the send path.
-	atts, err := m.st.DraftAttachments(d.ID)
-	if err != nil {
-		return fmt.Errorf("draft attachments: %w", err)
-	}
-	for _, at := range atts {
-		in.Attachments = append(in.Attachments, OutAttachment{
-			Filename: at.Filename, ContentType: at.ContentType, Data: at.Data,
-		})
-	}
-	raw, msgID, err := BuildMessage(a.cfg, in, d.UpdatedAt)
-	if err != nil {
-		return fmt.Errorf("build draft: %w", err)
+	if d.ID == 0 {
+		return nil
 	}
 	return a.exec(ctx, c, func(c *imapclient.Client) error {
+		// Re-read the row HERE rather than trusting the caller's copy. The
+		// compose handler builds its store.Draft out of the posted form, so it
+		// carries no message_id, folder or uid at all — pushing that minted a
+		// FRESH Message-ID every time and expunged nothing, which is how one
+		// autosaved draft turned into a column of copies in the Drafts folder,
+		// each one a separate "from another client" row and a separate entry in
+		// the thread. exec is serialised per account, so reading in here is also
+		// what makes push N see where push N-1 landed and replace it.
+		cur, err := m.st.DraftByID(d.ID)
+		if err != nil {
+			return err
+		}
+		if cur == nil {
+			return nil // sent or discarded while this push sat in the queue
+		}
 		f, err := a.draftsFolder(c)
 		if err != nil || f == nil {
 			return err
+		}
+		raw, msgID, err := m.buildDraft(a, cur)
+		if err != nil {
+			return err
+		}
+		// Stamp the identity BEFORE the append, not after it. A push that dies
+		// between the two would otherwise mint a second Message-ID on the retry
+		// and leave the first revision unreachable — the same bug, one copy at a
+		// time. Recorded once, this id is the draft's for the rest of its life.
+		if cur.MessageID == "" {
+			if err := m.st.SetDraftMessageID(cur.ID, msgID); err != nil {
+				return err
+			}
 		}
 		// \Seen along with \Draft: an unread badge counting the user's own
 		// half-written replies is noise, and RecountUnread would show it.
@@ -94,36 +102,100 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 		}
 		// Only now that the new revision is safely on the server does the old
 		// one go.
-		if d.UID > 0 && d.FolderID != 0 {
-			if old, err := m.st.FolderByID(d.FolderID); err == nil && old != nil {
-				gone, err := dropRevision(c, old.Name, imap.UID(d.UID))
+		if cur.UID > 0 && cur.FolderID != 0 {
+			if old, err := m.st.FolderByID(cur.FolderID); err == nil && old != nil {
+				gone, err := dropRevision(c, old.Name, imap.UID(cur.UID))
 				if err != nil {
 					slog.Warn("drafts: could not remove the previous revision",
-						"account", d.Account, "draft", d.ID, "err", err)
+						"account", cur.Account, "draft", cur.ID, "err", err)
 				}
 				if gone {
-					_ = m.st.DeleteMessageByUID(old.ID, d.UID)
+					_ = m.st.DeleteMessageByUID(old.ID, cur.UID)
 				}
 			}
 		}
-		changed, err := a.syncFolder(ctx, c, f, c.Caps())
-		if err != nil {
+		if _, err := a.syncFolder(ctx, c, f, c.Caps()); err != nil {
 			return err
 		}
-		if changed {
-			a.signalListChanged()
-		}
+		// Deliberately no signalListChanged here. The only thing that changed is
+		// the revision this very save just wrote, and the user is looking at it
+		// in the compose window; broadcasting it made every open tab re-fetch its
+		// message list on each autosave — a refresh every three seconds while
+		// typing. A drafts change some OTHER client made lands on the next sync
+		// cycle's own signal instead of instantly, which is the trade.
 		if newUID == 0 {
 			// No APPENDUID: the sync above has just stored the copy we appended,
-			// so the Message-ID we stamped on it finds the UID.
+			// so the Message-ID we stamped on it finds the UID (MAX, so a leaked
+			// sibling can't win over the revision we just wrote).
 			u, err := m.st.MessageUIDByMessageID(f.ID, msgID)
 			if err != nil {
 				return err
 			}
 			newUID = imap.UID(u)
 		}
-		return m.st.ClearDraftDirty(d.ID, msgID, f.ID, uint32(newUID), d.UpdatedAt) // #nosec G115 -- UID fits uint32 by protocol
+		m.sweepDraftSiblings(c, f, msgID, uint32(newUID)) // #nosec G115 -- UID fits uint32 by protocol
+		return m.st.ClearDraftDirty(cur.ID, msgID, f.ID, uint32(newUID), cur.UpdatedAt) // #nosec G115 -- UID fits uint32 by protocol
 	})
+}
+
+// buildDraft renders the draft as the message that goes into the Drafts folder.
+func (m *Manager) buildDraft(a *account, d *store.Draft) (raw []byte, msgID string, err error) {
+	in := ComposeInput{
+		To: SplitAddrList(d.To), Cc: SplitAddrList(d.Cc), Bcc: SplitAddrList(d.Bcc),
+		Subject: d.Subject, Body: d.Body, Mode: d.Mode, InReplyTo: d.InReplyTo,
+		MessageID: d.MessageID, KeepBcc: true,
+	}
+	if d.InReplyTo != "" {
+		in.References = "<" + d.InReplyTo + ">"
+	}
+	// The draft's files go up with it, so the copy on the phone is the whole
+	// unfinished message. BuildMessage already multiparts for the send path.
+	atts, err := m.st.DraftAttachments(d.ID)
+	if err != nil {
+		return nil, "", fmt.Errorf("draft attachments: %w", err)
+	}
+	for _, at := range atts {
+		in.Attachments = append(in.Attachments, OutAttachment{
+			Filename: at.Filename, ContentType: at.ContentType, Data: at.Data,
+		})
+	}
+	raw, msgID, err = BuildMessage(a.cfg, in, d.UpdatedAt)
+	if err != nil {
+		return nil, "", fmt.Errorf("build draft: %w", err)
+	}
+	return raw, msgID, nil
+}
+
+// sweepDraftSiblings expunges any copy in the Drafts folder that carries this
+// draft's Message-ID and is not the revision just appended. Every revision of a
+// draft shares one Message-ID, so a sibling is by definition a revision that was
+// supposed to be replaced and was not: a push that died between the append and
+// the expunge, or one whose recorded UID had gone stale. Best-effort — a leftover
+// copy is a stale draft, and it is deduped off the drafts page by the Message-ID
+// it shares with the local row either way.
+//
+// It cannot reach the revisions leaked before the Message-ID was stable: those
+// each carry an id of their own and are indistinguishable from a draft written
+// in another client, so they are the user's to delete from /drafts.
+func (m *Manager) sweepDraftSiblings(c *imapclient.Client, f *store.Folder, msgID string, keep uint32) {
+	uids, err := m.st.MessageUIDsByMessageID(f.ID, msgID)
+	if err != nil || len(uids) < 2 {
+		return
+	}
+	for _, uid := range uids {
+		if uid == keep || uid == 0 {
+			continue
+		}
+		gone, err := dropRevision(c, f.Name, imap.UID(uid))
+		if err != nil {
+			slog.Warn("drafts: could not sweep a leftover revision",
+				"account", f.Account, "folder", f.Name, "uid", uid, "err", err)
+			return
+		}
+		if gone {
+			_ = m.st.DeleteMessageByUID(f.ID, uid)
+		}
+	}
 }
 
 // AdoptDraft makes a draft written in another client editable here, by giving

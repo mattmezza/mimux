@@ -629,6 +629,30 @@ func (s *Store) MessageUIDByMessageID(folderID int64, messageID string) (uint32,
 	return uint32(u.Int64), nil // #nosec G115 -- UID fits uint32 by protocol
 }
 
+// MessageUIDsByMessageID returns every UID in a folder carrying one Message-ID,
+// lowest first. Normally exactly one; more than one only when a draft push left
+// a revision behind, which is what mail.sweepDraftSiblings cleans up.
+func (s *Store) MessageUIDsByMessageID(folderID int64, messageID string) ([]uint32, error) {
+	if messageID == "" {
+		return nil, nil
+	}
+	rows, err := s.DB.Query(`SELECT uid FROM messages WHERE folder_id = ? AND message_id = ? ORDER BY uid`,
+		folderID, messageID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []uint32
+	for rows.Next() {
+		var u int64
+		if err := rows.Scan(&u); err != nil {
+			return nil, err
+		}
+		out = append(out, uint32(u)) // #nosec G115 -- UID fits uint32 by protocol
+	}
+	return out, rows.Err()
+}
+
 // SetRead records a LOCAL read/unread decision: it flips is_read and marks the
 // \Seen push as still owed (seen_dirty). Every local entry point goes through
 // here — the read handler, mark-read-at-open, filter rules — so the intent

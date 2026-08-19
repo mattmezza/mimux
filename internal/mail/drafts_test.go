@@ -493,3 +493,173 @@ func TestDropDraftRemovesAForeignCopy(t *testing.T) {
 		t.Errorf("%d mailbox row(s) left locally after the copy was expunged", len(left))
 	}
 }
+
+// autosave is what the compose handler actually does on every save, and the
+// detail that mattered: it builds the Draft out of the posted form, so the row's
+// message_id, folder and uid are NOT in it. Anything the push needs from them it
+// has to read for itself.
+func autosave(t *testing.T, a *account, c *imapclient.Client, id int64, body string) {
+	t.Helper()
+	d := &store.Draft{
+		ID: id, Account: "acct", To: "ada@example.com",
+		Subject: "Re: Recurring Monthly Invoice", Body: body, Kind: "reply",
+	}
+	if err := a.m.st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.m.pushDraft(context.Background(), c, d); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestAutosaveLeavesOneRevision is the bug autosave made unmissable: the save
+// handler posts a form, not a row, so every push minted a fresh Message-ID and
+// expunged nothing — one draft became a column of copies in the Drafts folder,
+// each one a "from another client" row on the drafts page and its own entry in
+// the thread. Four saves, one draft.
+func TestAutosaveLeavesOneRevision(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	autosave(t, a, c, 0, "one")
+	first, err := st.DraftByID(1)
+	if err != nil || first == nil {
+		t.Fatalf("DraftByID = %v, %v", first, err)
+	}
+	if first.MessageID == "" {
+		t.Fatal("the first push recorded no Message-ID")
+	}
+	for _, body := range []string{"one two", "one two three", "one two three four"} {
+		autosave(t, a, c, first.ID, body)
+	}
+
+	got, err := st.DraftByID(first.ID)
+	if err != nil || got == nil {
+		t.Fatalf("DraftByID = %v, %v", got, err)
+	}
+	if got.MessageID != first.MessageID {
+		t.Errorf("Message-ID changed under autosave: %q then %q — one draft, one identity",
+			first.MessageID, got.MessageID)
+	}
+	copies := draftCopies(t, c, "Drafts")
+	if len(copies) != 1 {
+		t.Fatalf("Drafts holds %d copies (%v) after four saves, want exactly 1", len(copies), copies)
+	}
+	if copies[0].MessageID != got.MessageID || copies[0].Deleted {
+		t.Errorf("the surviving copy is %+v, want the draft's own live revision", copies[0])
+	}
+	if body := draftRaw(t, c, "Drafts"); !bytes.Contains(body, []byte("one two three four")) {
+		t.Error("the surviving copy is not the newest revision")
+	}
+
+	// One server revision means one local row, which means one entry in the
+	// thread — the "gazillion revisions" the conversation view was showing.
+	f, _ := st.FolderBySpecial("acct", "drafts")
+	rows, err := st.ListMessages(f.ID, 10)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("the Drafts folder stores %d rows (%v), want 1", len(rows), err)
+	}
+	thread, err := st.ThreadMessages(&rows[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(thread) != 1 {
+		t.Errorf("the draft's thread renders %d entries, want 1", len(thread))
+	}
+}
+
+// TestPushDraftIsSilent: publishing a draft revision must not tell every open
+// tab to re-fetch its message list. The only thing that changed is what the user
+// is already looking at in the compose window, and with autosave on this fired
+// every few seconds — the list flickering and scrolling out from under them.
+func TestPushDraftIsSilent(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	events, unsubscribe := a.m.hub.subscribe()
+	defer unsubscribe()
+	autosave(t, a, c, 0, "typing")
+	autosave(t, a, c, 1, "typing more")
+
+	select {
+	case e := <-events:
+		t.Errorf("a draft push broadcast %q/%q — every open tab refreshes its list per autosave", e.Type, e.Data)
+	default:
+	}
+}
+
+// TestPushDraftSweepsLeftoverRevisions: a push that died between the APPEND and
+// the expunge leaves a sibling behind, and it carries the same Message-ID as the
+// draft it is a revision of. The next push takes it with it.
+func TestPushDraftSweepsLeftoverRevisions(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	autosave(t, a, c, 0, "one")
+	d, err := st.DraftByID(1)
+	if err != nil || d == nil {
+		t.Fatalf("DraftByID = %v, %v", d, err)
+	}
+	// A revision that was appended and never replaced: same Message-ID, and
+	// nothing in the row points at it.
+	raw, _, err := BuildMessage(a.cfg, ComposeInput{
+		To: []string{"ada@example.com"}, Subject: "Re: Recurring Monthly Invoice",
+		Body: "orphan", MessageID: d.MessageID,
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := user.Append("Drafts", literal{bytes.NewReader(raw)},
+		&imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft, imap.FlagSeen}}); err != nil {
+		t.Fatal(err)
+	}
+
+	autosave(t, a, c, d.ID, "one two")
+
+	if copies := draftCopies(t, c, "Drafts"); len(copies) != 1 {
+		t.Fatalf("Drafts holds %d copies (%v) after the sweep, want 1", len(copies), copies)
+	}
+	f, _ := st.FolderBySpecial("acct", "drafts")
+	if rows, _ := st.ListMessages(f.ID, 10); len(rows) != 1 {
+		t.Errorf("the swept revision left %d local rows, want 1", len(rows))
+	}
+}
+
+// TestPushDraftSkipsADraftDeletedWhileQueued: the push runs in the background,
+// so the draft can be sent or discarded before it gets its turn. Appending then
+// would put a copy of a message that no longer exists into the mailbox, with
+// nothing left to expunge it.
+func TestPushDraftSkipsADraftDeletedWhileQueued(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	d := &store.Draft{Account: "acct", To: "ada@example.com", Subject: "gone", Body: "…", Kind: "new"}
+	if err := st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.DeleteDraft(d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.m.pushDraft(context.Background(), c, d); err != nil {
+		t.Fatalf("push of a deleted draft: %v", err)
+	}
+	if copies := draftCopies(t, c, "Drafts"); len(copies) != 0 {
+		t.Errorf("Drafts holds %v, want nothing — the draft was gone before the push ran", copies)
+	}
+}

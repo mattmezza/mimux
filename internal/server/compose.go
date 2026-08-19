@@ -356,14 +356,19 @@ func (s *Server) accountByName(name string) (config.Account, bool) {
 	return config.Account{}, false
 }
 
-// handleComposeDraftSave is the explicit draft-save endpoint: POST
-// /compose/draft, fired only by the "Save draft" button (there is no autosave).
+// handleComposeDraftSave is the draft-save endpoint: POST /compose/draft, fired
+// by the "Save draft" button and — when the pref is on — by the autosave timer
+// pressing that same button.
 // The draft row is created lazily here on the first save (draft_id 0); the new
 // id is handed back as an out-of-band swap so subsequent saves update the same
 // row. Returns 204 once the id is known (the client leaves the modal open).
 // Idempotent per revision: the local row is updated in place and publishDraft
 // replaces whatever copy the last save left in the IMAP Drafts folder, so
 // hitting save ten times leaves one draft, here and on the server.
+//
+// Note what d below does NOT carry: message_id, folder_id, uid. Those belong to
+// the row, not to the form, and pushDraft re-reads them itself — see the note
+// there, it is the whole reason autosave used to litter the Drafts folder.
 func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
 	if err := parseComposeForm(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)

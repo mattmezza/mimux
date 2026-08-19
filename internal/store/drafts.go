@@ -104,6 +104,16 @@ func (s *Store) DirtyDrafts(account string, limit int) ([]Draft, error) {
 // marks it clean. A save that raced the push leaves it dirty so the next cycle
 // republishes — but the location is still stored either way, because that copy
 // is on the server and the next revision has to expunge it.
+// SetDraftMessageID records the draft's identity on its own, before the first
+// revision is appended. It is deliberately separate from ClearDraftDirty, which
+// says "a revision landed HERE" and cannot honestly be called before the APPEND:
+// a push interrupted in between would otherwise come back, find no Message-ID
+// and mint a second one, orphaning the copy it already wrote.
+func (s *Store) SetDraftMessageID(id int64, messageID string) error {
+	_, err := s.DB.Exec(`UPDATE drafts SET message_id = ? WHERE id = ?`, messageID, id)
+	return err
+}
+
 func (s *Store) ClearDraftDirty(id int64, messageID string, folderID int64, uid uint32, updatedAt time.Time) error {
 	_, err := s.DB.Exec(`UPDATE drafts SET message_id = ?, folder_id = ?, uid = ?,
 		imap_dirty = CASE WHEN updated_at = ? THEN 0 ELSE 1 END WHERE id = ?`,
