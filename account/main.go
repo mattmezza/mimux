@@ -8,10 +8,13 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"database/sql"
 	"embed"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,8 +23,11 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"syscall"
@@ -56,8 +62,8 @@ type config struct {
 	currentVersion string
 	dbPath         string
 
-	stripeSecret   string
-	webhookSecret  string
+	stripeSecret  string
+	webhookSecret string
 
 	smtpHost string
 	smtpPort string
@@ -71,6 +77,7 @@ type app struct {
 	db   *sql.DB
 	key  ed25519.PrivateKey
 	tmpl map[string]*template.Template
+	csp  string
 	send mailer
 	// mail counts the sends still in flight, so shutdown can wait for them and
 	// tests can assert on delivery without racing the goroutine.
@@ -236,7 +243,72 @@ func (a *app) routes() http.Handler {
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-	return mux
+	return a.withCSP(mux)
+}
+
+// The policy lives here rather than in nginx/account.mimux.dev.conf because
+// that file is the pre-certbot copy: certbot rewrites the vhost in place on the
+// VPS and nothing re-copies it, so a header added there would never reach
+// production. The container image is what a release actually ships.
+//
+// 'self' covers the fonts and the form posts; checkout.stripe.com is needed
+// because /checkout answers with a 303 to Stripe's hosted card form and
+// form-action is enforced on the redirect target, not just the action URL.
+const cspBase = "default-src 'self'; img-src 'self'; font-src 'self'; " +
+	"object-src 'none'; base-uri 'none'; " +
+	"form-action 'self' https://checkout.stripe.com; frame-ancestors 'none'"
+
+func (a *app) withCSP(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Security-Policy", a.csp)
+		h.ServeHTTP(w, r)
+	})
+}
+
+var inlineBlock = regexp.MustCompile(`(?s)<(script|style)>(.*?)</(?:script|style)>`)
+
+// buildCSP whitelists the pages' inline <style> and <script> blocks by hash,
+// taken from what the templates render rather than from what they contain:
+// html/template rewrites both elements on the way out (it strips comments, for
+// one), so the bytes on disk are not the bytes the browser hashes.
+//
+// Computing the digests here also beats writing them down. A hash nobody
+// recomputes after touching the stylesheet blocks the stylesheet outright,
+// which loses all styling on a page that still returns 200 and so looks
+// perfectly fine to every check that is not a browser.
+func (a *app) buildCSP() error {
+	// Every page renders with the plain landing-page data: no template action
+	// sits inside a <style> or a <script>, so the blocks are the same whatever
+	// this is, and the branch each page takes is the one a visitor sees first.
+	data := a.pageData(&http.Request{URL: &url.URL{}})
+	var buf bytes.Buffer
+	seen := map[string]bool{}
+	src := map[string][]string{"script": {}, "style": {}}
+	for name, t := range a.tmpl {
+		buf.Reset()
+		if err := t.ExecuteTemplate(&buf, "layout", data); err != nil {
+			return fmt.Errorf("csp: render %s: %w", name, err)
+		}
+		for _, m := range inlineBlock.FindAllSubmatch(buf.Bytes(), -1) {
+			sum := sha256.Sum256(m[2])
+			hash := "'sha256-" + base64.StdEncoding.EncodeToString(sum[:]) + "'"
+			if seen[hash] {
+				continue
+			}
+			seen[hash] = true
+			src[string(m[1])] = append(src[string(m[1])], hash)
+		}
+	}
+	// Sorted because a.tmpl is a map: the policy should not reshuffle itself
+	// between boots for no reason.
+	sort.Strings(src["script"])
+	sort.Strings(src["style"])
+	a.csp = strings.Join([]string{
+		cspBase,
+		strings.Join(append([]string{"script-src 'self'"}, src["script"]...), " "),
+		strings.Join(append([]string{"style-src 'self'"}, src["style"]...), " "),
+	}, "; ")
+	return nil
 }
 
 // handleRetrieve resends licence keys, or a billing-portal link, to the address
@@ -366,7 +438,9 @@ func (a *app) parseTemplates() error {
 		}
 		a.tmpl[name] = t
 	}
-	return nil
+	// Chained rather than called beside it: the policy is derived from these
+	// templates, and one entry point is one thing fewer to forget.
+	return a.buildCSP()
 }
 
 func (a *app) page(name string) http.HandlerFunc {
