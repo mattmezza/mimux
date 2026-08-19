@@ -339,6 +339,11 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 		}
 		return c.Expunge().Close()
 	}); err != nil {
+		// The move did not happen, so the server still has the message where it
+		// was. Put the row back there and clear the pending marker, or an
+		// optimistically moved row would sit in the wrong folder with a UID that
+		// resolves nowhere and reconciliation permanently skipping it.
+		_ = m.st.SetMessageFolder(msg.ID, src.ID)
 		return err
 	}
 	// The row's UID belonged to the source folder and means nothing in the
