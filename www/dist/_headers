@@ -5,11 +5,14 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=()
   # The only external origin permitted is the self-hosted Umami instance —
   # the privacy claim in the footer depends on this staying exact.
-  # form-action names account.mimux.dev and nothing else: the buy buttons on
-  # /pricing/ are forms that POST to its /checkout, which redirects to Stripe,
-  # so one click gets to the card form. 'none' blocked that outright. Anywhere
-  # wider would let injected markup post a visitor's input off-site.
-  Content-Security-Policy: default-src 'self'; script-src 'self' https://analytics.casa.merola.co; connect-src 'self' https://analytics.casa.merola.co; img-src 'self'; style-src 'self' 'sha256-+O4JnSoEM9vR3Ht2qVjAIPvjzSYEQuZ9bPElR6mnNsY='; font-src 'self'; object-src 'none'; base-uri 'none'; form-action https://account.mimux.dev; frame-ancestors 'none'
+  # form-action names the two hosts a buy button touches and nothing else: the
+  # /pricing/ forms POST to account.mimux.dev/checkout, which 303s to Stripe's
+  # hosted card form. form-action is enforced on the redirect target too, so
+  # checkout.stripe.com has to be listed or the browser blocks the submission
+  # outright — and it reports the original action URL, which makes it look like
+  # account.mimux.dev is the one being refused. Anywhere wider would let
+  # injected markup post a visitor's input off-site.
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://analytics.casa.merola.co; connect-src 'self' https://analytics.casa.merola.co; img-src 'self'; style-src 'self' 'sha256-+O4JnSoEM9vR3Ht2qVjAIPvjzSYEQuZ9bPElR6mnNsY='; font-src 'self'; object-src 'none'; base-uri 'none'; form-action https://account.mimux.dev https://checkout.stripe.com; frame-ancestors 'none'
 
 /img/*.webp
   Cache-Control: public, max-age=31536000, immutable
