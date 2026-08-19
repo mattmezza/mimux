@@ -22,7 +22,7 @@ import (
 // It also never touches a.setStatus: account health in the status bar is the
 // interactive worker's story, and a warmer hiccup must not read as "error".
 
-// NOTE: 200 rows per query, one message per FETCH, inbox only. Collect()
+// NOTE: 200 rows per query, one message per FETCH. Collect()
 // buffers whole raw messages, so a chunk of N holds N × up to 25MB at once —
 // nothing is waiting on this loop, so it trades that spike for round trips.
 // Raise warmChunk only with a streaming fetch (FetchCommand.Next) behind it.
@@ -35,6 +35,14 @@ const (
 	warmChunk    = 1
 	warmChunkGap = 100 * time.Millisecond
 )
+
+// warmFolders are the special-use folders worth warming, in order. The inbox is
+// where reading happens; the Drafts folder is where opening a draft written on
+// another device otherwise pays a cold BODY[] fetch — for adopting one, twice
+// over. Both answer to the same body-cache size, and a Drafts folder holds a
+// handful of messages against an inbox's thousands, so the second pass costs an
+// extra SELECT and next to nothing else.
+var warmFolders = []string{"inbox", "drafts"}
 
 func (a *account) signalWarm() {
 	select {
@@ -97,33 +105,43 @@ func (a *account) warmSession(ctx context.Context, c *imapclient.Client) error {
 	}
 }
 
-// warmPass trims the body cache to its configured size, then caches every
-// uncached body inside it, a batch at a time. It stops when a batch caches
+// warmPass warms each of warmFolders in turn.
+func (a *account) warmPass(ctx context.Context, c *imapclient.Client) error {
+	_, _, _, cacheSize := a.syncSettings()
+	for _, special := range warmFolders {
+		f, err := a.m.st.FolderBySpecial(a.cfg.Name, special)
+		if err != nil || f == nil {
+			continue // not synced yet: the first sync will signal us
+		}
+		if err := a.warmFolder(ctx, c, f, cacheSize); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// warmFolder trims one folder's body cache to its configured size, then caches
+// every uncached body inside it, a batch at a time. It stops when a batch caches
 // nothing new, so messages that never resolve (expunged UIDs, unparseable
 // bodies) can't spin the loop. A cache size of 0 means "off": prune everything
 // and fetch bodies only when the user opens them.
-func (a *account) warmPass(ctx context.Context, c *imapclient.Client) error {
-	inbox, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox")
-	if err != nil || inbox == nil {
-		return nil // not synced yet: the first sync will signal us
-	}
-	_, _, _, cacheSize := a.syncSettings()
-	if n, err := a.m.st.PruneMessageBodies(inbox.ID, cacheSize); err != nil {
+func (a *account) warmFolder(ctx context.Context, c *imapclient.Client, folder *store.Folder, cacheSize int) error {
+	if n, err := a.m.st.PruneMessageBodies(folder.ID, cacheSize); err != nil {
 		slog.Debug("body cache prune failed", "account", a.cfg.Name, "err", err)
 	} else if n > 0 {
-		slog.Debug("body cache pruned", "account", a.cfg.Name, "dropped", n, "keep", cacheSize)
+		slog.Debug("body cache pruned", "account", a.cfg.Name, "folder", folder.Name, "dropped", n, "keep", cacheSize)
 	}
 	if cacheSize <= 0 {
 		return nil
 	}
 	selected := false
 	for ctx.Err() == nil {
-		msgs, err := a.m.st.MessagesWithoutBody(inbox.ID, cacheSize, warmBatch)
+		msgs, err := a.m.st.MessagesWithoutBody(folder.ID, cacheSize, warmBatch)
 		if err != nil || len(msgs) == 0 {
 			return nil
 		}
 		if !selected {
-			if _, err := c.Select(inbox.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+			if _, err := c.Select(folder.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 				return err
 			}
 			selected = true
