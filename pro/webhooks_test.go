@@ -407,7 +407,77 @@ func TestWebhookRefusesNonHTTPURL(t *testing.T) {
 	e, _, _ := testEngine(t)
 	ep := &store.WebhookEndpoint{ID: 1, URL: "file:///etc/passwd", Secret: "s"}
 	d := &store.WebhookDelivery{EventType: "ping", DeliveryID: "x", Payload: "{}"}
-	if code, err := e.post(context.Background(), ep, d); err == nil || code != 0 {
+	if code, _, err := e.post(context.Background(), ep, d); err == nil || code != 0 {
 		t.Errorf("post to %q = %d, %v; want a refusal", ep.URL, code, err)
+	}
+}
+
+// TestWebhookRecordsResponseAndTiming: the deliveries screen is only useful if
+// the engine keeps what the receiver said and how long it took saying it.
+func TestWebhookRecordsResponseAndTiming(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte("unknown event type"))
+	}))
+	defer srv.Close()
+
+	e, st, _ := testEngine(t, time.Hour) // one rung: it dies on the first attempt
+	ep := seedEndpoint(t, st, srv.URL, "message.received")
+	e.fire("message.received", map[string]any{"subject": "hi"})
+	e.drain(context.Background())
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 {
+		t.Fatalf("log = %+v", log)
+	}
+	d := log[0]
+	if d.LastStatusCode != http.StatusBadRequest || d.ResponseBody != "unknown event type" {
+		t.Errorf("response not recorded: code %d, body %q", d.LastStatusCode, d.ResponseBody)
+	}
+	if d.DurationMS < 0 {
+		t.Errorf("duration = %d ms", d.DurationMS)
+	}
+}
+
+// TestWebhookFailureEmailIsDedupedPerDay: a receiver that is down all day
+// produces one email, not one per dead delivery. The stamp is what enforces it,
+// and it is written whether or not the SMTP send then works — a mail server
+// that is also down must not turn into an unbounded retry of its own.
+func TestWebhookFailureEmailIsDedupedPerDay(t *testing.T) {
+	e, st, _ := testEngine(t)
+	// One account, so notifyFailure has somewhere to send. The manager has no
+	// live connection for it, so Send fails immediately and nothing dials out.
+	e.cfg.Accounts = []config.Account{{Name: "acct", Email: "me@example.test"}}
+	ep := seedEndpoint(t, st, "https://example.test/hook", "message.received")
+	d := &store.WebhookDelivery{EndpointID: ep.ID, EventType: "message.received", DeliveryID: "x", Payload: "{}"}
+	if err := st.EnqueueWebhookDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	d.Status, d.Attempts = store.WebhookDead, 7
+
+	e.notifyFailure(context.Background(), ep, d)
+	first, _ := st.WebhookEndpointByID(ep.ID)
+	if first.FailureEmailAt.IsZero() {
+		t.Fatal("the first dead delivery did not stamp a failure email")
+	}
+
+	// A second dead delivery the same day: the stamp is what the engine reads,
+	// so hand it the fresh endpoint rather than the stale struct.
+	e.notifyFailure(context.Background(), first, d)
+	second, _ := st.WebhookEndpointByID(ep.ID)
+	if !second.FailureEmailAt.Equal(first.FailureEmailAt) {
+		t.Errorf("a second failure the same day sent another email: %v then %v",
+			first.FailureEmailAt, second.FailureEmailAt)
+	}
+
+	// A day later it is due again.
+	if err := st.MarkWebhookFailureEmail(ep.ID, time.Now().Add(-25*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := st.WebhookEndpointByID(ep.ID)
+	e.notifyFailure(context.Background(), old, d)
+	again, _ := st.WebhookEndpointByID(ep.ID)
+	if !again.FailureEmailAt.After(old.FailureEmailAt) {
+		t.Errorf("a failure a day later did not send: %v", again.FailureEmailAt)
 	}
 }

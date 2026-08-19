@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mattmezza/mimux/internal/config"
 	"github.com/mattmezza/mimux/internal/ext"
 	"github.com/mattmezza/mimux/internal/mail"
 	"github.com/mattmezza/mimux/internal/store"
@@ -49,6 +51,11 @@ const webhookBatch = 20
 // http→https and a path move; anything longer is a misconfigured receiver.
 const webhookMaxRedirects = 2
 
+// webhookResponseKeep is how much of a receiver's reply is stored for the
+// deliveries screen. An error message fits; a stack trace or an HTML error page
+// does not, and neither is worth keeping a hundred copies of.
+const webhookResponseKeep = 2 << 10
+
 // retryLadder is the delay before attempt N+1, indexed by the number of
 // attempts already made: 0s, 1m, 5m, 30m, 2h, 8h, 14h. Seven attempts spread
 // over ~24.5h, front-loaded because most failures are a receiver restarting and
@@ -65,6 +72,7 @@ var retryLadder = []time.Duration{
 type webhooks struct {
 	store  *store.Store
 	mail   *mail.Manager
+	cfg    *config.Config
 	client *http.Client
 	tick   time.Duration
 	ladder []time.Duration
@@ -74,6 +82,7 @@ func newWebhooks(deps ext.Deps) *webhooks {
 	return &webhooks{
 		store: deps.Store,
 		mail:  deps.Mail,
+		cfg:   deps.Cfg,
 		client: &http.Client{
 			Timeout: webhookTimeout,
 			CheckRedirect: func(_ *http.Request, via []*http.Request) error {
@@ -278,9 +287,12 @@ func (e *webhooks) drain(ctx context.Context) {
 // 429, and the other 4xx, because a misconfigured receiver is usually
 // misconfigured temporarily — walks the ladder and then dies.
 func (e *webhooks) attempt(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) {
-	code, err := e.post(ctx, ep, d)
+	started := time.Now()
+	code, body, err := e.post(ctx, ep, d)
 	d.Attempts++
 	d.LastStatusCode = code
+	d.DurationMS = int(time.Since(started).Milliseconds())
+	d.ResponseBody = body
 	d.LastError = ""
 	if err != nil {
 		d.LastError = truncate(err.Error(), 300)
@@ -315,21 +327,26 @@ func (e *webhooks) attempt(ctx context.Context, ep *store.WebhookEndpoint, d *st
 		slog.Warn("webhooks: delivery failed", "endpoint", ep.ID, "event", d.EventType,
 			"status", d.Status, "code", code, "attempts", d.Attempts)
 	}
+	// A delivery that is never coming back is worth an email; a receiver that is
+	// down all day is not worth forty of them. See notifyFailure.
+	if d.Status == store.WebhookDead {
+		e.notifyFailure(ctx, ep, d)
+	}
 }
 
 // post sends one attempt and returns the response status (0 when the request
-// never got an answer).
-func (e *webhooks) post(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) (int, error) {
+// never got an answer) and the first bytes of what came back.
+func (e *webhooks) post(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) (int, string, error) {
 	// The store refuses anything else on the way in; this is the second lock on
 	// the same door, because this is the line that actually dials out.
 	if !strings.HasPrefix(ep.URL, "http://") && !strings.HasPrefix(ep.URL, "https://") {
-		return 0, errors.New("refusing to POST to a non-http(s) URL")
+		return 0, "", errors.New("refusing to POST to a non-http(s) URL")
 	}
 	ctx, cancel := context.WithTimeout(ctx, webhookTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ep.URL, strings.NewReader(d.Payload))
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "mimux-webhooks/1")
@@ -338,13 +355,85 @@ func (e *webhooks) post(ctx context.Context, ep *store.WebhookEndpoint, d *store
 	req.Header.Set("X-Mimux-Signature", signature(ep.Secret, time.Now().Unix(), d.Payload))
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	// Read a little of the body so the connection can be reused, and discard
-	// it: a webhook receiver's reply is not ours to keep.
+	// Read a little of the body: enough for the connection to be reused, and
+	// enough for "HTTP 400" to become "HTTP 400: unknown event type" on the
+	// deliveries screen. The rest is drained and dropped.
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, webhookResponseKeep))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4<<10))
-	return resp.StatusCode, nil
+	return resp.StatusCode, strings.ToValidUTF8(string(body), ""), nil
+}
+
+// notifyFailure emails the user that an endpoint is dropping deliveries — at
+// most once a day per endpoint, counted from the last one actually sent.
+//
+// The stamp is written before the send, not after: a mail server that hangs for
+// the whole timeout must not become a second email on the next dead delivery.
+// Sent from (and to) the first configured account, which is the mailbox this
+// person is reading in mimux; an install with no account yet gets no mail and
+// no error, because there is nothing to send it with.
+func (e *webhooks) notifyFailure(ctx context.Context, ep *store.WebhookEndpoint, d *store.WebhookDelivery) {
+	now := time.Now()
+	if !ep.FailureEmailDue(now) {
+		return
+	}
+	accts := e.cfg.Accounts
+	if len(accts) == 0 {
+		return
+	}
+	to := accts[0].Email
+	if to == "" {
+		return
+	}
+	if err := e.store.MarkWebhookFailureEmail(ep.ID, now); err != nil {
+		slog.Warn("webhooks: stamping failure email", "endpoint", ep.ID, "err", err)
+		return // no stamp, no send: an unstamped send is an unbounded send
+	}
+	go func() {
+		// Markdown, so the message carries the plain text as written and the
+		// HTML part the house renderer builds from it — the same pair every
+		// other mimux message ships.
+		_, err := e.mail.Send(context.WithoutCancel(ctx), accts[0].Name, mail.ComposeInput{
+			To:      []string{to},
+			Subject: "mimux: a webhook is failing",
+			Mode:    "markdown",
+			Body:    failureMailBody(ep, d, e.cfg.Server.BaseURL),
+		})
+		if err != nil {
+			slog.Warn("webhooks: failure email", "endpoint", ep.ID, "err", err)
+		}
+	}()
+}
+
+// failureMailBody is the failure notice. It says which endpoint, what happened
+// and where to look — never the payload, which is mail metadata that has no
+// business being re-sent through a second channel.
+func failureMailBody(ep *store.WebhookEndpoint, d *store.WebhookDelivery, baseURL string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "A webhook delivery to **%s** gave up after %d attempts.\n\n",
+		ep.URL, d.Attempts)
+	fmt.Fprintf(&b, "- Event: `%s`\n", d.EventType)
+	fmt.Fprintf(&b, "- Delivery: `%s`\n", d.DeliveryID)
+	if d.LastStatusCode != 0 {
+		fmt.Fprintf(&b, "- Last response: HTTP %d\n", d.LastStatusCode)
+	}
+	if d.LastError != "" {
+		fmt.Fprintf(&b, "- Last error: %s\n", d.LastError)
+	}
+	b.WriteString("\n")
+	if !ep.Active {
+		b.WriteString("The endpoint has been switched off, so nothing more is queued for it. " +
+			"Fix the receiver, then press Resume in Settings.\n\n")
+	}
+	if baseURL != "" {
+		fmt.Fprintf(&b, "The full log, with the request body and the response: %s/settings/webhooks/%d/deliveries\n\n",
+			strings.TrimRight(baseURL, "/"), ep.ID)
+	}
+	b.WriteString("You will not get another message about this endpoint for 24 hours, " +
+		"however many deliveries fail in the meantime.\n")
+	return b.String()
 }
 
 // signature builds the X-Mimux-Signature header: `t=<unix>,v1=<hex>` where the
