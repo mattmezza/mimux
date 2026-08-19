@@ -2,13 +2,23 @@
 <div id="accounts-overlay" hidden
      class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
      onclick="this.hidden = true">
-  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto" onclick="event.stopPropagation()"
+  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto flex flex-col" onclick="event.stopPropagation()"
        role="dialog" aria-modal="true" aria-label="Accounts">
-    <h2 class="text-zinc-100 font-semibold mb-4">Accounts</h2>
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <h2 class="text-zinc-100 font-semibold">Accounts</h2>
+      <button type="button" title="Close" aria-label="Close" onclick="document.getElementById('accounts-overlay').hidden = true"
+        class="shrink-0 p-1.5 -m-1.5 rounded-md text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors duration-150">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
     {{/* Fetched on every open (the mimux:accounts event body-dispatched by the
          status bar), so the counters are never a stale page render. */}}
     <div id="accounts-info" hx-get="/accounts/info" hx-trigger="mimux:accounts from:body"
          class="text-xs text-zinc-500">Loading…</div>
+    <div class="mt-4 pt-3 border-t border-zinc-700 flex justify-end">
+      <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
+        onclick="document.getElementById('accounts-overlay').hidden = true">Close</button>
+    </div>
   </div>
 </div>
 {{end}}

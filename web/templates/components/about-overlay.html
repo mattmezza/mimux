@@ -2,13 +2,20 @@
 <div id="about-overlay" hidden
      class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
      onclick="this.hidden = true">
-  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm" onclick="event.stopPropagation()">
-    <div class="flex items-center gap-3 mb-4">
-      <img src="/static/icons/icon-192.png" alt="" width="40" height="40" class="w-10 h-10 rounded-lg shrink-0">
-      <div>
-        <h2 class="text-zinc-100 font-semibold">mimux</h2>
-        <p class="text-xs text-zinc-500">A self-hosted email client, run yourself.</p>
+  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm" onclick="event.stopPropagation()"
+       role="dialog" aria-modal="true" aria-label="About mimux">
+    <div class="flex items-start justify-between gap-3 mb-4">
+      <div class="flex items-center gap-3">
+        <img src="/static/icons/icon-192.png" alt="" width="40" height="40" class="w-10 h-10 rounded-lg shrink-0">
+        <div>
+          <h2 class="text-zinc-100 font-semibold">mimux</h2>
+          <p class="text-xs text-zinc-500">A self-hosted email client, run yourself.</p>
+        </div>
       </div>
+      <button type="button" title="Close" aria-label="Close" onclick="document.getElementById('about-overlay').hidden = true"
+        class="shrink-0 p-1.5 -m-1.5 rounded-md text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors duration-150">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
     </div>
     <div class="space-y-3 text-xs text-zinc-400">
       <div>
