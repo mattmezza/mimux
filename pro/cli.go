@@ -98,6 +98,7 @@ var cliCommands = []cliCommand{
 	{"move", "<id> <folder-id|archive|spam|trash>", "mail:modify", "Move a message.", cliMove},
 	{"draft", "", "mail:send", "Save a draft — nothing is sent.", cliDraft},
 	{"send", "", "mail:send", "Send a message now (-dry-run previews it).", cliSend},
+	{"webhooks", "<subcommand>", "webhooks:manage", "Webhook tools; `listen` forwards live events to a local URL.", cliWebhooks},
 }
 
 // CLIVerbs lists mimux mail's verb names, for cmd/mimux's `mimux completion`
@@ -109,6 +110,12 @@ func CLIVerbs() []string {
 		verbs[i] = cmd.name
 	}
 	return verbs
+}
+
+// CLISubverbs is the same hook one level down, for the verbs that nest:
+// verb name → its subcommands. Only `webhooks` has any today.
+func CLISubverbs() map[string][]string {
+	return map[string][]string{"webhooks": webhookSubverbs()}
 }
 
 // RunCLI is the `mimux mail` subcommand. Returns a process exit code: 0 fine,
