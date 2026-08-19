@@ -292,7 +292,8 @@ next_steps() {
 		say "  $name mail login https://mail.example.com"
 	fi
 	say ""
-	say "Later on, '$name upgrade' replaces it with the newest release."
+	say "Later on, '$name upgrade' replaces it with the newest release,"
+	say "and '$name completion bash' or '$name completion zsh' prints tab completion."
 	# Explicit, because this is the last thing main() runs and so the script's
 	# exit status: a bare `if` that happens to be false would report a failure
 	# for an install that went perfectly.
