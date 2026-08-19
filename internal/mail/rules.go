@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/emersion/go-imap/v2/imapclient"
 
@@ -104,9 +105,12 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 		// the connection threaded through.
 		return m.moveToFolder(ctx, c, msg, "trash")
 	case filter.ActionForward:
-		// Off the worker, like notifyForRule below: forwarding talks SMTP and then
-		// APPENDs to Sent via a.submit, which the goroutine running this sync
-		// cannot drain until it returns. NOTE: the copy + a logged error is
+		if m.ownAddress(msg.Account, act.Arg) {
+			return fmt.Errorf("refusing to forward to %s: it is this account's own address, so the copy would arrive back in the inbox and match the rule again", act.Arg)
+		}
+		// Off the worker: forwarding talks SMTP and then APPENDs to Sent via
+		// a.submit, which the goroutine running this sync cannot drain until it
+		// returns. NOTE: the copy + a logged error is
 		// the whole error handling; give it the outbox treatment (store.Outbox +
 		// the scheduler's retry) if forwards ever need to survive a restart.
 		fwd := *msg
@@ -130,6 +134,30 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 	default:
 		return fmt.Errorf("filter: unknown action %q", act.Type)
 	}
+}
+
+// ownAddress reports whether addr is this account's own address, or one of its
+// aliases. A "forward" action pointed there is a mail loop with no brake: the
+// copy lands back in the inbox, the same rule matches it (the subject only
+// grows another Fwd:), and it forwards again.
+func (m *Manager) ownAddress(account, addr string) bool {
+	a := m.account(account)
+	if a == nil {
+		return false
+	}
+	want := strings.ToLower(bareAddr(strings.TrimSpace(addr)))
+	if want == "" {
+		return false
+	}
+	if strings.EqualFold(bareAddr(a.cfg.Email), want) {
+		return true
+	}
+	for _, al := range a.cfg.Aliases {
+		if strings.EqualFold(bareAddr(al.Email), want) {
+			return true
+		}
+	}
+	return false
 }
 
 // forwardMessage sends msg on to a new recipient as part of a "forward"
