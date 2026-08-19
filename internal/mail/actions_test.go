@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -73,6 +74,110 @@ func TestUserActionsBroadcast(t *testing.T) {
 		case e := <-events:
 			t.Errorf("%s broadcast twice: also %q", act.name, e.Type)
 		default:
+		}
+	}
+}
+
+// nextUpdate returns the next message-updated event's data, or fails.
+func nextUpdate(t *testing.T, events <-chan Event) string {
+	t.Helper()
+	for {
+		select {
+		case e := <-events:
+			if e.Type == "message-updated" {
+				return e.Data
+			}
+		case <-time.After(time.Second):
+			t.Fatal("no message-updated event was published")
+			return ""
+		}
+	}
+}
+
+// TestMutationsPublishMessageUpdated: each of the four mutation helpers
+// announces what it changed, by store id, once the change has actually landed.
+func TestMutationsPublishMessageUpdated(t *testing.T) {
+	st := testStore(t)
+	c := newTestIMAP(t, testMessage("ada@example.com", "hi"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncInbox(t, a, c)
+	a.setStatus("ok", "") // stamps LastSync: the backfill is over
+
+	inbox, err := st.FolderBySpecial("acct", "inbox")
+	if err != nil || inbox == nil {
+		t.Fatalf("FolderBySpecial(inbox) = %v, %v", inbox, err)
+	}
+	msg, err := st.MessageByFolderUID(inbox.ID, 1)
+	if err != nil || msg == nil {
+		t.Fatalf("synced message not found: %v", err)
+	}
+
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	ctx := context.Background()
+	id := strconv.FormatInt(msg.ID, 10)
+
+	// Each runs on the sync's own connection, so nothing waits on a.cmds.
+	for _, step := range []struct {
+		name string
+		do   func() error
+		want string
+	}{
+		{"star", func() error { return m.setStarred(ctx, c, msg, true) }, id + " starred"},
+		{"unstar", func() error { return m.setStarred(ctx, c, msg, false) }, id + " unstarred"},
+		{"read", func() error { return m.setRead(ctx, c, msg, true) }, id + " read"},
+		{"label", func() error { return m.SetLabel(msg, "work", true) }, id + " labeled"},
+		{"unlabel", func() error { return m.SetLabel(msg, "work", false) }, id + " unlabeled"},
+		{"move", func() error { return m.moveToFolder(ctx, c, msg, "Archive") }, id + " moved"},
+	} {
+		if err := step.do(); err != nil {
+			t.Fatalf("%s: %v", step.name, err)
+		}
+		if got := nextUpdate(t, events); got != step.want {
+			t.Errorf("%s published %q, want %q", step.name, got, step.want)
+		}
+	}
+}
+
+// TestMessageUpdatedSilentDuringBackfill is the storm guard: filter rules drive
+// these same helpers from inside the sync loop, once per newly-stored message,
+// so a first sync must announce nothing.
+func TestMessageUpdatedSilentDuringBackfill(t *testing.T) {
+	st := testStore(t)
+	m := NewManager(&config.Config{}, st)
+	newTestAccount(m, "acct", "syncing") // LastSync zero: still backfilling
+
+	fid, err := st.UpsertFolder("acct", "INBOX", "inbox", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpsertMessage(&store.Message{
+		Account: "acct", FolderID: fid, UID: 1, Subject: "old", Date: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := st.MessageByFolderUID(fid, 1)
+	if err != nil || msg == nil {
+		t.Fatalf("seeded message not found: %v", err)
+	}
+
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	if err := m.SetLabel(msg, "work", true); err != nil {
+		t.Fatal(err)
+	}
+	// new-mail is fine and expected — it is "the list moved, re-read it", which
+	// costs an open tab one refresh. message-updated is a webhook delivery per
+	// message, which is what must stay silent until the backfill is over.
+	for {
+		select {
+		case e := <-events:
+			if e.Type == "message-updated" {
+				t.Fatalf("the backfill published %+v", e)
+			}
+		case <-time.After(50 * time.Millisecond):
+			return
 		}
 	}
 }

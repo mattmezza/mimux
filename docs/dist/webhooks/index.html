@@ -95,6 +95,7 @@
   <tbody>
     <tr><td><code>message.received</code></td><td>A new message lands in an account's <strong>inbox</strong>.</td><td>id, account, folder, folder_id, from, subject, date, snippet, message_id</td></tr>
     <tr><td><code>message.sent</code></td><td>A message lands in an account's <strong>Sent</strong> folder.</td><td>id, account, to, subject, date, message_id</td></tr>
+    <tr><td><code>message.updated</code></td><td>mimux read, starred, labelled or moved a message it already had — your click, the API, or a filter rule. A flag another IMAP client flipped does <strong>not</strong> fire it.</td><td>the <code>message.received</code> fields, as they are after the change, plus <code>change</code> (<code>read</code>, <code>unread</code>, <code>starred</code>, <code>unstarred</code>, <code>labeled</code>, <code>unlabeled</code>, <code>moved</code>)</td></tr>
     <tr><td><code>sync.error</code></td><td>An account goes into the error state, or changes its reason for being there.</td><td>account, error</td></tr>
     <tr><td><code>search.completed</code></td><td>A deep search job finishes — the one API call whose answer arrives long after its response was written.</td><td>job_id, query, results (a count; fetch the messages with <code>GET /v1/search/jobs/{id}</code>)</td></tr>
     <tr><td><code>ping</code></td><td>Only from the test endpoint. <strong>Not subscribable</strong>, which is why it is not in <code>events</code>.</td><td>&mdash;</td></tr>

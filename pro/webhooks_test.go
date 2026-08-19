@@ -333,6 +333,50 @@ func TestWebhookTranslatesHubEvents(t *testing.T) {
 	}
 }
 
+// TestWebhookTranslatesMessageUpdated: the hub's "<id> <change>" becomes a
+// message.updated carrying the message as it is now, for subscribers only.
+func TestWebhookTranslatesMessageUpdated(t *testing.T) {
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, "https://example.test/hook", "message.updated")
+	// Not the inbox: message.updated is about the change, not where it landed.
+	archive := seedFolder(t, st, "a1", "Archive", "archive")
+	quiet := seedEndpoint(t, st, "https://quiet.test/hook", "message.received message.sent")
+
+	id := seedMsg(t, st, store.Message{Account: "a1", FolderID: archive, UID: 1, Subject: "Hello",
+		FromName: "Ada", FromAddress: "ada@example.test", MessageID: "<1@x>"})
+
+	seen := map[string]string{}
+	e.translate(mail.Event{Type: "message-updated", Data: strconv.FormatInt(id, 10) + " moved"}, seen)
+	// Malformed data, and a message that is gone by the time we look (a rule's
+	// move deletes the local row), queue nothing.
+	e.translate(mail.Event{Type: "message-updated", Data: strconv.FormatInt(id, 10)}, seen)
+	e.translate(mail.Event{Type: "message-updated", Data: "not-a-number read"}, seen)
+	e.translate(mail.Event{Type: "message-updated", Data: "999999 moved"}, seen)
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 {
+		t.Fatalf("queued %d deliveries, want 1", len(log))
+	}
+	if log[0].EventType != "message.updated" {
+		t.Fatalf("event = %q", log[0].EventType)
+	}
+	var p struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(log[0].Payload), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Data["change"] != "moved" || p.Data["folder"] != "Archive" || p.Data["subject"] != "Hello" {
+		t.Errorf("message.updated payload = %v", p.Data)
+	}
+	if _, ok := p.Data["body"]; ok {
+		t.Error("message.updated payload carries a body")
+	}
+	if log, _ := st.ListWebhookDeliveries(quiet.ID, 10); len(log) != 0 {
+		t.Errorf("unsubscribed endpoint got %d deliveries", len(log))
+	}
+}
+
 // TestWebhookSyncErrorEdges: an account that stays broken must not re-fire on
 // every sync-status broadcast, but a new reason must.
 func TestWebhookSyncErrorEdges(t *testing.T) {

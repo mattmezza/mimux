@@ -157,7 +157,10 @@ func (e *webhooks) drainLoop(ctx context.Context, nudge <-chan struct{}) {
 //
 // message-new is the hub's "this message just arrived, here is its id" event;
 // which webhook event it becomes is decided here, by the folder it landed in,
-// so that policy stays out of the AGPL sync loop. sync.error is derived from
+// so that policy stays out of the AGPL sync loop. message-updated is the same
+// idea for a change mimux made to a message it already had — id plus one word
+// for what changed — and the folder is re-read, so a "moved" carries the
+// destination. sync.error is derived from
 // the sync-status event plus Manager.Status(), which already carries the error
 // text the status bar shows — no new hub event needed for it.
 func (e *webhooks) translate(ev mail.Event, seen map[string]string) bool {
@@ -181,6 +184,29 @@ func (e *webhooks) translate(ev mail.Event, seen map[string]string) bool {
 		case "sent":
 			return e.fire("message.sent", sentData(*msg))
 		}
+	case "message-updated":
+		idStr, change, ok := strings.Cut(ev.Data, " ")
+		if !ok {
+			return false
+		}
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			return false
+		}
+		// Gone between the change and here — a filter rule's move deletes the
+		// local row, and the next sync can expunge one. Nothing to describe, so
+		// nothing fires; same as an unknown id above.
+		msg, err := e.store.MessageByID(id)
+		if err != nil || msg == nil {
+			return false
+		}
+		f, err := e.store.FolderByID(msg.FolderID)
+		if err != nil || f == nil {
+			return false
+		}
+		data := receivedData(*msg, f)
+		data["change"] = change
+		return e.fire("message.updated", data)
 	case "sync-status":
 		return e.syncErrors(e.mail.Status(), seen)
 	}

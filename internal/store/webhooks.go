@@ -21,6 +21,7 @@ import (
 var WebhookEvents = []struct{ ID, Label string }{
 	{"message.received", "A message arrived in an inbox"},
 	{"message.sent", "A message was sent"},
+	{"message.updated", "A message was read, starred, labelled or moved"},
 	{"sync.error", "An account failed to sync"},
 	{"search.completed", "A deep-search job finished"},
 }

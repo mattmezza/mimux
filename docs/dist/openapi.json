@@ -1294,6 +1294,49 @@
         }
       }
     },
+    "message.updated": {
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "onMessageUpdated",
+        "summary": "Message updated",
+        "description": "A message mimux already had was changed **by mimux**: read or unread, starred or unstarred, labelled or unlabelled, or moved to another folder. `change` says which, and the rest of the payload is the message as it is now — so a `moved` carries the destination folder.\n\nIt covers your own clicks, the JSON API and the MCP tools, and the filter rules that run on new mail. It does **not** cover a flag another IMAP client flipped: mimux learns those by reading the server's truth back during sync, and does not diff them. Like the other message events it is silent until the account has completed one sync in this process, so a first sync never replays as a burst of changes.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [
+                  { "$ref": "#/components/schemas/WebhookEnvelope" },
+                  { "type": "object", "properties": { "data": { "$ref": "#/components/schemas/MessageUpdatedData" } } }
+                ]
+              },
+              "example": {
+                "id": "c1d2e3f405162738495a6b7c8d9e0f11",
+                "event": "message.updated",
+                "created_at": "2026-08-17T09:32:40Z",
+                "data": {
+                  "id": 41207,
+                  "account": "work",
+                  "change": "moved",
+                  "folder": "Archive",
+                  "folder_id": 5,
+                  "from": { "name": "Ada Lovelace", "address": "ada@example.com" },
+                  "subject": "Re: the analytical engine",
+                  "date": "2026-08-17T09:29:54Z",
+                  "snippet": "I have been thinking about the ordering of operations…",
+                  "message_id": "<CA+1a2b3c4@mail.example.com>"
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Accepted. Any 2xx marks the delivery `ok`." },
+          "410": { "description": "Gone — this delivery is not retried. Use it to say you are done with these." },
+          "default": { "description": "Anything else (including a timeout) is retried on the ladder, and a delivery that exhausts it auto-disables the endpoint." }
+        }
+      }
+    },
     "sync.error": {
       "post": {
         "tags": ["Webhooks"],
@@ -2108,7 +2151,7 @@
       "WebhookEventName": {
         "type": "string",
         "description": "A subscribable event. `ping` is not one: it is only sent by the test endpoint.",
-        "enum": ["message.received", "message.sent", "sync.error", "search.completed"]
+        "enum": ["message.received", "message.sent", "message.updated", "sync.error", "search.completed"]
       },
       "WebhookDelivery": {
         "type": "object",
@@ -2159,6 +2202,22 @@
           "snippet": { "type": "string", "description": "The same short preview the message list shows. Cheap: it was already stored." },
           "message_id": { "type": "string", "description": "The RFC 5322 `Message-ID` header." }
         }
+      },
+      "MessageUpdatedData": {
+        "allOf": [
+          { "$ref": "#/components/schemas/MessageReceivedData" },
+          {
+            "type": "object",
+            "required": ["change"],
+            "properties": {
+              "change": {
+                "type": "string",
+                "description": "What changed, and its new value. The message fields around it are the state after the change.",
+                "enum": ["read", "unread", "starred", "unstarred", "labeled", "unlabeled", "moved"]
+              }
+            }
+          }
+        ]
       },
       "MessageSentData": {
         "type": "object",

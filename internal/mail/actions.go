@@ -4,6 +4,7 @@ package mail
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
@@ -85,6 +86,41 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 	return raw, err
 }
 
+// updated announces a change this process just made to a stored message: the
+// store id plus one word for what changed ("123 starred"). Published by the
+// four mutation helpers below; the browser ignores it (it refreshes off
+// new-mail) and pro/webhooks.go turns it into a message.updated delivery.
+//
+// Scope, deliberately: only changes mimux itself made. A flag a different IMAP
+// client flipped never comes through here — the sync loop writes the server's
+// truth straight to the store (see fetchFlagChanges), so it would need its own
+// event and its own diffing. "mimux changed this" is what this event means.
+//
+// The guard is signalNewMessage's, for the same reason: these helpers are not
+// only user/API-driven, filter rules run them from inside the sync loop for
+// every newly-stored message (see applyAction), which on a first sync is the
+// whole mailbox. LastSync stays zero for that entire first cycle, so backfill
+// is silent and steady-state rule hits are not.
+//
+// ponytail: a mid-session UIDVALIDITY re-fetch re-runs the rules over old mail
+// with LastSync already set, so that one path can still burst. Thread a "this
+// is the sync worker" flag through applyAction if it ever bites.
+func (m *Manager) updated(msg *store.Message, change string) {
+	a := m.accounts[msg.Account]
+	if a == nil || a.getStatus().LastSync.IsZero() {
+		return
+	}
+	m.hub.broadcast(Event{Type: "message-updated", Data: strconv.FormatInt(msg.ID, 10) + " " + change})
+}
+
+// changeWord names a boolean change for the message-updated event.
+func changeWord(on bool, yes, no string) string {
+	if on {
+		return yes
+	}
+	return no
+}
+
 // SetRead adds or removes the \Seen flag on the server and, once it lands,
 // clears the store's "push still owed" marker that store.SetRead set. If the
 // push fails the marker stays and pushSeenDirty retries it every sync cycle —
@@ -102,6 +138,7 @@ func (m *Manager) setRead(ctx context.Context, c *imapclient.Client, msg *store.
 		return err
 	}
 	defer m.changed(msg)
+	m.updated(msg, changeWord(read, "read", "unread"))
 	return m.st.ClearSeenDirty(msg.ID, read)
 }
 
@@ -152,6 +189,7 @@ func (m *Manager) setStarred(ctx context.Context, c *imapclient.Client, msg *sto
 		return err
 	}
 	m.changed(msg)
+	m.updated(msg, changeWord(starred, "starred", "unstarred"))
 	return nil
 }
 
@@ -204,6 +242,7 @@ func (m *Manager) SetLabel(msg *store.Message, label string, add bool) error {
 		return err
 	}
 	m.changed(msg)
+	m.updated(msg, changeWord(add, "labeled", "unlabeled"))
 	return nil
 }
 
@@ -258,7 +297,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 		return nil
 	}
 	defer m.changed(msg)
-	return a.exec(ctx, c, func(c *imapclient.Client) error {
+	if err := a.exec(ctx, c, func(c *imapclient.Client) error {
 		if _, err := c.Select(src.Name, nil).Wait(); err != nil {
 			return err
 		}
@@ -278,7 +317,11 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 			return c.UIDExpunge(set).Close()
 		}
 		return c.Expunge().Close()
-	})
+	}); err != nil {
+		return err
+	}
+	m.updated(msg, "moved")
+	return nil
 }
 
 // changed announces that a message this user acted on is no longer what the
