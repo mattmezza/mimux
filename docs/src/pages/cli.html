@@ -139,6 +139,15 @@ autoload -Uz compinit && compinit</code></pre>
   could reach.
 </p>
 
+<p>
+  An <a href="https://github.com/mattmezza/mimux/blob/main/skills/mimux-cli/SKILL.md">agent
+  skill</a> teaches a coding agent to drive this CLI — auth, the query
+  language, scopes, failure modes, and the never-send-without-approval rule.
+  Install it with:
+</p>
+
+<pre><code>npx skills add mattmezza/mimux --skill mimux-cli</code></pre>
+
 <h3>Signing in</h3>
 
 <pre><code>$ mimux mail login https://mail.example.com

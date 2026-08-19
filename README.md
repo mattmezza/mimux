@@ -47,6 +47,17 @@ browser to approve it. A pro build runs 14 days without a key, and mail itself
 never stops working, licensed or not. Keys at
 [account.mimux.dev](https://account.mimux.dev).
 
+### Agent skill
+
+Coding agents that support [Agent Skills](https://code.claude.com/docs/en/skills)
+can drive `mimux mail` directly — install it with:
+
+```sh
+npx skills add mattmezza/mimux --skill mimux-cli
+```
+
+See [skills/mimux-cli/SKILL.md](skills/mimux-cli/SKILL.md).
+
 ## Screenshots
 
 _(placeholder — drop PNGs/GIFs of the unified inbox, reading pane, and
