@@ -378,6 +378,38 @@ func TestWebhookTranslatesMessageUpdated(t *testing.T) {
 	}
 }
 
+// TestWebhookTranslatesMessageDeleted: the row is gone by the time this runs,
+// so the payload rides in the event and only the subscribers get it.
+func TestWebhookTranslatesMessageDeleted(t *testing.T) {
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, "https://example.test/hook", "message.deleted")
+	quiet := seedEndpoint(t, st, "https://quiet.test/hook", "message.received message.updated")
+
+	seen := map[string]string{}
+	e.translate(mail.Event{Type: "message-deleted", Data: `{"id":7,"account":"a1","folder":"INBOX","subject":"gone"}`}, seen)
+	e.translate(mail.Event{Type: "message-deleted", Data: "not json"}, seen)
+
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 {
+		t.Fatalf("queued %d deliveries, want 1", len(log))
+	}
+	if log[0].EventType != "message.deleted" {
+		t.Fatalf("event = %q", log[0].EventType)
+	}
+	var p struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(log[0].Payload), &p); err != nil {
+		t.Fatal(err)
+	}
+	if p.Data["subject"] != "gone" || p.Data["folder"] != "INBOX" {
+		t.Errorf("message.deleted payload = %v", p.Data)
+	}
+	if log, _ := st.ListWebhookDeliveries(quiet.ID, 10); len(log) != 0 {
+		t.Errorf("unsubscribed endpoint got %d deliveries", len(log))
+	}
+}
+
 // TestWebhookSyncErrorEdges: an account that stays broken must not re-fire on
 // every sync-status broadcast, but a new reason must.
 func TestWebhookSyncErrorEdges(t *testing.T) {

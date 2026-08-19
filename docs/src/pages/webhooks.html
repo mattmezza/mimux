@@ -44,6 +44,7 @@ description: mimux webhooks — signed HMAC-SHA256 deliveries, the seven-step re
     <tr><td><code>message.received</code></td><td>A new message lands in an account's <strong>inbox</strong>.</td><td>id, account, folder, folder_id, from, subject, date, snippet, message_id</td></tr>
     <tr><td><code>message.sent</code></td><td>A message lands in an account's <strong>Sent</strong> folder.</td><td>id, account, to, subject, date, message_id</td></tr>
     <tr><td><code>message.updated</code></td><td>A message mimux already had was read, starred, labelled or moved — by you, by the API, by a filter rule, or by another mail client touching the same mailbox.</td><td>the <code>message.received</code> fields, as they are after the change, plus <code>change</code> (<code>read</code>, <code>unread</code>, <code>starred</code>, <code>unstarred</code>, <code>labeled</code>, <code>unlabeled</code>, <code>moved</code>) and <code>origin</code> (<code>mimux</code> or <code>external</code>)</td></tr>
+    <tr><td><code>message.deleted</code></td><td>A message mimux had is no longer on the server in that folder — deleted in another mail client, or moved out of it.</td><td>the <code>message.received</code> fields, read off the row before it was dropped</td></tr>
     <tr><td><code>sync.error</code></td><td>An account goes into the error state, or changes its reason for being there.</td><td>account, error</td></tr>
     <tr><td><code>search.completed</code></td><td>A deep search job finishes — the one API call whose answer arrives long after its response was written.</td><td>job_id, query, results (a count; fetch the messages with <code>GET /v1/search/jobs/{id}</code>)</td></tr>
     <tr><td><code>ping</code></td><td>Only from the test endpoint. <strong>Not subscribable</strong>, which is why it is not in <code>events</code>.</td><td>&mdash;</td></tr>
@@ -86,6 +87,25 @@ description: mimux webhooks — signed HMAC-SHA256 deliveries, the seven-step re
     process — otherwise a first sync would replay the whole mailbox one delivery
     at a time.</li>
 </ul>
+
+<h3>What <code>message.deleted</code> means</h3>
+
+<p>
+  It means <em>gone from that folder</em>, which is all IMAP can tell us.
+  A message another client moved from the inbox to Archive is, from the inbox's
+  point of view, indistinguishable from one it deleted: mimux drops the row and
+  fires <code>message.deleted</code>, and the same message later re-arrives as
+  <code>message.received</code> when its new folder is synced. Deduplicate on
+  <code>message_id</code> if that pair matters to you.
+</p>
+
+<p>
+  The payload is built from the row <em>before</em> it is dropped — after that
+  there is nothing left to describe. Same reconciliation rules as external
+  changes above: the inbox every cycle, other folders on reconnect, nothing at
+  all during a folder's first sync, and a batch over the burst limit is applied
+  to the store without being delivered.
+</p>
 
 <p>
   A move performed by a <strong>filter rule</strong> is the one mimux-side change

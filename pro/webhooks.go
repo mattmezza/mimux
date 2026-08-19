@@ -162,6 +162,10 @@ func (e *webhooks) drainLoop(ctx context.Context, nudge <-chan struct{}) {
 // and the folder is re-read, so a "moved" carries the destination. sync.error is
 // derived from the sync-status event plus Manager.Status(), which already
 // carries the error text the status bar shows — no new hub event needed for it.
+//
+// message-deleted is the exception to "the hub carries an id": the row is
+// already gone when this runs, so the sync loop serialises the payload into the
+// event and this only has to decide who gets it.
 func (e *webhooks) translate(ev mail.Event, seen map[string]string) bool {
 	switch ev.Type {
 	case "message-new":
@@ -207,6 +211,14 @@ func (e *webhooks) translate(ev mail.Event, seen map[string]string) bool {
 		data["change"] = parts[1]
 		data["origin"] = parts[2]
 		return e.fire("message.updated", data)
+	case "message-deleted":
+		// The payload rides in the event: the row is gone from the store by the
+		// time this runs, so there is nothing left here to read it off.
+		var data map[string]any
+		if err := json.Unmarshal([]byte(ev.Data), &data); err != nil {
+			return false
+		}
+		return e.fire("message.deleted", data)
 	case "sync-status":
 		return e.syncErrors(e.mail.Status(), seen)
 	}

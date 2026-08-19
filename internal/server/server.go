@@ -432,12 +432,13 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case e := <-events:
-			// message-new/-updated are server-side events (the notifier, and the
-			// webhook engine in the pro build). No browser listens for them —
+			// message-new/-updated/-deleted are server-side events (the notifier,
+			// and the webhook engine in the pro build). No browser listens for
+			// them — a vanished row is gone from the next list render, and
 			// new-mail is what refreshes the list — so relaying one is a wasted
 			// frame per message per open socket, and it fills this subscriber's
 			// lossy buffer with events that push out the ones the page reads.
-			if e.Type == "message-new" || e.Type == "message-updated" {
+			if e.Type == "message-new" || e.Type == "message-updated" || e.Type == "message-deleted" {
 				continue
 			}
 			data := sseData(e.Data)

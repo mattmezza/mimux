@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -167,5 +168,116 @@ func TestMoveRelocatesTheRowWithTheRealUID(t *testing.T) {
 		if left, _ := st.ListMessages(inbox.ID, 10); len(left) != 1 {
 			t.Errorf("inbox still holds %d messages after the move", len(left))
 		}
+	}
+}
+
+// expungeOnServer deletes a UID the way another mail client would.
+func expungeOnServer(t *testing.T, c *imapclient.Client, folder string, uid imap.UID) {
+	t.Helper()
+	if _, err := c.Select(folder, nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	set := imap.UIDSet{}
+	set.AddNum(uid)
+	if err := c.Store(set, &imap.StoreFlags{
+		Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted},
+	}, nil).Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Expunge().Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestReconcileDeletesVanishedAndAnnounces: mail deleted in another client has
+// to leave mimux too. Reconciliation used to run only on a folder's first pass,
+// where everything stored had just been fetched — so it never found anything and
+// externally deleted mail stayed forever.
+func TestReconcileDeletesVanishedAndAnnounces(t *testing.T) {
+	st := testStore(t)
+	c := newTestIMAP(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncInbox(t, a, c)
+	a.setStatus("ok", "")
+
+	inbox, _ := st.FolderBySpecial("acct", "inbox")
+	msg, err := st.MessageByFolderUID(inbox.ID, 2)
+	if err != nil || msg == nil {
+		t.Fatalf("synced message not found: %v", err)
+	}
+	expungeOnServer(t, c, "INBOX", 2)
+
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	removed, err := a.reconcileExpunged(c, inbox, true)
+	if err != nil || !removed {
+		t.Fatalf("reconcileExpunged = %v, %v; want it to report a removal", removed, err)
+	}
+	if got, _ := st.MessageByID(msg.ID); got != nil {
+		t.Error("the row is still here: mail deleted elsewhere never leaves mimux")
+	}
+	var payload map[string]any
+	deadline := time.After(time.Second)
+	for payload == nil {
+		select {
+		case e := <-events:
+			if e.Type != "message-deleted" {
+				continue
+			}
+			if err := json.Unmarshal([]byte(e.Data), &payload); err != nil {
+				t.Fatalf("payload %q: %v", e.Data, err)
+			}
+		case <-deadline:
+			t.Fatal("no message-deleted event was published")
+		}
+	}
+	// Read before the delete: the payload has to describe a row that is gone.
+	if payload["subject"] != "two" || payload["folder"] != "INBOX" {
+		t.Errorf("payload = %v", payload)
+	}
+	if _, ok := payload["body"]; ok {
+		t.Error("payload carries a body")
+	}
+}
+
+// TestReconcileSpareTheRowMidMove: between the click and the deferred IMAP move
+// the row sits in its destination carrying the source folder's UID. Reconciling
+// that folder must not read it as a message the server dropped — it would vanish
+// and then re-arrive as new mail.
+func TestReconcileSparesTheRowMidMove(t *testing.T) {
+	st := testStore(t)
+	c := newTestIMAP(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncInbox(t, a, c)
+	a.setStatus("ok", "")
+
+	inbox, _ := st.FolderBySpecial("acct", "inbox")
+	msg, err := st.MessageByFolderUID(inbox.ID, 2)
+	if err != nil || msg == nil {
+		t.Fatalf("synced message not found: %v", err)
+	}
+	// The optimistic half of a move into this folder: the row is here, the UID
+	// is not the server's, and the real move has not happened yet.
+	if err := st.SetMessageFolderPending(msg.ID, inbox.ID); err != nil {
+		t.Fatal(err)
+	}
+	expungeOnServer(t, c, "INBOX", 2)
+
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+	if _, err := a.reconcileExpunged(c, inbox, true); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := st.MessageByID(msg.ID); got == nil {
+		t.Fatal("the row mid-move was reconciled away; the move would re-arrive as new mail")
+	}
+	select {
+	case e := <-events:
+		if e.Type == "message-deleted" {
+			t.Errorf("published %+v for a row that is only mid-move", e)
+		}
+	case <-time.After(100 * time.Millisecond):
 	}
 }

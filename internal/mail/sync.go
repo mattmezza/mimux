@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
 	"sort"
 	"strings"
@@ -194,14 +195,15 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		}
 	}
 
-	// Reconcile expunged messages on the full pass.
-	if firstFull {
-		expunged, err := a.reconcileExpunged(c, f, start)
-		if err != nil {
-			return changed, err
-		}
-		changed = changed || expunged
+	// Reconcile expunged messages. Every cycle, not just the first pass: mail
+	// deleted (or moved away) in another client has to leave mimux too, and this
+	// is the only thing that notices. On the first pass it costs nothing —
+	// everything stored was just fetched — and it announces nothing.
+	expunged, err := a.reconcileExpunged(c, f, !firstFull)
+	if err != nil {
+		return changed, err
 	}
+	changed = changed || expunged
 
 	if condstore && sel.HighestModSeq > 0 {
 		_ = a.m.st.SetFolderModSeq(f.ID, sel.HighestModSeq)
@@ -358,19 +360,11 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 		Flags:        true,
 		ChangedSince: f.HighestModSeq,
 	}).Collect()
-	if err != nil {
+	if err != nil || len(msgs) == 0 {
 		return false, err
 	}
-	// One prefs read per folder per cycle, not per message. A reconnect after a
-	// long outage answers with the whole backlog at once: that is a catch-up,
-	// not live activity, so past the limit the store still takes every write and
-	// nothing is announced.
-	announce := true
-	if limit := a.m.st.GetPrefs().ExternalBurstLimit; limit > 0 && len(msgs) > limit {
-		announce = false
-		slog.Info("sync: flag-change burst over the external-change limit, not announcing",
-			"account", a.cfg.Name, "folder", f.Name, "changes", len(msgs), "limit", limit)
-	}
+	// One prefs read per folder per cycle, not one per message.
+	announce := a.burstOK(len(msgs), "flag changes", f)
 	for _, buf := range msgs {
 		// MessageByFolderUID rather than the bare id lookup: merging keyword
 		// flags into labels (below) needs the row's current stored value too.
@@ -398,11 +392,31 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 	return len(msgs) > 0, nil
 }
 
-// reconcileExpunged deletes stored messages in the fetched window that the
-// server no longer reports, reporting whether it removed any.
-func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, start imap.UID) (bool, error) {
-	set := imap.UIDSet{{Start: start, Stop: 0}}
-	msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true}).Collect()
+// reconcileExpunged deletes the folder's stored messages that the server no
+// longer reports, and reports whether it removed any (which is what makes the
+// open lists refresh, via the caller's signalListChanged).
+//
+// The FETCH is bounded below by the lowest UID actually stored rather than by
+// 1:*: every stored row sits at or above it, and mail below it is mail mimux
+// never had and has no opinion about.
+//
+// announce carries the webhook event for each removal. It is off for a folder's
+// first pass — everything stored was just fetched, so there is nothing to find,
+// and a fresh install must not fire a delivery per message — and it is dropped
+// for a batch over the external-change burst limit, which is a reconnect
+// catching up rather than someone deleting four hundred messages by hand.
+func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, announce bool) (bool, error) {
+	stored, err := a.m.st.FolderUIDs(f.ID)
+	if err != nil || len(stored) == 0 {
+		return false, err
+	}
+	start := uint32(0)
+	for uid := range stored {
+		if start == 0 || uid < start {
+			start = uid
+		}
+	}
+	msgs, err := c.Fetch(imap.UIDSet{{Start: imap.UID(start), Stop: 0}}, &imap.FetchOptions{UID: true}).Collect()
 	if err != nil {
 		return false, err
 	}
@@ -410,18 +424,58 @@ func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, start
 	for _, buf := range msgs {
 		live[uint32(buf.UID)] = true
 	}
-	stored, err := a.m.st.FolderUIDs(f.ID)
-	if err != nil {
-		return false, err
-	}
-	removed := false
+	var gone []uint32
 	for uid := range stored {
-		if uid >= uint32(start) && !live[uid] {
-			_ = a.m.st.DeleteMessageByUID(f.ID, uid)
-			removed = true
+		if !live[uid] {
+			gone = append(gone, uid)
 		}
 	}
-	return removed, nil
+	if len(gone) == 0 {
+		return false, nil
+	}
+	announce = announce && !a.getStatus().LastSync.IsZero() && a.burstOK(len(gone), "vanished messages", f)
+	for _, uid := range gone {
+		// Read before the delete: nothing downstream can describe a row that is
+		// already gone, so the payload is built here or not at all.
+		msg, _ := a.m.st.MessageByFolderUID(f.ID, uid)
+		_ = a.m.st.DeleteMessageByUID(f.ID, uid)
+		if announce && msg != nil {
+			a.m.hub.broadcast(Event{Type: "message-deleted", Data: deletedData(msg, f)})
+		}
+	}
+	return true, nil
+}
+
+// deletedData is the message-deleted event's payload, pre-serialised here
+// because the row it describes no longer exists by the time anyone reads the
+// event. Same summary shape as the message.received payload — never a body.
+func deletedData(msg *store.Message, f *store.Folder) string {
+	b, _ := json.Marshal(map[string]any{
+		"id":         msg.ID,
+		"account":    msg.Account,
+		"folder":     f.Name,
+		"folder_id":  f.ID,
+		"from":       map[string]string{"name": msg.FromName, "address": msg.FromAddress},
+		"subject":    msg.Subject,
+		"date":       msg.Date.UTC().Format(time.RFC3339),
+		"snippet":    msg.Snippet,
+		"message_id": msg.MessageID,
+	})
+	return string(b)
+}
+
+// burstOK reports whether a batch of n externally-driven changes is small
+// enough to be live activity worth announcing. Past the limit it is a reconnect
+// catching up on an outage: the store still takes every write, and nothing is
+// delivered. See Prefs.ExternalBurstLimit.
+func (a *account) burstOK(n int, what string, f *store.Folder) bool {
+	limit := a.m.st.GetPrefs().ExternalBurstLimit
+	if limit <= 0 || n <= limit {
+		return true
+	}
+	slog.Info("sync: burst over the external-change limit, not announcing",
+		"account", a.cfg.Name, "folder", f.Name, "what", what, "count", n, "limit", limit)
+	return false
 }
 
 func (a *account) messageID(folderID int64, uid uint32) (int64, error) {
