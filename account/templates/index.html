@@ -50,6 +50,35 @@
   </div>
 </div>
 
+<script>
+// Same in-flight treatment as /retrieve: /checkout creates a Stripe session
+// before it can 303, so nothing on this page moves for a moment. Spin the
+// button that was clicked and refuse a second submit — that would open a
+// second checkout session. Coming back from Stripe restores this page from
+// the bfcache with the button still spinning, so pageshow clears it.
+(function () {
+  var forms = document.querySelectorAll(".plans form");
+  forms.forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (form.classList.contains("is-busy")) { e.preventDefault(); return; }
+      form.classList.add("is-busy");
+      var btn = form.querySelector(".btn");
+      if (btn) { btn.classList.add("is-busy"); btn.setAttribute("aria-busy", "true"); }
+    });
+  });
+  window.addEventListener("pageshow", function (e) {
+    if (!e.persisted) return;
+    forms.forEach(function (form) {
+      form.classList.remove("is-busy");
+      form.querySelectorAll(".is-busy").forEach(function (b) {
+        b.classList.remove("is-busy");
+        b.removeAttribute("aria-busy");
+      });
+    });
+  });
+})();
+</script>
+
 <p class="small muted">
   Both plans are one licence key, emailed to you after payment. The key is an
   ed25519 signature that mimux checks locally; there is no activation, no seat
