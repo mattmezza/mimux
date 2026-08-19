@@ -9,8 +9,9 @@
 -- expires" and "not revoked" are genuinely absent values, and the middleware's
 -- active-token query says so directly (revoked_at IS NULL).
 --
--- Deliberately NOT in the portable backup (see store.Export): a token is an
--- install-local credential, like the VAPID key pair in 0160.
+-- These rows DO travel in the portable backup (see store.Export, v3): the hash
+-- is the credential as far as this database is concerned, so restoring it is
+-- what lets a rebuilt install keep honouring the tokens already handed out.
 CREATE TABLE api_tokens (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     label        TEXT    NOT NULL DEFAULT '',

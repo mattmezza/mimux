@@ -267,3 +267,87 @@ func TestImportV1Dump(t *testing.T) {
 		t.Error("a version-less file should be rejected")
 	}
 }
+
+// TestRoundTripAPITokensAndWebhooks: a restored install keeps honouring the
+// tokens already handed out and keeps posting to the same endpoints with the
+// same signing secrets — and importing twice does not double either.
+func TestRoundTripAPITokensAndWebhooks(t *testing.T) {
+	src := open(t)
+	expires := time.Date(2027, 1, 2, 0, 0, 0, 0, time.UTC)
+	if _, err := src.ImportAPIToken("Home Assistant", "argon2-hash-xyz", "mail:read mail:send",
+		time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), time.Time{}, expires, time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	// A revoked one too: a restore must not bring a killed credential back.
+	if _, err := src.ImportAPIToken("Old script", "argon2-hash-dead", "mail:read",
+		time.Time{}, time.Time{}, time.Time{}, time.Date(2026, 2, 2, 0, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	paused := &WebhookEndpoint{URL: "https://hooks.example/mimux", Secret: "hook-secret-xyz",
+		Events: "message.received", Active: false}
+	if err := src.CreateWebhookEndpoint(paused); err != nil {
+		t.Fatal(err)
+	}
+	// Its delivery log stays behind — see WebhookExport.
+	if err := src.EnqueueWebhookDelivery(&WebhookDelivery{EndpointID: paused.ID,
+		EventType: "message.received", DeliveryID: "d1", Payload: `{"marker":"not-in-the-dump"}`}); err != nil {
+		t.Fatal(err)
+	}
+
+	exp, err := src.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	blob, _ := json.Marshal(exp)
+	if strings.Contains(string(blob), "not-in-the-dump") {
+		t.Error("the delivery log rode along in the dump")
+	}
+
+	dst := open(t)
+	sum, err := dst.Import(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.APITokens != 2 || sum.Webhooks != 1 {
+		t.Errorf("summary = %d api tokens, %d webhooks", sum.APITokens, sum.Webhooks)
+	}
+	toks, _ := dst.ListAPITokens()
+	if len(toks) != 2 {
+		t.Fatalf("tokens restored: %d", len(toks))
+	}
+	byHash := map[string]APIToken{}
+	for _, tok := range toks {
+		byHash[tok.Hash] = tok
+	}
+	live := byHash["argon2-hash-xyz"]
+	if live.Label != "Home Assistant" || live.Scopes != "mail:read mail:send" || !live.Live() {
+		t.Errorf("live token did not survive: %+v", live)
+	}
+	if !live.ExpiresAt.Equal(expires) {
+		t.Errorf("expiry = %v, want %v", live.ExpiresAt, expires)
+	}
+	if byHash["argon2-hash-dead"].Live() {
+		t.Error("a revoked token came back alive")
+	}
+
+	eps, _ := dst.ListWebhookEndpoints()
+	if len(eps) != 1 {
+		t.Fatalf("endpoints restored: %d", len(eps))
+	}
+	if eps[0].Secret != "hook-secret-xyz" || eps[0].Events != "message.received" || eps[0].Active {
+		t.Errorf("endpoint did not survive as configured: %+v", eps[0])
+	}
+	if log, _ := dst.ListWebhookDeliveries(eps[0].ID, 10); len(log) != 0 {
+		t.Errorf("delivery log was restored: %+v", log)
+	}
+
+	// Second import: same rows, no duplicates.
+	if _, err := dst.Import(exp); err != nil {
+		t.Fatal(err)
+	}
+	toks, _ = dst.ListAPITokens()
+	eps, _ = dst.ListWebhookEndpoints()
+	if len(toks) != 2 || len(eps) != 1 {
+		t.Errorf("re-import duplicated rows: %d tokens, %d endpoints", len(toks), len(eps))
+	}
+}

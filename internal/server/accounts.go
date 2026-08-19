@@ -230,7 +230,8 @@ func (s *Server) handleConfigImport(w http.ResponseWriter, r *http.Request) {
 	// labels found no synced mail to re-attach to yet (see store.Import).
 	_, _ = fmt.Fprintf(w,
 		"Imported %d account(s), %d setting(s), %d token(s), %d filter(s), %d signature(s), "+
-			"%d template(s), %d saved search(es), %d trusted sender(s), %d labelled message(s).",
+			"%d template(s), %d saved search(es), %d trusted sender(s), %d API token(s), "+
+			"%d webhook(s), %d labelled message(s).",
 		sum.Accounts, sum.Settings, sum.Tokens, sum.Filters, sum.Signatures,
-		sum.Templates, sum.Searches, sum.Senders, sum.Labels)
+		sum.Templates, sum.Searches, sum.Senders, sum.APITokens, sum.Webhooks, sum.Labels)
 }

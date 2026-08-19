@@ -12,8 +12,10 @@
 -- events is a space-separated subset of store.WebhookEvents, the same encoding
 -- api_tokens.scopes uses.
 --
--- Deliberately NOT in the portable backup (see store.Export): an endpoint plus
--- its signing secret is install-local, like the API tokens in 0180.
+-- The endpoints DO travel in the portable backup (see store.Export, v3),
+-- signing secret included — a secret that did not survive the restore would
+-- mean reconfiguring every receiver by hand. The delivery log below does not:
+-- it is a trail of what one machine did, and it is pruned as it goes anyway.
 CREATE TABLE webhook_endpoints (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     url              TEXT    NOT NULL,

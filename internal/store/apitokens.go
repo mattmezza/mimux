@@ -142,6 +142,31 @@ func (s *Store) CreateAPIToken(tok *APIToken) error {
 	return err
 }
 
+// ImportAPIToken restores one token from a portable dump, hash and timestamps
+// as they were. Reports whether it was added: a token whose hash is already
+// here is left untouched, which is what makes importing the same file twice a
+// no-op — and what stops a restore from un-revoking a credential.
+func (s *Store) ImportAPIToken(label, hash, scopes string, created, lastUsed, expires, revoked time.Time) (bool, error) {
+	if strings.TrimSpace(hash) == "" {
+		return false, errors.New("api token: hash required")
+	}
+	var n int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM api_tokens WHERE hash = ?`, hash).Scan(&n); err != nil {
+		return false, err
+	}
+	if n > 0 {
+		return false, nil
+	}
+	if created.IsZero() {
+		created = time.Now().UTC().Truncate(time.Second)
+	}
+	_, err := s.DB.Exec(`INSERT INTO api_tokens
+		(label, hash, scopes, created_at, last_used_at, expires_at, revoked_at) VALUES (?,?,?,?,?,?,?)`,
+		strings.TrimSpace(label), hash, ValidScopes(strings.Fields(scopes)),
+		created.UTC().Format(time.RFC3339), nullTime(lastUsed), nullTime(expires), nullTime(revoked))
+	return err == nil, err
+}
+
 // ListAPITokens returns every token, newest first — revoked and expired ones
 // included, so the Settings list can show what happened to them.
 func (s *Store) ListAPITokens() ([]APIToken, error) {

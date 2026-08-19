@@ -12,9 +12,10 @@ import (
 
 // ExportVersion is the envelope version for portable config dumps. Bump when the
 // shape changes so future imports can migrate older files. v2 added filters,
-// signatures, templates, saved searches, trusted senders and message labels; a
-// v1 file still imports (the new sections are simply absent).
-const ExportVersion = 2
+// signatures, templates, saved searches, trusted senders and message labels;
+// v3 added the API tokens and the webhook endpoints. Older files still import —
+// the sections they lack are simply absent.
+const ExportVersion = 3
 
 // TokenExport is an OAuth2 token in the portable dump (RFC3339 expiry string).
 type TokenExport struct {
@@ -43,19 +44,45 @@ type LabelExport struct {
 	Labels    string `json:"labels"`
 }
 
+// APITokenExport is one personal access token, hash and all. The plaintext was
+// never stored, so this is the only form that survives a restore — and it is
+// the useful one: a restored install keeps honouring the tokens the scripts and
+// agents out there already hold.
+type APITokenExport struct {
+	Label      string `json:"label"`
+	Hash       string `json:"hash"`
+	Scopes     string `json:"scopes"`
+	CreatedAt  string `json:"created_at,omitempty"`
+	LastUsedAt string `json:"last_used_at,omitempty"`
+	ExpiresAt  string `json:"expires_at,omitempty"`
+	RevokedAt  string `json:"revoked_at,omitempty"`
+}
+
+// WebhookExport is one endpoint: where it posts, what it subscribed to, its
+// signing secret and whether it is paused. The delivery log is deliberately not
+// here — it is a debugging trail of what this machine did, it is pruned as it
+// goes anyway, and restoring it onto another install would describe deliveries
+// that install never made.
+type WebhookExport struct {
+	URL    string `json:"url"`
+	Secret string `json:"secret"`
+	Events string `json:"events"`
+	Active bool   `json:"active"`
+}
+
 // ConfigExport is the full portable config: accounts (incl credentials, aliases
 // and per-account sync overrides), every app_settings row (prefs +
 // translate/AI keys + colors), OAuth tokens, filter rules, signatures with
-// their identity links, templates, saved searches, trusted senders, and the
-// local-only message labels.
+// their identity links, templates, saved searches, trusted senders, the API
+// tokens, the webhook endpoints, and the local-only message labels.
 //
 // It excludes sessions and the login user, all mail data (folders, messages,
-// bodies, drafts, outbox, calendar RSVPs) and the derived caches (translations,
-// summaries, search index/cache/history) — everything there either re-syncs
-// from IMAP or is recomputed on demand.
+// bodies, drafts, outbox, calendar RSVPs), the webhook delivery log and the
+// derived caches (translations, summaries, search index/cache/history) —
+// everything there either re-syncs from IMAP or is recomputed on demand.
 //
-// SECURITY: this contains account passwords, OAuth tokens and API keys in
-// cleartext.
+// SECURITY: this contains account passwords, OAuth tokens, API keys, API-token
+// hashes and webhook signing secrets in cleartext.
 type ConfigExport struct {
 	Version        int               `json:"version"`
 	Accounts       []config.Account  `json:"accounts"`
@@ -66,6 +93,8 @@ type ConfigExport struct {
 	Templates      []Template        `json:"templates,omitempty"`
 	SavedSearches  []SavedSearch     `json:"saved_searches,omitempty"`
 	TrustedSenders []string          `json:"trusted_senders,omitempty"`
+	APITokens      []APITokenExport  `json:"api_tokens,omitempty"`
+	Webhooks       []WebhookExport   `json:"webhooks,omitempty"`
 	Labels         []LabelExport     `json:"labels,omitempty"`
 }
 
@@ -131,11 +160,65 @@ func (s *Store) Export() (ConfigExport, error) {
 	if err != nil {
 		return ConfigExport{}, err
 	}
+	apiToks, err := s.exportAPITokens()
+	if err != nil {
+		return ConfigExport{}, err
+	}
+	hooks, err := s.exportWebhooks()
+	if err != nil {
+		return ConfigExport{}, err
+	}
 	return ConfigExport{
 		Version: ExportVersion, Accounts: accts, Settings: settings, Tokens: tokens,
 		Filters: rules, Signatures: sigs, Templates: tpls, SavedSearches: saved,
-		TrustedSenders: senders, Labels: labels,
+		TrustedSenders: senders, APITokens: apiToks, Webhooks: hooks, Labels: labels,
 	}, nil
+}
+
+// exportAPITokens dumps the token rows as they are stored: the hash is the
+// credential as far as this database is concerned, and it is what a restored
+// install needs in order to keep honouring tokens that are already out there.
+func (s *Store) exportAPITokens() ([]APITokenExport, error) {
+	toks, err := s.ListAPITokens()
+	if err != nil {
+		return nil, err
+	}
+	var out []APITokenExport
+	for _, t := range toks {
+		out = append(out, APITokenExport{
+			Label: t.Label, Hash: t.Hash, Scopes: t.Scopes,
+			CreatedAt:  rfc3339OrBlank(t.CreatedAt),
+			LastUsedAt: rfc3339OrBlank(t.LastUsedAt),
+			ExpiresAt:  rfc3339OrBlank(t.ExpiresAt),
+			RevokedAt:  rfc3339OrBlank(t.RevokedAt),
+		})
+	}
+	return out, nil
+}
+
+// exportWebhooks dumps the endpoints, secrets included: a signing secret that
+// did not survive the restore would mean every receiver has to be reconfigured
+// by hand, which is the opposite of what this file is for. The auto-disabled
+// stamp is left behind — it describes deliveries this dump does not carry — but
+// a paused endpoint stays paused, because that was a decision.
+func (s *Store) exportWebhooks() ([]WebhookExport, error) {
+	eps, err := s.ListWebhookEndpoints()
+	if err != nil {
+		return nil, err
+	}
+	var out []WebhookExport
+	for _, ep := range eps {
+		out = append(out, WebhookExport{URL: ep.URL, Secret: ep.Secret, Events: ep.Events, Active: ep.Active})
+	}
+	return out, nil
+}
+
+// rfc3339OrBlank renders a timestamp for the dump, "" for the zero time.
+func rfc3339OrBlank(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.UTC().Format(time.RFC3339)
 }
 
 // exportSignatures pairs every signature with the identity addresses pointing
@@ -211,6 +294,8 @@ type ImportSummary struct {
 	Templates  int
 	Searches   int
 	Senders    int
+	APITokens  int
+	Webhooks   int
 	Labels     int
 }
 
@@ -330,6 +415,24 @@ func (s *Store) Import(e ConfigExport) (ImportSummary, error) {
 		}
 		sum.Senders++
 	}
+	for _, t := range e.APITokens {
+		// Merged on the hash: two tokens can share a label and still be two
+		// different credentials, and the hash is the only thing that identifies
+		// one. A token already here is left exactly as it is — importing a dump
+		// must never un-revoke something.
+		added, err := s.ImportAPIToken(t.Label, t.Hash, t.Scopes,
+			parseRFC3339(t.CreatedAt), parseRFC3339(t.LastUsedAt),
+			parseRFC3339(t.ExpiresAt), parseRFC3339(t.RevokedAt))
+		if err != nil {
+			return sum, err
+		}
+		if added {
+			sum.APITokens++
+		}
+	}
+	if err := s.importWebhooks(e.Webhooks, &sum); err != nil {
+		return sum, err
+	}
 	for _, l := range e.Labels {
 		// NOTE: last write wins over whatever a re-sync put there. Fine for a
 		// restore; make it a union if server-side label edits ever need to survive
@@ -344,6 +447,52 @@ func (s *Store) Import(e ConfigExport) (ImportSummary, error) {
 		}
 	}
 	return sum, nil
+}
+
+// importWebhooks upserts the endpoints, merged on the URL — an endpoint *is*
+// its URL, and two rows posting to the same place would double every delivery.
+func (s *Store) importWebhooks(hooks []WebhookExport, sum *ImportSummary) error {
+	if len(hooks) == 0 {
+		return nil
+	}
+	existing, err := s.ListWebhookEndpoints()
+	if err != nil {
+		return err
+	}
+	byURL := map[string]WebhookEndpoint{}
+	for _, ep := range existing {
+		byURL[ep.URL] = ep
+	}
+	for _, h := range hooks {
+		if h.Secret == "" {
+			continue // an endpoint with no signing key could never be verified
+		}
+		if have, ok := byURL[h.URL]; ok {
+			have.Events, have.Active = h.Events, h.Active
+			if err := s.UpdateWebhookEndpoint(&have); err != nil {
+				return err
+			}
+			if err := s.SetWebhookSecret(have.ID, h.Secret); err != nil {
+				return err
+			}
+		} else {
+			ep := WebhookEndpoint{URL: h.URL, Secret: h.Secret, Events: h.Events, Active: h.Active}
+			if err := s.CreateWebhookEndpoint(&ep); err != nil {
+				return err
+			}
+		}
+		sum.Webhooks++
+	}
+	return nil
+}
+
+// parseRFC3339 is the inverse of rfc3339OrBlank: "" (or junk) is the zero time.
+func parseRFC3339(s string) time.Time {
+	if s == "" {
+		return time.Time{}
+	}
+	t, _ := time.Parse(time.RFC3339, s)
+	return t
 }
 
 // ruleIDsByName maps "account\x00name" to rule id, the merge key for filters.
