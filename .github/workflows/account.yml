@@ -1,20 +1,21 @@
 name: Account
 
 # The licence-selling service at account.mimux.dev — its own Go module, its own
-# image, its own release tags. `account-v*` is deliberately distinct from the
-# client's `v*` (whose release job requires startsWith(tag, 'v'), which an
-# account-v* tag fails) so neither release fires the other's pipeline.
+# image, its own release tags. `account-v*` tags are plain git tags (no GitHub
+# Release is created for them — only client v* releases show up on the
+# releases page), pushed by `make release-account`, and this workflow's own
+# tag-push trigger is what fires the publish job — no cross-pipeline filtering
+# needed against the client's `v*` releases.
 on:
   push:
     branches: [main]
     paths:
       - "account/**"
       - ".github/workflows/account.yml"
+    tags: ["account-v*"]
   pull_request:
     paths:
       - "account/**"
-  release:
-    types: [published]
 
 permissions:
   contents: read
@@ -22,9 +23,6 @@ permissions:
 
 jobs:
   test:
-    # Skip client (v*) and www (www-v*) releases; run for account-v* releases
-    # and for any push/PR that touched account/.
-    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'account-v')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,14 +42,14 @@ jobs:
 
   publish:
     needs: test
-    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'account-v')
+    if: startsWith(github.ref, 'refs/tags/account-v')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Compute image tags
         id: meta
         run: |
-          tag="${{ github.event.release.tag_name }}"
+          tag="${{ github.ref_name }}"
           echo "ver=${tag#account-v}" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3

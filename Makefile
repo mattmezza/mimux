@@ -183,22 +183,20 @@ release: ## Create a GitHub release (usage: make release name=v0.1.0)
 	@echo "Release $(name) created. GitHub Actions will build and push the Docker image."
 
 .PHONY: release-www
-release-www: ## Release the marketing site (usage: make release-www name=www-v0.1)
+release-www: ## Tag the marketing site (usage: make release-www name=www-v0.1)
 	@if [ -z "$(name)" ]; then echo "Usage: make release-www name=www-vX.Y"; exit 1; fi
 	@case "$(name)" in www-v*) ;; *) echo "Site release tags start with www-v (got $(name))"; exit 1;; esac
 	git tag -a $(name) -m "Release $(name)"
 	git push origin $(name)
-	gh release create $(name) --generate-notes --title "$(name)"
-	@echo "Release $(name) created. GitHub Actions will deploy www/dist to Cloudflare Pages."
+	@echo "Tag pushed. GitHub Actions will deploy www/dist to Cloudflare Pages."
 
 .PHONY: release-account
-release-account: ## Release the account service (usage: make release-account name=account-v0.1)
+release-account: ## Tag the account service (usage: make release-account name=account-v0.1)
 	@if [ -z "$(name)" ]; then echo "Usage: make release-account name=account-vX.Y"; exit 1; fi
 	@case "$(name)" in account-v*) ;; *) echo "Account release tags start with account-v (got $(name))"; exit 1;; esac
 	git tag -a $(name) -m "Release $(name)"
 	git push origin $(name)
-	gh release create $(name) --generate-notes --title "$(name)"
-	@echo "Release $(name) created. GitHub Actions will build and push the account image."
+	@echo "Tag pushed. GitHub Actions will build and push the account image."
 
 ##@ Setup
 .PHONY: setup

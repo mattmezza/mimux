@@ -202,7 +202,8 @@ service speaks plain HTTP on loopback and handles no certificates.
 
 The VPS holds two files — `docker-compose.yml` and `account.env` — and no
 checkout. The image is pulled from ghcr.io, where the Account workflow publishes
-it on every `account-v*` release (`make release-account name=account-v0.1`).
+it on every `account-v*` tag push (`make release-account name=account-v0.1`
+tags and pushes the tag — no GitHub Release is created).
 
 ```sh
 # on the VPS, first time. The package is private, so authenticate once with a

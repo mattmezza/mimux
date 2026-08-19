@@ -2,8 +2,8 @@ name: www
 
 # The marketing site at mimux.dev, deployed to Cloudflare Pages.
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["www-v*"]
   pull_request:
     paths:
       - "www/**"
@@ -31,9 +31,9 @@ jobs:
           ! grep -rn "script src=\"http" www/dist/index.html | grep -v analytics.casa.merola.co
 
   deploy:
-    # Only www-v* releases deploy. Client releases (v*) are handled by
-    # release.yml and never touch Pages.
-    if: github.event_name == 'release' && startsWith(github.event.release.tag_name, 'www-v')
+    # Only www-v* tag pushes deploy — the trigger above already filters to
+    # that pattern. Client releases (v*) are handled by release.yml and never
+    # touch Pages.
     needs: build
     runs-on: ubuntu-latest
     steps:

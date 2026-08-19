@@ -58,9 +58,10 @@ Cloudflare Pages via `.github/workflows/www.yml`:
 
 - **Pull requests touching `www/**`** build `dist/` and run sanity checks, no
   deploy.
-- **Release deploys:** `make release name=www-v0.1` — the workflow only deploys
-  for tags starting `www-v`. Client releases (`v*`) are handled by
-  `release.yml`, which is guarded to ignore `www-v*` tags.
+- **Release deploys:** `make release-www name=www-v0.1` — tags and pushes
+  `www-v*`, no GitHub Release is created. The workflow triggers on that tag
+  pattern directly. Client releases (`v*`) are handled by `release.yml`,
+  which triggers on published GitHub Releases and never sees `www-v*` tags.
 
 Secrets needed in GitHub: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`.
 Pages project name: `mimux-www`.
