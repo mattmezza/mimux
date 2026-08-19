@@ -377,25 +377,20 @@ func (a *account) authenticate(c *imapclient.Client) error {
 }
 
 // session runs the initial full sync of all folders then the steady-state loop
-// on the inbox.
+// over the account's synced set.
 func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 	a.setStatus("syncing", "")
+	// ListFolders already returns the inbox first (sortForSpecial ranks it 0), so
+	// the reconnect sweep starts where the user is looking without re-sorting.
 	folders, err := a.syncFolders(c)
 	if err != nil {
 		return err
 	}
 	caps := c.Caps()
-	var inbox *store.Folder
+	hasInbox := false
 	for i := range folders {
-		f := &folders[i]
-		if f.SpecialUse == "inbox" {
-			inbox = f
-		}
+		hasInbox = hasInbox || folders[i].SpecialUse == "inbox"
 	}
-	// Inbox first, then the rest.
-	sort.SliceStable(folders, func(i, j int) bool {
-		return folders[i].SpecialUse == "inbox" && folders[j].SpecialUse != "inbox"
-	})
 	anyChanged := false
 	for i := range folders {
 		if ctx.Err() != nil {
@@ -411,15 +406,48 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 		a.signalListChanged()
 	}
 	a.setStatus("ok", "")
-	if inbox == nil {
+	if !hasInbox {
 		// No inbox: just idle-poll nothing; wait for shutdown.
 		<-ctx.Done()
 		return nil
 	}
-	return a.steady(ctx, c, inbox, caps)
+	return a.steady(ctx, c, caps)
 }
 
-func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store.Folder, caps imap.CapSet) error {
+// syncedFolders is the set the steady loop walks, INBOX LAST. Order matters
+// twice over: the folder the user is looking at should be the freshest thing in
+// the cycle, and waitIdle idles on whatever happens to be selected — so the
+// cycle has to finish on the inbox for IDLE to mean "tell me about new mail".
+func (a *account) syncedFolders() ([]store.Folder, error) {
+	folders, err := a.m.st.SyncedFolders(a.cfg.Name)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(folders, func(i, j int) bool {
+		return folders[i].SpecialUse != "inbox" && folders[j].SpecialUse == "inbox"
+	})
+	return folders, nil
+}
+
+// selectInbox re-SELECTs the inbox when the selection has drifted, so IDLE
+// always waits on the mailbox new mail arrives in. It drifts both ways: the
+// cycle's own round-robin, and the read-only commands (a server-side search, an
+// attachment listing) that SELECT another mailbox on this same connection and
+// leave it selected. Cheap and idempotent — one local row read and a name
+// compare when nothing moved.
+func (a *account) selectInbox(c *imapclient.Client) error {
+	f, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox")
+	if err != nil || f == nil {
+		return err
+	}
+	if mbox := c.Mailbox(); mbox != nil && mbox.Name == f.Name {
+		return nil
+	}
+	_, err = c.Select(f.Name, nil).Wait()
+	return err
+}
+
+func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.CapSet) error {
 	idleOK := caps.Has(imap.CapIdle)
 	// The first trip syncs unconditionally, as it always did: session() has just
 	// finished the full sweep and this re-reads the inbox before settling in.
@@ -443,12 +471,26 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 			// flags back from it — otherwise the sync reads a stale "unread" and
 			// the local mark-read is lost.
 			a.pushSeenDirty(c)
-			changed, err := a.syncFolder(ctx, c, inbox, caps)
+			// Re-read the set every cycle, like the poll interval below: ticking a
+			// folder in Settings → Syncing takes effect on the next cycle, without
+			// a reconnect.
+			folders, err := a.syncedFolders()
 			if err != nil {
 				return err
 			}
+			changed := false
+			for i := range folders {
+				if ctx.Err() != nil {
+					return nil
+				}
+				got, err := a.syncFolder(ctx, c, &folders[i], caps)
+				if err != nil {
+					return err
+				}
+				changed = changed || got
+			}
 			if changed {
-				a.signalListChanged()
+				a.signalListChanged() // one per cycle, whatever changed where
 			}
 			a.setStatus("ok", "")
 		}
@@ -456,6 +498,9 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, inbox *store
 		// setting takes effect without a restart.
 		poll := a.pollInterval()
 		if idleOK {
+			if err := a.selectInbox(c); err != nil {
+				return err
+			}
 			var err error
 			if sync, err = a.waitIdle(ctx, c, poll); err != nil {
 				return err

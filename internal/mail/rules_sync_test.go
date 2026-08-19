@@ -31,12 +31,19 @@ func testMessage(sender, subject string) string {
 }
 
 // newTestIMAP starts an in-memory IMAP server holding msgs in INBOX (plus an
-// empty Archive) and returns a logged-in client for it — the same thing the
-// worker holds while it syncs.
+// empty Archive and Sent) and returns a logged-in client for it — the same
+// thing the worker holds while it syncs.
 func newTestIMAP(t *testing.T, msgs ...string) *imapclient.Client {
+	c, _ := newTestIMAPUser(t, msgs...)
+	return c
+}
+
+// newTestIMAPUser is newTestIMAP plus the server-side mailbox, so a test can
+// deliver mail behind the client's back — "another client appended this".
+func newTestIMAPUser(t *testing.T, msgs ...string) (*imapclient.Client, *imapmemserver.User) {
 	t.Helper()
 	user := imapmemserver.NewUser("u", "p")
-	for _, name := range []string{"INBOX", "Archive"} {
+	for _, name := range []string{"INBOX", "Archive", "Sent"} {
 		if err := user.Create(name, nil); err != nil {
 			t.Fatal(err)
 		}
@@ -71,7 +78,7 @@ func newTestIMAP(t *testing.T, msgs ...string) *imapclient.Client {
 	if err := c.Login("u", "p").Wait(); err != nil {
 		t.Fatal(err)
 	}
-	return c
+	return c, user
 }
 
 // syncInbox runs one full sync of the inbox with nothing draining a.cmds — the

@@ -183,13 +183,14 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		changed = changed || flagsChanged
 	}
 
-	// Heal older gaps in the inbox — e.g. left by a previous UIDNext-based window
-	// that skipped older messages still present on the server (see windowStartUID)
-	// — by fetching any of the newest server messages we don't have yet. Scoped to
-	// the inbox: it's an extra SEARCH per cycle, the unread badge is inbox-only,
-	// and once caught up the diff is empty. NOTE: inbox-only; widen if other
-	// folders show stale counts.
-	if f.SpecialUse == "inbox" && !firstFull {
+	// Heal older gaps — e.g. left by a previous UIDNext-based window that skipped
+	// older messages still present on the server (see windowStartUID) — by
+	// fetching any of the newest server messages we don't have yet. It costs an
+	// extra SEARCH, and the diff is empty once caught up. Used to be inbox-only
+	// because the inbox was all the steady state ever re-read; now the caller
+	// decides which folders are worth a cycle, and every one of them wants the
+	// same healing.
+	if !firstFull {
 		if got, _ := a.backfillWindow(ctx, c, f); got > 0 {
 			changed = true
 		}
@@ -350,8 +351,8 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 //
 // Limits, all structural to this function and documented for users on the
 // webhooks docs page: CONDSTORE only (no CONDSTORE, no ChangedSince, no diff),
-// and only for the folders a cycle actually syncs — the inbox in the steady
-// state, everything else on reconnect. Labels are add-only, because MergeLabels
+// and only for the folders a cycle actually syncs — the account's synced set in
+// the steady state, everything else on reconnect. Labels are add-only, because MergeLabels
 // is additive: a label another client removed cannot be seen from here.
 func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool, error) {
 	set := imap.UIDSet{{Start: 1, Stop: 0}}
