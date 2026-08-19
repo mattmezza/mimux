@@ -41,6 +41,14 @@ func newTestIMAP(t *testing.T, msgs ...string) *imapclient.Client {
 // newTestIMAPUser is newTestIMAP plus the server-side mailbox, so a test can
 // deliver mail behind the client's back — "another client appended this".
 func newTestIMAPUser(t *testing.T, msgs ...string) (*imapclient.Client, *imapmemserver.User) {
+	return newTestIMAPCaps(t, imap.CapSet{
+		imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}, imap.CapMove: {}, imap.CapUIDPlus: {},
+	}, msgs...)
+}
+
+// newTestIMAPCaps is newTestIMAPUser against a server advertising exactly caps
+// — for the paths that degrade on an older server (no UIDPLUS, no MOVE).
+func newTestIMAPCaps(t *testing.T, caps imap.CapSet, msgs ...string) (*imapclient.Client, *imapmemserver.User) {
 	t.Helper()
 	user := imapmemserver.NewUser("u", "p")
 	for _, name := range []string{"INBOX", "Archive", "Sent"} {
@@ -59,7 +67,7 @@ func newTestIMAPUser(t *testing.T, msgs ...string) (*imapclient.Client, *imapmem
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
 			return mem.NewSession(), nil, nil
 		},
-		Caps:         imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapIMAP4rev2: {}, imap.CapMove: {}, imap.CapUIDPlus: {}},
+		Caps:         caps,
 		InsecureAuth: true,
 	})
 	ln, err := net.Listen("tcp", "127.0.0.1:0")

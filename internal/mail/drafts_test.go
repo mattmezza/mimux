@@ -1,0 +1,217 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+package mail
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/emersion/go-imap/v2"
+	"github.com/emersion/go-imap/v2/imapclient"
+
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
+)
+
+// draftAccount wires a store-backed manager and an account for c, with the
+// server's folders already discovered — the state a push starts from once an
+// account has synced at least once.
+func draftAccount(t *testing.T, st *store.Store, c *imapclient.Client) *account {
+	t.Helper()
+	a := newTestAccount(NewManager(&config.Config{}, st), "acct", "syncing")
+	a.cfg.Email = "me@example.com"
+	if _, err := a.syncFolders(c); err != nil {
+		t.Fatal(err)
+	}
+	return a
+}
+
+// draftCopy is one message as these tests care about it. Revisions of the same
+// draft share a Message-ID, so they are counted, never keyed by it.
+type draftCopy struct {
+	MessageID string
+	Deleted   bool
+}
+
+// draftCopies reports what the mailbox actually holds, in UID order.
+func draftCopies(t *testing.T, c *imapclient.Client, folder string) []draftCopy {
+	t.Helper()
+	if _, err := c.Select(folder, nil).Wait(); err != nil {
+		t.Fatalf("select %s: %v", folder, err)
+	}
+	data, err := c.Fetch(imap.UIDSet{{Start: 1, Stop: 0}},
+		&imap.FetchOptions{Flags: true, Envelope: true}).Collect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]draftCopy, 0, len(data))
+	for _, msg := range data {
+		id := ""
+		if msg.Envelope != nil {
+			id = strings.Trim(msg.Envelope.MessageID, "<>")
+		}
+		out = append(out, draftCopy{id, hasFlag(msg.Flags, imap.FlagDeleted)})
+	}
+	return out
+}
+
+// saveAndPush is the whole write-through cycle: local write first, then the
+// IMAP publish, then re-read the row the way the next save would.
+func saveAndPush(t *testing.T, a *account, c *imapclient.Client, d *store.Draft) *store.Draft {
+	t.Helper()
+	if err := a.m.st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.m.pushDraft(context.Background(), c, d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.m.st.DraftByID(d.ID)
+	if err != nil || got == nil {
+		t.Fatalf("DraftByID = %v, %v", got, err)
+	}
+	return got
+}
+
+// TestPushDraftReplacesTheRevision: saving a draft twice must leave one draft
+// in the mailbox, not two — same Message-ID, new body, old copy expunged.
+func TestPushDraftReplacesTheRevision(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	d := &store.Draft{Account: "acct", To: "ada@example.com", Subject: "Hi", Body: "one", Kind: "new"}
+	first := saveAndPush(t, a, c, d)
+	if first.MessageID == "" || first.UID == 0 || first.IMAPDirty {
+		t.Fatalf("after the first push = %+v, want a recorded location and no debt", first)
+	}
+	drafts, _ := st.FolderBySpecial("acct", "drafts")
+	if drafts == nil || first.FolderID != drafts.ID {
+		t.Fatalf("draft filed in folder %d, want the Drafts folder", first.FolderID)
+	}
+
+	first.Body = "two"
+	second := saveAndPush(t, a, c, first)
+	if second.MessageID != first.MessageID {
+		t.Errorf("Message-ID changed between revisions: %q then %q", first.MessageID, second.MessageID)
+	}
+	if second.UID == first.UID {
+		t.Errorf("UID %d unchanged — the second revision was never appended", second.UID)
+	}
+
+	copies := draftCopies(t, c, "Drafts")
+	if len(copies) != 1 {
+		t.Fatalf("Drafts holds %d copies (%v), want exactly 1", len(copies), copies)
+	}
+	if copies[0].MessageID != second.MessageID || copies[0].Deleted {
+		t.Errorf("the surviving copy is %+v, want the draft's own Message-ID, not deleted", copies[0])
+	}
+}
+
+// TestPushDraftMarksTheDraftSeen: a draft the user is writing must not inflate
+// their unread count.
+func TestPushDraftMarksTheDraftSeen(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+	saveAndPush(t, a, c, &store.Draft{Account: "acct", Subject: "Hi", Body: "x", Kind: "new"})
+
+	if _, err := c.Select("Drafts", nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := c.Fetch(imap.UIDSet{{Start: 1, Stop: 0}}, &imap.FetchOptions{Flags: true}).Collect()
+	if err != nil || len(data) != 1 {
+		t.Fatalf("fetch = %d messages, %v", len(data), err)
+	}
+	if !hasFlag(data[0].Flags, imap.FlagDraft) {
+		t.Error("the appended copy is not flagged \\Draft")
+	}
+	if !hasFlag(data[0].Flags, imap.FlagSeen) {
+		t.Error("the appended copy is unread: it will show up in the unread badge")
+	}
+}
+
+// TestPushDraftWithoutUIDPlus: no UIDEXPUNGE means the old revision can only be
+// marked \Deleted — expunging outright would take another client's deletions
+// with it. The new revision still lands, which is the part that matters.
+func TestPushDraftWithoutUIDPlus(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPCaps(t, imap.CapSet{imap.CapIMAP4rev1: {}})
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	d := &store.Draft{Account: "acct", Subject: "Hi", Body: "one", Kind: "new"}
+	first := saveAndPush(t, a, c, d)
+	first.Body = "two"
+	second := saveAndPush(t, a, c, first)
+
+	if second.IMAPDirty {
+		t.Error("the draft still owes a push after a successful append")
+	}
+	if second.UID == 0 {
+		t.Error("no APPENDUID and no Message-ID fallback: the next revision cannot replace this one")
+	}
+	copies := draftCopies(t, c, "Drafts")
+	if len(copies) != 2 {
+		t.Fatalf("Drafts holds %d copies (%v), want 2 — the old one can only be flagged, not expunged", len(copies), copies)
+	}
+	if !copies[0].Deleted {
+		t.Error("the superseded revision is not marked \\Deleted")
+	}
+	if copies[1].Deleted || copies[1].MessageID != second.MessageID {
+		t.Errorf("the current revision is %+v, want the live draft", copies[1])
+	}
+}
+
+// TestPushDraftCreatesTheFolder: an account whose server has no Drafts mailbox
+// gets one, rather than its drafts staying quietly local forever.
+func TestPushDraftCreatesTheFolder(t *testing.T) {
+	st := testStore(t)
+	c, _ := newTestIMAPUser(t) // INBOX, Archive, Sent — no Drafts
+	a := draftAccount(t, st, c)
+	if f, _ := st.FolderBySpecial("acct", "drafts"); f != nil {
+		t.Fatalf("the harness already has a Drafts folder: %+v", f)
+	}
+
+	got := saveAndPush(t, a, c, &store.Draft{Account: "acct", Subject: "Hi", Body: "x", Kind: "new"})
+
+	f, err := st.FolderBySpecial("acct", "drafts")
+	if err != nil || f == nil {
+		t.Fatalf("FolderBySpecial(drafts) after push = %v, %v — the CREATE never happened", f, err)
+	}
+	if got.FolderID != f.ID || got.IMAPDirty {
+		t.Errorf("draft = %+v, want it published into the new folder", got)
+	}
+	if copies := draftCopies(t, c, f.Name); len(copies) != 1 || copies[0].MessageID != got.MessageID {
+		t.Errorf("%q holds %v, want the one draft", f.Name, copies)
+	}
+}
+
+// TestPushDraftKeepsTheLocalRowWhenIMAPFails is the invariant: the store is
+// written first, so a server that will not take the draft costs a retry, never
+// the draft.
+func TestPushDraftKeepsTheLocalRowWhenIMAPFails(t *testing.T) {
+	st := testStore(t)
+	d := &store.Draft{Account: "nosuchaccount", Subject: "Hi", Body: "x", Kind: "new"}
+	if err := st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(&config.Config{}, st)
+	if err := m.PushDraft(context.Background(), d); err == nil {
+		t.Fatal("pushing to an unknown account did not error")
+	}
+	got, err := st.DraftByID(d.ID)
+	if err != nil || got == nil {
+		t.Fatalf("the draft is gone after a failed push: %v, %v", got, err)
+	}
+	if !got.IMAPDirty {
+		t.Error("the failed push cleared the retry marker")
+	}
+}

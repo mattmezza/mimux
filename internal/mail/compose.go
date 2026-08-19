@@ -28,6 +28,10 @@ type ComposeInput struct {
 	InReplyTo   string // original Message-ID (no angle brackets), "" for a new message
 	References  string // full References header value to reuse (see ComputeReferences), "" for a new message
 	Attachments []OutAttachment
+	// MessageID forces the Message-ID header instead of generating one. Only
+	// drafts use it: every save re-APPENDs the draft, and keeping one id across
+	// those revisions is what makes them the same message rather than a pile.
+	MessageID string
 }
 
 // bodyParts derives the (plainText, htmlBody) pair to send for this input's
@@ -269,7 +273,9 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 	// (RCPT TO) carries it instead, see Manager.Send.
 	h.SetSubject(in.Subject)
 	h.SetDate(now)
-	if err := h.GenerateMessageIDWithHostname(msgIDHost(fromAddr)); err != nil {
+	if in.MessageID != "" {
+		h.SetMessageID(in.MessageID)
+	} else if err := h.GenerateMessageIDWithHostname(msgIDHost(fromAddr)); err != nil {
 		return nil, "", err
 	}
 	messageID, _ = h.MessageID()
