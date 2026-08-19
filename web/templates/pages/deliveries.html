@@ -1,0 +1,126 @@
+{{define "title"}}Deliveries · Webhooks — mimux{{end}}
+{{define "content"}}
+{{/* The webhook debugging screen: one endpoint's log, filtered and paged, with
+     the exact bytes we sent and what came back. Plain forms and links, no
+     htmx — every control here changes the URL, and the URL is the state. */}}
+<div class="h-dvh flex flex-col min-h-0">
+  <header class="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-zinc-800 bg-zinc-900">
+    <a href="/settings/webhooks" class="p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" title="Back to webhooks" aria-label="Back to webhooks">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+    </a>
+    <h1 class="text-base font-semibold text-zinc-100">Deliveries</h1>
+    <span class="min-w-0 truncate text-sm text-zinc-500">· {{.Endpoint.URL}}</span>
+  </header>
+
+  <div class="flex-1 min-h-0 flex flex-col md:flex-row w-full max-w-4xl mx-auto">
+    {{template "settings_nav" .}}
+
+    <div class="flex-1 min-h-0 overflow-y-auto" id="main-content">
+      <div class="max-w-2xl w-full p-6 space-y-4">
+
+        <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-1">
+          <p class="text-sm text-zinc-100 break-all">{{.Endpoint.URL}}
+            {{if .Endpoint.AutoDisabled}}<span class="ml-1 text-xs text-amber-400">auto-disabled</span>
+            {{else if not .Endpoint.Active}}<span class="ml-1 text-xs text-zinc-500">paused</span>
+            {{else}}<span class="ml-1 text-xs text-emerald-400">active</span>{{end}}
+          </p>
+          <p class="text-xs text-zinc-500">
+            {{if .Stats.Settled}}<span class="{{if lt .Stats.SuccessRate 90}}text-amber-400{{else}}text-emerald-400{{end}}">{{.Stats.SuccessRate}}% delivered</span> · {{end}}
+            {{.Stats.Total}} in the log
+            {{if .Stats.Failing}}· <span class="text-red-400">{{.Stats.Failing}} failing</span>{{end}}
+            {{if .Stats.Pending}}· {{.Stats.Pending}} queued{{end}}
+            {{if not .Stats.LastAt.IsZero}}· last {{.Stats.LastStatus}} {{absTime .Stats.LastAt}}{{end}}
+          </p>
+          <p class="text-xs text-zinc-500">The log keeps the most recent deliveries per endpoint; older ones are pruned.</p>
+        </div>
+
+        {{/* Filters: a GET form, so a filtered view is a URL you can bookmark
+             and send to whoever runs the receiver. */}}
+        <form method="get" action="/settings/webhooks/{{.Endpoint.ID}}/deliveries"
+              class="flex flex-wrap items-end gap-3 rounded-lg border border-zinc-700 bg-zinc-800/30 p-3">
+          <label class="space-y-1">
+            <span class="block text-xs text-zinc-400">Status</span>
+            <select name="status" class="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <option value="">Any</option>
+              {{$cur := .Filter.Status}}
+              {{range .Statuses}}<option value="{{.}}" {{if eq $cur .}}selected{{end}}>{{.}}</option>{{end}}
+            </select>
+          </label>
+          <label class="space-y-1">
+            <span class="block text-xs text-zinc-400">Event</span>
+            <select name="event" class="rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <option value="">Any</option>
+              {{$ev := .Filter.Event}}
+              {{range .WebhookEvents}}<option value="{{.ID}}" {{if eq $ev .ID}}selected{{end}}>{{.ID}}</option>{{end}}
+            </select>
+          </label>
+          <button type="submit" class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Filter</button>
+          <a href="/settings/webhooks/{{.Endpoint.ID}}/deliveries" class="text-xs text-zinc-400 hover:text-zinc-100 underline">Clear</a>
+          <span class="ml-auto text-xs text-zinc-500">{{.Total}} matching</span>
+        </form>
+
+        <ul class="space-y-2">
+          {{$self := .Self}}{{$csrf := .CSRF}}
+          {{range .Deliveries}}
+          <li class="rounded-lg border border-zinc-700 bg-zinc-800/30">
+            <details class="group">
+              <summary class="cursor-pointer list-none px-3 py-2.5 flex flex-wrap items-center gap-2 text-xs">
+                <span class="{{if eq .Status "ok"}}text-emerald-400{{else if eq .Status "dead"}}text-red-400{{else if eq .Status "failed"}}text-amber-400{{else}}text-zinc-400{{end}} font-medium">{{.Status}}</span>
+                <code class="text-zinc-300">{{.EventType}}</code>
+                {{if .LastStatusCode}}<span class="text-zinc-500">HTTP {{.LastStatusCode}}</span>{{end}}
+                {{if .DurationMS}}<span class="text-zinc-500">· {{.DurationMS}} ms</span>{{end}}
+                <span class="text-zinc-500">· {{.Attempts}} attempt{{if ne .Attempts 1}}s{{end}}</span>
+                <span class="text-zinc-500">· queued {{absTime .CreatedAt}}</span>
+                {{if not .DeliveredAt.IsZero}}<span class="text-zinc-500">· delivered {{absTime .DeliveredAt}}</span>{{end}}
+                <span class="ml-auto text-zinc-500 group-open:hidden">show</span>
+              </summary>
+
+              <div class="px-3 pb-3 space-y-3 text-xs">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-zinc-500">
+                  <span>Delivery id <code class="text-zinc-300">{{.DeliveryID}}</code></span>
+                  {{if not .Succeeded}}<span>Next attempt {{absTime .NextAttemptAt}}</span>{{end}}
+                </div>
+                {{if .LastError}}<p class="text-red-400/90 break-words">{{.LastError}}</p>{{end}}
+
+                <div class="space-y-1">
+                  <span class="block text-zinc-400">Request body</span>
+                  <pre class="overflow-x-auto rounded-md bg-zinc-950 border border-zinc-800 p-2 font-mono text-[11px] text-zinc-300">{{.Payload}}</pre>
+                </div>
+
+                <div class="space-y-1">
+                  <span class="block text-zinc-400">Response {{if .LastStatusCode}}({{.LastStatusCode}}){{end}}</span>
+                  {{if .ResponseBody}}
+                  <pre class="overflow-x-auto rounded-md bg-zinc-950 border border-zinc-800 p-2 font-mono text-[11px] text-zinc-300">{{.ResponseBody}}</pre>
+                  {{else}}
+                  <p class="text-zinc-500">No body recorded — the receiver answered with nothing, or the request never got an answer.</p>
+                  {{end}}
+                </div>
+
+                <form method="post" action="/settings/webhooks/{{.EndpointID}}/deliveries/{{.ID}}/replay">
+                  <input type="hidden" name="csrf_token" value="{{$csrf}}">
+                  <input type="hidden" name="back" value="{{$self}}">
+                  <button type="submit"
+                    class="px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:text-zinc-100 hover:bg-zinc-700 transition-colors duration-150">Send again</button>
+                  <span class="ml-2 text-zinc-500">Same body, same delivery id — a receiver that already has it can ignore the duplicate.</span>
+                </form>
+              </div>
+            </details>
+          </li>
+          {{else}}
+          <li class="rounded-lg border border-zinc-700 bg-zinc-800/30 px-3 py-4 text-sm text-zinc-500">Nothing here. {{if or .Filter.Status .Filter.Event}}No delivery matches this filter.{{else}}This endpoint hasn't been sent anything yet.{{end}}</li>
+          {{end}}
+        </ul>
+
+        {{if gt .Pages 1}}
+        <div class="flex items-center justify-between text-xs text-zinc-400">
+          {{if .PrevURL}}<a href="{{.PrevURL}}" class="px-2.5 py-1 rounded-md border border-zinc-700 hover:text-zinc-100 hover:bg-zinc-700">Newer</a>{{else}}<span></span>{{end}}
+          <span>Page {{.PageNo}} of {{.Pages}}</span>
+          {{if .NextURL}}<a href="{{.NextURL}}" class="px-2.5 py-1 rounded-md border border-zinc-700 hover:text-zinc-100 hover:bg-zinc-700">Older</a>{{else}}<span></span>{{end}}
+        </div>
+        {{end}}
+
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}

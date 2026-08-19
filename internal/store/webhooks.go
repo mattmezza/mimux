@@ -48,8 +48,9 @@ type WebhookEndpoint struct {
 	URL            string
 	Secret         string
 	Events         string    // space-separated, subset of WebhookEvents
-	Active         bool
+	Active         bool      // false = paused (by hand, or auto-disabled)
 	AutoDisabledAt time.Time // zero = never auto-disabled
+	FailureEmailAt time.Time // zero = we never emailed about this one failing
 	CreatedAt      time.Time
 }
 
@@ -106,17 +107,18 @@ func normalizeWebhookURL(raw string) (string, error) {
 	return raw, nil
 }
 
-const webhookEndpointCols = `id, url, secret, events, active, auto_disabled_at, created_at`
+const webhookEndpointCols = `id, url, secret, events, active, auto_disabled_at, failure_email_at, created_at`
 
 func scanWebhookEndpoint(sc interface{ Scan(...any) error }) (WebhookEndpoint, error) {
 	var e WebhookEndpoint
 	var created string
-	var disabled sql.NullString
-	if err := sc.Scan(&e.ID, &e.URL, &e.Secret, &e.Events, &e.Active, &disabled, &created); err != nil {
+	var disabled, emailed sql.NullString
+	if err := sc.Scan(&e.ID, &e.URL, &e.Secret, &e.Events, &e.Active, &disabled, &emailed, &created); err != nil {
 		return e, err
 	}
 	e.CreatedAt, _ = time.Parse(time.RFC3339, created)
 	e.AutoDisabledAt = parseNullTime(disabled)
+	e.FailureEmailAt = parseNullTime(emailed)
 	return e, nil
 }
 
@@ -175,9 +177,9 @@ func (s *Store) WebhookEndpointByID(id int64) (*WebhookEndpoint, error) {
 }
 
 // UpdateWebhookEndpoint writes back the mutable fields (url, events, active,
-// auto-disabled state). The secret is never rotated in place: to change it,
-// delete the endpoint and create a new one, which is also what forces the new
-// secret to be shown.
+// auto-disabled state). The secret has its own setter — see SetWebhookSecret —
+// so that rotating it is an explicit act and not something a stale struct can
+// do by accident on its way through a form handler.
 func (s *Store) UpdateWebhookEndpoint(ep *WebhookEndpoint) error {
 	u, err := normalizeWebhookURL(ep.URL)
 	if err != nil {
@@ -197,6 +199,35 @@ func (s *Store) AutoDisableWebhookEndpoint(id int64, at time.Time) error {
 	_, err := s.DB.Exec(`UPDATE webhook_endpoints SET active = 0, auto_disabled_at = ? WHERE id = ?`,
 		at.UTC().Format(time.RFC3339), id)
 	return err
+}
+
+// SetWebhookSecret rotates an endpoint's signing key. Every attempt made after
+// this — including a replay of an old delivery — signs with the new secret, so
+// the receiver has to be updated at the same time.
+func (s *Store) SetWebhookSecret(id int64, secret string) error {
+	if strings.TrimSpace(secret) == "" {
+		return errors.New("webhook: secret required")
+	}
+	_, err := s.DB.Exec(`UPDATE webhook_endpoints SET secret = ? WHERE id = ?`, secret, id)
+	return err
+}
+
+// MarkWebhookFailureEmail stamps when we last emailed about this endpoint
+// failing. The stamp *is* the dedupe: see WebhookEndpoint.FailureEmailDue.
+func (s *Store) MarkWebhookFailureEmail(id int64, at time.Time) error {
+	_, err := s.DB.Exec(`UPDATE webhook_endpoints SET failure_email_at = ? WHERE id = ?`,
+		at.UTC().Format(time.RFC3339), id)
+	return err
+}
+
+// FailureEmailDue reports whether a failure notification may be sent now: at
+// most one per endpoint per day, counted from the last one actually sent.
+//
+// Per endpoint rather than per user because the endpoint is the thing that
+// broke and the row to hang the stamp on already exists — with one endpoint
+// (the common case) the two are the same rule anyway.
+func (e WebhookEndpoint) FailureEmailDue(now time.Time) bool {
+	return now.Sub(e.FailureEmailAt) >= 24*time.Hour
 }
 
 // DeleteWebhookEndpoint removes an endpoint; its deliveries go with it (ON
@@ -221,19 +252,25 @@ type WebhookDelivery struct {
 	NextAttemptAt  time.Time
 	LastStatusCode int
 	LastError      string
+	ResponseBody   string // first bytes of the receiver's reply to the last attempt
+	DurationMS     int    // how long the last attempt took, end to end
 	CreatedAt      time.Time
 	DeliveredAt    time.Time // zero until a 2xx
 }
 
+// Succeeded reports whether this delivery is done and went through.
+func (d WebhookDelivery) Succeeded() bool { return d.Status == WebhookOK }
+
 const webhookDeliveryCols = `id, endpoint_id, event_type, delivery_id, payload, status, attempts,
-	next_attempt_at, last_status_code, last_error, created_at, delivered_at`
+	next_attempt_at, last_status_code, last_error, response_body, duration_ms, created_at, delivered_at`
 
 func scanWebhookDelivery(sc interface{ Scan(...any) error }) (WebhookDelivery, error) {
 	var d WebhookDelivery
 	var next, created string
 	var delivered sql.NullString
 	if err := sc.Scan(&d.ID, &d.EndpointID, &d.EventType, &d.DeliveryID, &d.Payload, &d.Status,
-		&d.Attempts, &next, &d.LastStatusCode, &d.LastError, &created, &delivered); err != nil {
+		&d.Attempts, &next, &d.LastStatusCode, &d.LastError, &d.ResponseBody, &d.DurationMS,
+		&created, &delivered); err != nil {
 		return d, err
 	}
 	d.NextAttemptAt, _ = time.Parse(time.RFC3339, next)
@@ -310,6 +347,129 @@ func (s *Store) ListWebhookDeliveries(endpointID int64, limit int) ([]WebhookDel
 	return out, rows.Err()
 }
 
+// WebhookDeliveryFilter narrows the deliveries screen. A blank field means "no
+// filter on this one"; an unknown status or event simply matches nothing, which
+// is what a hand-typed query string deserves.
+type WebhookDeliveryFilter struct {
+	Status string // one of the delivery states
+	Event  string // an event type
+	Limit  int    // page size (0 = 25)
+	Offset int
+}
+
+// FilterWebhookDeliveries returns one page of an endpoint's log (newest first)
+// plus the total number of rows matching the filter, for the pager.
+func (s *Store) FilterWebhookDeliveries(endpointID int64, f WebhookDeliveryFilter) ([]WebhookDelivery, int, error) {
+	where := `WHERE endpoint_id = ?`
+	args := []any{endpointID}
+	if f.Status != "" {
+		where += ` AND status = ?`
+		args = append(args, f.Status)
+	}
+	if f.Event != "" {
+		where += ` AND event_type = ?`
+		args = append(args, f.Event)
+	}
+	var total int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM webhook_deliveries `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	if f.Limit <= 0 {
+		f.Limit = 25
+	}
+	rows, err := s.DB.Query(`SELECT `+webhookDeliveryCols+` FROM webhook_deliveries `+where+
+		` ORDER BY id DESC LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []WebhookDelivery
+	for rows.Next() {
+		d, err := scanWebhookDelivery(rows)
+		if err != nil {
+			return nil, 0, err
+		}
+		out = append(out, d)
+	}
+	return out, total, rows.Err()
+}
+
+// WebhookStats summarises an endpoint's delivery log — which is the last
+// webhookDeliveryKeep deliveries, not all time. That is the honest window: the
+// rows older than that were pruned, so a rate over "everything" would silently
+// mean the same thing while sounding like it didn't.
+type WebhookStats struct {
+	Total      int
+	OK         int
+	Retrying   int       // attempted, still walking the retry ladder
+	Dead       int       // gave up (or the receiver said 410)
+	Pending    int       // queued, not yet attempted
+	LastAt     time.Time // when the newest delivery was queued
+	LastStatus string
+	LastCode   int
+}
+
+// Failing is what the listing shows as the trouble count: everything that has
+// failed at least once and hasn't been delivered.
+func (s WebhookStats) Failing() int { return s.Retrying + s.Dead }
+
+// Settled is the deliveries that reached a verdict: delivered, or given up on.
+func (s WebhookStats) Settled() int { return s.OK + s.Dead }
+
+// SuccessRate is the percentage of settled deliveries that were delivered.
+// Meaningless (and unshown) when nothing has settled yet — see Settled.
+func (s WebhookStats) SuccessRate() int {
+	if s.Settled() == 0 {
+		return 0
+	}
+	return s.OK * 100 / s.Settled()
+}
+
+// WebhookEndpointStats folds an endpoint's log into the numbers the listing
+// shows: how much got through, what is broken now, and when it last tried.
+func (s *Store) WebhookEndpointStats(endpointID int64) (WebhookStats, error) {
+	var st WebhookStats
+	rows, err := s.DB.Query(`SELECT status, COUNT(*) FROM webhook_deliveries
+		WHERE endpoint_id = ? GROUP BY status`, endpointID)
+	if err != nil {
+		return st, err
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		var status string
+		var n int
+		if err := rows.Scan(&status, &n); err != nil {
+			return st, err
+		}
+		st.Total += n
+		switch status {
+		case WebhookOK:
+			st.OK = n
+		case WebhookFailed:
+			st.Retrying = n
+		case WebhookDead:
+			st.Dead = n
+		case WebhookPending:
+			st.Pending = n
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return st, err
+	}
+	var created string
+	err = s.DB.QueryRow(`SELECT status, last_status_code, created_at FROM webhook_deliveries
+		WHERE endpoint_id = ? ORDER BY id DESC LIMIT 1`, endpointID).
+		Scan(&st.LastStatus, &st.LastCode, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return st, nil
+	}
+	if err != nil {
+		return st, err
+	}
+	st.LastAt, _ = time.Parse(time.RFC3339, created)
+	return st, nil
+}
+
 // WebhookDeliveryByID returns one delivery, or nil if absent.
 func (s *Store) WebhookDeliveryByID(id int64) (*WebhookDelivery, error) {
 	d, err := scanWebhookDelivery(s.DB.QueryRow(`SELECT `+webhookDeliveryCols+` FROM webhook_deliveries WHERE id = ?`, id))
@@ -325,9 +485,10 @@ func (s *Store) WebhookDeliveryByID(id int64) (*WebhookDelivery, error) {
 // SaveWebhookDelivery writes back the attempt outcome.
 func (s *Store) SaveWebhookDelivery(d *WebhookDelivery) error {
 	_, err := s.DB.Exec(`UPDATE webhook_deliveries SET status = ?, attempts = ?, next_attempt_at = ?,
-		last_status_code = ?, last_error = ?, delivered_at = ? WHERE id = ?`,
+		last_status_code = ?, last_error = ?, response_body = ?, duration_ms = ?, delivered_at = ?
+		WHERE id = ?`,
 		d.Status, d.Attempts, d.NextAttemptAt.UTC().Format(time.RFC3339),
-		d.LastStatusCode, d.LastError, nullTime(d.DeliveredAt), d.ID)
+		d.LastStatusCode, d.LastError, d.ResponseBody, d.DurationMS, nullTime(d.DeliveredAt), d.ID)
 	return err
 }
 

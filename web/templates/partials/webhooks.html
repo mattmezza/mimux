@@ -12,13 +12,13 @@
       <button type="button" data-copy-addr="{{.NewSecret}}" data-copy-label="Webhook secret"
         class="shrink-0 px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Copy</button>
     </div>
-    <p class="text-xs text-indigo-200/80">Shown only once. Your receiver needs it to verify the <code>X-Mimux-Signature</code> header. To change it, delete this endpoint and create a new one.</p>
+    <p class="text-xs text-indigo-200/80">Shown only once. Your receiver needs it to verify the <code>X-Mimux-Signature</code> header. Lost it? Set a new one on the endpoint below.</p>
   </div>
   {{end}}
 
   <ul class="rounded-lg border border-zinc-700 divide-y divide-zinc-800 overflow-hidden bg-zinc-800/30">
     {{range .Webhooks}}
-    <li class="px-3 py-2.5 space-y-2">
+    <li class="px-3 py-2.5 space-y-2" x-data="{ secret: false }">
       <div class="flex items-center gap-3">
         <span class="min-w-0 flex-1">
           <span class="block text-sm text-zinc-100 truncate">
@@ -30,12 +30,32 @@
           <span class="block text-xs text-zinc-500 truncate">
             {{if .EventList}}{{range .EventList}}<code class="mr-1">{{.}}</code>{{end}}{{else}}no events subscribed{{end}}
           </span>
+          {{/* The numbers you actually look at: did it get through, is it
+               broken now, and when did it last try. Over the kept log (the
+               last 100 deliveries), which is all there is to count. */}}
+          <span class="block text-xs text-zinc-500">
+            {{if .Stats.Total}}
+              {{if .Stats.Settled}}<span class="{{if lt .Stats.SuccessRate 90}}text-amber-400{{else}}text-emerald-400{{end}}">{{.Stats.SuccessRate}}% delivered</span> ·{{end}}
+              {{.Stats.Total}} recent
+              {{if .Stats.Failing}}· <span class="text-red-400">{{.Stats.Failing}} failing</span>{{end}}
+              {{if .Stats.Pending}}· {{.Stats.Pending}} queued{{end}}
+              {{if not .Stats.LastAt.IsZero}}· last {{.Stats.LastStatus}}{{if .Stats.LastCode}} (HTTP {{.Stats.LastCode}}){{end}} {{absTime .Stats.LastAt}}{{end}}
+            {{else}}Nothing delivered yet.{{end}}
+          </span>
           <span class="block text-xs text-zinc-500">Created {{absTime .CreatedAt}}</span>
         </span>
-        {{if not .Active}}
+        <a href="/settings/webhooks/{{.ID}}/deliveries"
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700 transition-colors duration-150">Deliveries</a>
+        <button type="button" @click="secret = !secret"
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-zinc-100 hover:bg-zinc-700 transition-colors duration-150">Secret</button>
+        {{if .Active}}
+        <button type="button" form="settings-subform"
+          hx-post="/settings/webhooks/{{.ID}}/pause" hx-target="#webhooks" hx-swap="outerHTML"
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors duration-150">Pause</button>
+        {{else}}
         <button type="button" form="settings-subform"
           hx-post="/settings/webhooks/{{.ID}}/enable" hx-target="#webhooks" hx-swap="outerHTML"
-          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">Enable</button>
+          class="shrink-0 text-xs px-2.5 py-1 rounded-md border border-zinc-700 text-zinc-400 hover:text-emerald-400 hover:bg-emerald-500/10 transition-colors duration-150">Resume</button>
         {{end}}
         <button type="button" form="settings-subform"
           hx-post="/settings/webhooks/{{.ID}}/delete" hx-target="#webhooks" hx-swap="outerHTML"
@@ -44,11 +64,33 @@
       </div>
 
       {{if .AutoDisabled}}
-      <p class="text-xs text-amber-400/80">A delivery to this endpoint failed every retry over about a day, so it was switched off. Fix the receiver, then press Enable.</p>
+      <p class="text-xs text-amber-400/80">A delivery to this endpoint failed every retry over about a day, so it was switched off. Fix the receiver, then press Resume.</p>
+      {{else if not .Active}}
+      <p class="text-xs text-zinc-500">Paused. Events still queue up and go out when you resume.</p>
       {{end}}
 
+      {{/* Rotating the secret. Not a nested <form> — the settings page is one
+           big form — so the field is hx-included by id. */}}
+      <div x-show="secret" x-cloak id="webhook-secret-{{.ID}}" class="rounded-md border border-zinc-700 bg-zinc-800/40 p-3 space-y-2">
+        <label class="block space-y-1">
+          <span class="text-xs text-zinc-400">New signing secret</span>
+          <input type="text" name="secret" autocomplete="off" spellcheck="false" placeholder="leave blank to generate one"
+            class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 font-mono text-[13px] text-zinc-100 focus:outline-none focus:border-indigo-500">
+        </label>
+        <div class="flex items-center gap-2">
+          <button type="button" form="settings-subform"
+            hx-post="/settings/webhooks/{{.ID}}/secret" hx-include="#webhook-secret-{{.ID}}"
+            hx-target="#webhooks" hx-swap="outerHTML"
+            hx-confirm="Change the signing secret? Every delivery from now on is signed with the new one, so the receiver has to be updated too."
+            hx-on::after-request="if(!event.detail.successful) toast(event.detail.xhr.responseText || 'Could not change the secret')"
+            class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-medium transition-colors duration-150">Set secret</button>
+          <span class="text-xs text-zinc-500">A generated one is shown once, at the top of this list.</span>
+        </div>
+      </div>
+
       {{/* Native <details>: the log is the thing you open when something looks
-           wrong, not something to keep on screen. */}}
+           wrong, not something to keep on screen. The full one, with payloads
+           and responses, is behind Deliveries. */}}
       <details class="text-xs">
         <summary class="cursor-pointer text-zinc-400 hover:text-zinc-200">Recent deliveries ({{len .Deliveries}})</summary>
         <ul class="mt-2 space-y-1">
@@ -96,6 +138,13 @@
       </label>
       {{end}}
     </div>
+
+    <label class="block space-y-1">
+      <span class="text-xs text-zinc-400">Signing secret</span>
+      <input type="text" name="secret" autocomplete="off" spellcheck="false" placeholder="leave blank to generate one"
+        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 font-mono text-[13px] text-zinc-100 focus:outline-none focus:border-indigo-500">
+      <span class="block text-xs text-zinc-500">Only fill this in if your receiver already has a key. Otherwise mimux generates one and shows it once.</span>
+    </label>
 
     <div class="pt-1">
       <button type="button"
