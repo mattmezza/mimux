@@ -165,8 +165,8 @@
   {{if $menu}}<span>Translate</span>{{end}}
 </button>
 {{else if eq .ID "summarize"}}
-<button type="button" title="Summarize" aria-label="Summarize"
-  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)smSummarize(f.closest('[data-thread-body]').querySelector('[data-summary-bar]'),{{$latest.ID}},'')"
+<button type="button" title="Summarize thread" aria-label="Summarize thread"
+  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)smSummarize(f.closest('[data-thread-body]').querySelector('[data-summary-bar]'),{{$latest.ID}},'',true)"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5M17.25 12l3 3-3 3"/></svg>
   {{if $menu}}<span>Summarize</span>{{end}}

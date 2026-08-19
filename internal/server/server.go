@@ -201,6 +201,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/f/{id}", s.handleFolder)
 		r.Get("/t/{id}", s.handleThread)
 		r.Get("/t/{id}/rows", s.handleThreadRows)
+		r.Get("/t/{id}/summary", s.handleThreadSummary)
 		r.Get("/rowmenu/{id}", s.handleRowMenu)
 		r.Get("/cli/auth", s.handleCLIAuthForm)
 		r.Post("/cli/auth", s.handleCLIAuthApprove)

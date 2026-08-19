@@ -14,6 +14,14 @@ func SummaryCacheKey(messageID int64, level string) string {
 	return strconv.FormatInt(messageID, 10) + ":" + level
 }
 
+// ThreadSummaryCacheKey keys a cached whole-thread AI summary on the thread's
+// latest message and detail level. "t"-prefixed so it can never collide with
+// SummaryCacheKey for that same message id — the latest message of a thread
+// is also a valid summarize target on its own, and the two summaries differ.
+func ThreadSummaryCacheKey(latestMessageID int64, level string) string {
+	return "t" + strconv.FormatInt(latestMessageID, 10) + ":" + level
+}
+
 // SummaryCached returns a cached summary, ok=false on miss.
 func (s *Store) SummaryCached(key string) (summary string, truncated, ok bool, err error) {
 	err = s.DB.QueryRow(`SELECT summary, truncated FROM summaries WHERE cache_key = ?`, key).

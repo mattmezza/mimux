@@ -1,4 +1,15 @@
-Here is an email:
+{{if .Thread}}Here is an email conversation, oldest message first:
+
+{{.Body}}
+{{if .Truncated}}
+[The conversation was cut off here — only part of it is shown.]
+{{end}}
+Summarize the whole conversation as {{.Level}}. Keep what the reader must know: what is being asked,
+decisions, dates, amounts, links they need, and anything they have to do. Drop
+greetings, signatures, disclaimers and marketing filler. Never invent anything
+that is not in the conversation above.
+{{if eq .Language "auto"}}Write the summary in the same language as the conversation.{{else}}Write the summary in {{.Language}}.{{end}}
+{{else}}Here is an email:
 
 {{.Body}}
 {{if .Truncated}}
@@ -9,4 +20,4 @@ decisions, dates, amounts, links they need, and anything they have to do. Drop
 greetings, signatures, disclaimers and marketing filler. Never invent anything
 that is not in the email above.
 {{if eq .Language "auto"}}Write the summary in the same language as the email.{{else}}Write the summary in {{.Language}}.{{end}}
-Output only the summary — no preamble, no closing remark.
+{{end}}Output only the summary — no preamble, no closing remark.

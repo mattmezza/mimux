@@ -61,6 +61,36 @@ func BuildContext(orig Msg, thread []Msg) string {
 	return strings.Join(append(earlier, last), "\n")
 }
 
+// BuildThreadContext renders a whole conversation for the summarize feature,
+// the same economics as BuildContext generalized from one focused message to
+// a handful: recent gets real text and first claim on the budget (newest of
+// them first, like BuildContext's orig), earlier fills whatever budget is left
+// the same way BuildContext's thread does — newest-first, capped per message,
+// oldest-first in the output, [...]-marked when cut. Both slices may be given
+// in any order.
+func BuildThreadContext(recent, earlier []Msg) string {
+	budget := MaxContextChars
+	sortedRecent := slices.Clone(recent)
+	slices.SortFunc(sortedRecent, func(a, b Msg) int { return b.Date.Compare(a.Date) })
+	var head []string
+	for _, m := range sortedRecent {
+		head = append(head, renderMsg("Recent message in this conversation", m, &budget, budget))
+	}
+	slices.Reverse(head)
+
+	sorted := slices.Clone(earlier)
+	slices.SortFunc(sorted, func(a, b Msg) int { return a.Date.Compare(b.Date) })
+	var tail []string
+	for i := len(sorted) - 1; i >= 0 && budget > contextFloor; i-- {
+		if strings.TrimSpace(sorted[i].Text) == "" {
+			continue
+		}
+		tail = append(tail, renderMsg("Earlier in this conversation", sorted[i], &budget, min(maxThreadMsgChars, budget)))
+	}
+	slices.Reverse(tail)
+	return strings.Join(append(tail, head...), "\n")
+}
+
 // renderMsg writes one message as a labelled block and charges it to the
 // budget, keeping at most limit characters of its text.
 func renderMsg(label string, m Msg, budget *int, limit int) string {

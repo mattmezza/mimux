@@ -656,7 +656,7 @@ func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	cfg := s.store.GetAppConfig()
 	level := store.ValidSummaryLevel(r.URL.Query().Get("level"), cfg.AISummaryLevel)
-	view := map[string]any{"ID": msg.ID, "Level": level}
+	view := map[string]any{"ID": msg.ID, "Level": level, "Thread": false}
 	key := store.SummaryCacheKey(msg.ID, level)
 	if sum, truncated, ok, err := s.store.SummaryCached(key); err == nil && ok {
 		view["Summary"], view["Truncated"] = sum, truncated
@@ -679,6 +679,86 @@ func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.SaveSummary(key, sum, truncated); err != nil {
 		slog.Error("summarize: cache save", "err", err)
+	}
+	view["Summary"], view["Truncated"] = sum, truncated
+	s.renderPartial(w, "summary_view", view)
+}
+
+// threadSummaryRecentBodies is how many of the newest messages in a thread get
+// their real plain-text body fetched for the whole-thread summary; older
+// members ride their stored snippet — same bodies-vs-snippet trade-off
+// aiThreadContext makes for reply suggestions, just spread over a few messages
+// instead of one, since a summary has no single "message being replied to" to
+// spend the budget on and older turns matter less to what a reader needs to
+// know now.
+const threadSummaryRecentBodies = 3
+
+// threadSummaryContext assembles the whole conversation for the thread-level
+// summarize action: real body text for the most recent threadSummaryRecentBodies
+// messages, snippets for the rest, budgeted and ordered by ai.BuildThreadContext
+// the same way aiThreadContext budgets a reply's context. msgs must be
+// oldest-first (mail.Conversation's order).
+func (s *Server) threadSummaryContext(ctx context.Context, msgs []store.Message) string {
+	cut := len(msgs) - threadSummaryRecentBodies
+	if cut < 0 {
+		cut = 0
+	}
+	var recent, earlier []ai.Msg
+	for i := range msgs {
+		if i < cut {
+			earlier = append(earlier, aiMsg(&msgs[i], msgs[i].Snippet))
+			continue
+		}
+		text, err := s.mail.PlainText(ctx, &msgs[i])
+		if err != nil || strings.TrimSpace(text) == "" {
+			text = msgs[i].Snippet
+		}
+		recent = append(recent, aiMsg(&msgs[i], text))
+	}
+	return ai.BuildThreadContext(recent, earlier)
+}
+
+// handleThreadSummary renders the AI summary strip for a whole thread — same
+// strip, cache mechanics and level control as handleMessageSummary, but built
+// from every message in the conversation instead of one. id is any member of
+// the thread, same convention as handleThreadRows.
+func (s *Server) handleThreadSummary(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	t := s.conversationOf(id)
+	if t == nil {
+		http.NotFound(w, r)
+		return
+	}
+	latest := t.LatestMessage()
+	cfg := s.store.GetAppConfig()
+	level := store.ValidSummaryLevel(r.URL.Query().Get("level"), cfg.AISummaryLevel)
+	view := map[string]any{"ID": latest.ID, "Level": level, "Thread": true}
+	key := store.ThreadSummaryCacheKey(latest.ID, level)
+	if sum, truncated, ok, err := s.store.SummaryCached(key); err == nil && ok {
+		view["Summary"], view["Truncated"] = sum, truncated
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	text := s.threadSummaryContext(r.Context(), t.Messages)
+	if strings.TrimSpace(text) == "" {
+		slog.Error("summarize thread: no text", "id", latest.ID)
+		view["Err"] = "Couldn't read this conversation's text."
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	sum, truncated, err := s.aiClient(store.AISummarize).SummarizeThread(r.Context(), level, text)
+	if err != nil {
+		slog.Error("ai summarize thread", "err", err)
+		view["Err"] = ai.ErrMessage(err)
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
+	if err := s.store.SaveSummary(key, sum, truncated); err != nil {
+		slog.Error("summarize thread: cache save", "err", err)
 	}
 	view["Summary"], view["Truncated"] = sum, truncated
 	s.renderPartial(w, "summary_view", view)

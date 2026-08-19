@@ -245,6 +245,42 @@ func TestSummarize_ShortBodyAndUnknownLevel(t *testing.T) {
 	}
 }
 
+// TestSummarizeThread pins the one difference from Summarize: the prompt
+// reads as a conversation, not a single email, while level/truncation/language
+// handling stay the same.
+func TestSummarizeThread(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req chatRequest
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		prompt := req.Messages[1].Content
+		if !strings.Contains(prompt, "email conversation") {
+			t.Errorf("prompt does not read as a conversation: %q", prompt)
+		}
+		if !strings.Contains(prompt, "Summarize the whole conversation") {
+			t.Errorf("prompt missing the whole-conversation instruction: %q", prompt)
+		}
+		if !strings.Contains(prompt, "3 to 5 short bullet points") {
+			t.Errorf("prompt missing level instruction: %q", prompt)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"- alice asked about lunch\n- bob proposed Thursday"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{BaseURL: srv.URL, APIKey: "k", Model: "m", HTTPClient: srv.Client()}
+	ctx := BuildThreadContext(
+		[]Msg{{From: "bob@example.com", Date: at(20), Text: "Thursday works for me."}},
+		[]Msg{{From: "alice@example.com", Date: at(10), Text: "Lunch this week?"}},
+	)
+	sum, truncated, err := c.SummarizeThread(context.Background(), "brief", ctx)
+	if err != nil || truncated {
+		t.Fatalf("SummarizeThread = %q, truncated=%v, err=%v", sum, truncated, err)
+	}
+	if sum != "- alice asked about lunch\n- bob proposed Thursday" {
+		t.Errorf("SummarizeThread = %q", sum)
+	}
+}
+
 func TestClientURL(t *testing.T) {
 	for base, want := range map[string]string{
 		"":                             defaultAPIURL,

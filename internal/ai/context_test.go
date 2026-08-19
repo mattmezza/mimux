@@ -112,3 +112,63 @@ func TestBuildContextNoThread(t *testing.T) {
 		t.Errorf("lost the message:\n%s", got)
 	}
 }
+
+// TestBuildThreadContext pins the shape the whole-thread summarize feature is
+// fed: every recent message is present in full, the earlier ones are there
+// too, and the whole thing reads oldest to newest regardless of the order the
+// two slices are handed in.
+func TestBuildThreadContext(t *testing.T) {
+	recent := []Msg{
+		{From: "Alice <alice@example.com>", Date: at(30), Subject: "Lunch", Text: "How about Thursday instead?"},
+		{From: "Bob <bob@example.com>", Date: at(20), Subject: "Lunch", Text: "Tuesday is bad for me."},
+	}
+	earlier := []Msg{{From: "Alice <alice@example.com>", Date: at(10), Subject: "Lunch", Text: "Lunch on Tuesday?"}}
+	got := BuildThreadContext(recent, earlier)
+
+	for _, want := range []string{"Lunch on Tuesday?", "Tuesday is bad for me.", "How about Thursday instead?", "Bob <bob@example.com>"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("thread context is missing %q:\n%s", want, got)
+		}
+	}
+	first := strings.Index(got, "Lunch on Tuesday?")
+	second := strings.Index(got, "Tuesday is bad for me.")
+	last := strings.Index(got, "How about Thursday")
+	if first < 0 || second < 0 || last < 0 || first >= second || second >= last {
+		t.Errorf("conversation is out of order (%d, %d, %d):\n%s", first, second, last, got)
+	}
+	if !strings.Contains(got, "--- Recent message in this conversation ---") {
+		t.Errorf("recent messages are not labelled as such:\n%s", got)
+	}
+	if !strings.Contains(got, "--- Earlier in this conversation ---") {
+		t.Errorf("earlier messages are not labelled as such:\n%s", got)
+	}
+}
+
+// TestBuildThreadContextBudget: a thread longer than the budget keeps the
+// recent messages plus as much earlier context as fits, and drops the oldest,
+// same economics as BuildContext.
+func TestBuildThreadContextBudget(t *testing.T) {
+	recent := []Msg{
+		{From: "alice@example.com", Date: at(59), Text: "newest of all"},
+		{From: "alice@example.com", Date: at(58), Text: "second newest"},
+	}
+	var earlier []Msg
+	for i := range 40 {
+		earlier = append(earlier, Msg{
+			From: "bob@example.com", Date: at(i),
+			Text: "message " + strings.Repeat("x", 900) + " number " + string(rune('a'+i%26)),
+		})
+	}
+	got := BuildThreadContext(recent, earlier)
+	if len(got) > MaxContextChars+500 {
+		t.Errorf("thread context is %d chars, over the %d budget", len(got), MaxContextChars)
+	}
+	if !strings.Contains(got, "newest of all") || !strings.Contains(got, "second newest") {
+		t.Error("dropped a recent message")
+	}
+	// The oldest of 40 long earlier messages cannot have survived a 12k budget
+	// shared with two full recent messages.
+	if strings.Count(got, "--- Earlier in this conversation ---") >= len(earlier) {
+		t.Errorf("kept the whole earlier thread: %d blocks", strings.Count(got, "--- Earlier"))
+	}
+}
