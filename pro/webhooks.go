@@ -97,27 +97,53 @@ func newWebhooks(deps ext.Deps) *webhooks {
 	}
 }
 
-// run is the engine: translate hub events into delivery rows, drain due rows.
-// One goroutine, started from routes() and living as long as the process —
-// ext.Extension has no shutdown hook and there is nothing to shut down: every
-// piece of state is in SQLite, so a restart resumes mid-ladder.
+// run is the engine, in two goroutines: this one reads the hub and turns events
+// into delivery rows (DB only, always fast), and drainLoop does the HTTP. They
+// were one loop, which meant a drain — up to webhookBatch POSTs of up to
+// webhookTimeout each — stopped the hub channel being read, and the hub drops
+// events it cannot hand over. Nine new messages during one slow drain silently
+// became nine webhooks nobody ever sent, with no replay to recover them.
+//
+// Started from routes() and living as long as the process — ext.Extension has
+// no shutdown hook and there is nothing to shut down: every piece of state is in
+// SQLite, so a restart resumes mid-ladder.
 func (e *webhooks) run(ctx context.Context) {
 	events, unsubscribe := e.mail.Subscribe()
 	defer unsubscribe()
+	// Capacity 1, dropped when full: the nudge says "there is something due",
+	// not "there are N due", and drain reads the queue itself.
+	nudge := make(chan struct{}, 1)
+	go e.drainLoop(ctx, nudge)
 	// Per-account "state + message", so a sync.error fires on the edge into
 	// error rather than on every sync-status broadcast while it stays broken.
 	seen := map[string]string{}
-	t := time.NewTicker(e.tick)
-	defer t.Stop()
-	e.drain(ctx) // whatever the last run left mid-ladder
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case ev := <-events:
 			if e.translate(ev, seen) {
-				e.drain(ctx) // the first attempt of the ladder is "now"
+				select {
+				case nudge <- struct{}{}: // the first attempt of the ladder is "now"
+				default:
+				}
 			}
+		}
+	}
+}
+
+// drainLoop owns every outbound request: on a nudge from run, and on the ticker
+// for retries and whatever the last run left mid-ladder.
+func (e *webhooks) drainLoop(ctx context.Context, nudge <-chan struct{}) {
+	t := time.NewTicker(e.tick)
+	defer t.Stop()
+	e.drain(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-nudge:
+			e.drain(ctx)
 		case <-t.C:
 			e.drain(ctx)
 		}

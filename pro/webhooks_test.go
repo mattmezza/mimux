@@ -481,3 +481,95 @@ func TestWebhookFailureEmailIsDedupedPerDay(t *testing.T) {
 		t.Errorf("a failure a day later did not send: %v", again.FailureEmailAt)
 	}
 }
+
+// TestWebhookQueuesWhileDraining is the drop-window regression: a receiver that
+// never answers holds a drain for its full timeout, and while it does, events
+// arriving on the hub must still become delivery rows. When reading the hub and
+// sending were the same loop this queued exactly one row and then went deaf
+// until the receiver timed out.
+func TestWebhookQueuesWhileDraining(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		<-release // hold the drain open for the whole test
+		w.WriteHeader(http.StatusOK)
+	}))
+	// LIFO: cancel the engine, let the held requests go, then shut the server.
+	defer srv.Close()
+	defer close(release)
+
+	e, st, m := testEngine(t)
+	ep := seedEndpoint(t, st, srv.URL, "message.received")
+	inbox := seedFolder(t, st, "a1", "INBOX", "inbox")
+	const n = 30
+	ids := make([]int64, n)
+	for i := range ids {
+		ids[i] = seedMsg(t, st, store.Message{
+			Account: "a1", FolderID: inbox, UID: uint32(i + 1), Subject: "Ping",
+		})
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go e.run(ctx)
+
+	// One event at a time, waiting for its row: the hub buffer is small and does
+	// not replay, so a burst would be testing the hub's drop policy instead of
+	// this engine's. The first id is re-broadcast until it lands, which is how
+	// the test waits for run() to have subscribed (and is why the log may hold a
+	// few duplicates of it).
+	deadline := time.Now().Add(10 * time.Second)
+	wait := func(before int) {
+		t.Helper()
+		for countDeliveries(t, st, ep.ID) <= before {
+			if time.Now().After(deadline) {
+				t.Fatalf("only %d of %d events became delivery rows: the engine stopped reading the hub while draining",
+					countDeliveries(t, st, ep.ID), n)
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	for countDeliveries(t, st, ep.ID) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("a hub broadcast never became a delivery row")
+		}
+		m.Broadcast("message-new", strconv.FormatInt(ids[0], 10))
+		time.Sleep(5 * time.Millisecond)
+	}
+	for _, id := range ids[1:] {
+		before := countDeliveries(t, st, ep.ID)
+		m.Broadcast("message-new", strconv.FormatInt(id, 10))
+		wait(before)
+	}
+
+	// Every message is in the log, not just the right number of rows.
+	log, err := st.ListWebhookDeliveries(ep.ID, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[int64]bool{}
+	for _, d := range log {
+		var p struct {
+			Data struct {
+				ID int64 `json:"id"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(d.Payload), &p); err != nil {
+			t.Fatal(err)
+		}
+		got[p.Data.ID] = true
+	}
+	for _, id := range ids {
+		if !got[id] {
+			t.Fatalf("message %d never made it into a delivery row", id)
+		}
+	}
+}
+
+func countDeliveries(t *testing.T, st *store.Store, endpointID int64) int {
+	t.Helper()
+	log, err := st.ListWebhookDeliveries(endpointID, 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(log)
+}
