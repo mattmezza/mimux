@@ -15,35 +15,42 @@ import (
 // Prefs holds user-tunable app preferences. Zero-config defaults live in
 // defaultPrefs(); missing keys fall back to those.
 type Prefs struct {
-	MarkReadDelay    int               // seconds; 0 = immediately on open
-	SyncIntervalMin  int               // minutes between syncs (default 5)
-	PreviewLines     int               // list snippet lines 0..3 (default 1)
-	ShowAvatar       bool              // show sender avatar (default true)
-	ShowAccountBadge bool              // show account-name badge on list rows (default true)
-	ShowAttachMarker bool              // show attachment marker on list rows (default true)
-	ShowListLabels   bool              // show labels on message-list rows (default false)
-	ShowFavicon      bool              // use sender-domain favicon as avatar (default false)
-	HideAvatarMobile bool              // hide sender avatar/favicon on mobile only (default false)
-	AvatarShape      string            // sender-avatar corner style: circle|rounded|square (default circle)
-	DarkMessages     bool              // open message bodies in dark mode by default (default false)
-	RememberMsgTheme bool              // remember the light/dark choice per message (default false)
-	SyncMonths       int               // how far back to download on first sync; 0 = all (count-capped)
-	MaxPerSync       int               // max messages to fetch per account per poll cycle (default 500)
-	BodyCache        int               // newest inbox messages per account to keep bodies downloaded for; 0 = off (default 200)
-	AccountColors    map[string]string // account name -> hex color, e.g. "#6366f1"
-	QuickActions     string            // comma-separated ids of optional message actions to show; see AllQuickActions
-	SearchScope      string            // topbar search default scope: "all", "account", or "folder" (default "all")
-	ComposeMode      string            // compose editor mode: "plain", "html", or "markdown" (default "html")
-	ComposeLayout    string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
-	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
-	ComposeAutosave  bool              // opt-in: debounce-save the draft a few seconds after typing stops (default false)
-	ReplyQuote       string            // how much of the original a reply quotes; see AllReplyQuotes (default "all")
-	ReplyQuoteLines  int               // lines quoted when ReplyQuote is "lines" (default 10)
-	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
-	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
-	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
-	SwipeLeftAction  string            // swipe a list row left; see AllRowActions (default "none")
-	SwipeRightAction string            // swipe a list row right; see AllRowActions (default "unread")
+	MarkReadDelay   int // seconds; 0 = immediately on open
+	SyncIntervalMin int // minutes between syncs (default 5)
+	// Message preview (the snippet line under the subject in list rows) is
+	// enabled and sized separately for desktop and mobile — the server can't
+	// tell which is rendering, so both variants ride to the template and CSS
+	// picks the right one per breakpoint. Lines are clamped 1..5 on save.
+	PreviewDesktop      bool              // show the snippet on desktop (default true)
+	PreviewDesktopLines int               // desktop snippet lines 1..5 (default 1)
+	PreviewMobile       bool              // show the snippet on mobile (default true)
+	PreviewMobileLines  int               // mobile snippet lines 1..5 (default 1)
+	ShowAvatar          bool              // show sender avatar (default true)
+	ShowAccountBadge    bool              // show account-name badge on list rows (default true)
+	ShowAttachMarker    bool              // show attachment marker on list rows (default true)
+	ShowListLabels      bool              // show labels on message-list rows (default false)
+	ShowFavicon         bool              // use sender-domain favicon as avatar (default false)
+	HideAvatarMobile    bool              // hide sender avatar/favicon on mobile only (default false)
+	AvatarShape         string            // sender-avatar corner style: circle|rounded|square (default circle)
+	DarkMessages        bool              // open message bodies in dark mode by default (default false)
+	RememberMsgTheme    bool              // remember the light/dark choice per message (default false)
+	SyncMonths          int               // how far back to download on first sync; 0 = all (count-capped)
+	MaxPerSync          int               // max messages to fetch per account per poll cycle (default 500)
+	BodyCache           int               // newest inbox messages per account to keep bodies downloaded for; 0 = off (default 200)
+	AccountColors       map[string]string // account name -> hex color, e.g. "#6366f1"
+	QuickActions        string            // comma-separated ids of optional message actions to show; see AllQuickActions
+	SearchScope         string            // topbar search default scope: "all", "account", or "folder" (default "all")
+	ComposeMode         string            // compose editor mode: "plain", "html", or "markdown" (default "html")
+	ComposeLayout       string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
+	ReplyLayout         string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
+	ComposeAutosave     bool              // opt-in: debounce-save the draft a few seconds after typing stops (default false)
+	ReplyQuote          string            // how much of the original a reply quotes; see AllReplyQuotes (default "all")
+	ReplyQuoteLines     int               // lines quoted when ReplyQuote is "lines" (default 10)
+	UndoSendDelay       int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
+	ThreadOrder         string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
+	RowDoubleAction     string            // double-click / double-tap a list row; see AllRowActions (default "unread")
+	SwipeLeftAction     string            // swipe a list row left; see AllRowActions (default "none")
+	SwipeRightAction    string            // swipe a list row right; see AllRowActions (default "unread")
 	// NotifyScope is the master switch for notifications (Settings →
 	// Notifications): "off" (default — nothing is ever sent, and no permission
 	// prompt is ever shown), "rules" (only messages matched by a filter rule
@@ -219,38 +226,41 @@ func JoinQuickActions(bar, menu []string) string {
 
 func defaultPrefs() Prefs {
 	return Prefs{
-		MarkReadDelay:      0,
-		SyncIntervalMin:    5,
-		PreviewLines:       1,
-		ShowAvatar:         true,
-		ShowAccountBadge:   true,
-		ShowAttachMarker:   true,
-		ShowListLabels:     false,
-		ShowFavicon:        false,
-		HideAvatarMobile:   false,
-		AvatarShape:        "circle",
-		DarkMessages:       false,
-		RememberMsgTheme:   false,
-		SyncMonths:         0,
-		MaxPerSync:         500,
-		BodyCache:          config.DefaultBodyCache,
-		AccountColors:      map[string]string{},
-		QuickActions:       defaultQuickActions(),
-		SearchScope:        "all",
-		ComposeMode:        "html",
-		ComposeLayout:      "fullscreen",
-		ReplyLayout:        "popup",
-		ComposeAutosave:    false,
-		ReplyQuote:         "all",
-		ReplyQuoteLines:    DefaultReplyQuoteLines,
-		UndoSendDelay:      5,
-		ThreadOrder:        "oldest",
-		RowDoubleAction:    "unread",
-		SwipeLeftAction:    "none",
-		SwipeRightAction:   "unread",
-		NotifyScope:        "off",
-		ExternalBurstLimit: 200,
-		NtfyURL:            "",
+		MarkReadDelay:       0,
+		SyncIntervalMin:     5,
+		PreviewDesktop:      true,
+		PreviewDesktopLines: 1,
+		PreviewMobile:       true,
+		PreviewMobileLines:  1,
+		ShowAvatar:          true,
+		ShowAccountBadge:    true,
+		ShowAttachMarker:    true,
+		ShowListLabels:      false,
+		ShowFavicon:         false,
+		HideAvatarMobile:    false,
+		AvatarShape:         "circle",
+		DarkMessages:        false,
+		RememberMsgTheme:    false,
+		SyncMonths:          0,
+		MaxPerSync:          500,
+		BodyCache:           config.DefaultBodyCache,
+		AccountColors:       map[string]string{},
+		QuickActions:        defaultQuickActions(),
+		SearchScope:         "all",
+		ComposeMode:         "html",
+		ComposeLayout:       "fullscreen",
+		ReplyLayout:         "popup",
+		ComposeAutosave:     false,
+		ReplyQuote:          "all",
+		ReplyQuoteLines:     DefaultReplyQuoteLines,
+		UndoSendDelay:       5,
+		ThreadOrder:         "oldest",
+		RowDoubleAction:     "unread",
+		SwipeLeftAction:     "none",
+		SwipeRightAction:    "unread",
+		NotifyScope:         "off",
+		ExternalBurstLimit:  200,
+		NtfyURL:             "",
 	}
 }
 
@@ -315,9 +325,20 @@ func (s *Store) GetPrefs() Prefs {
 			p.SyncIntervalMin = n
 		}
 	}
-	if v, ok := s.getSetting("preview_lines"); ok {
+	if v, ok := s.getSetting("preview_desktop"); ok {
+		p.PreviewDesktop = v == "1"
+	}
+	if v, ok := s.getSetting("preview_desktop_lines"); ok {
 		if n, err := strconv.Atoi(v); err == nil {
-			p.PreviewLines = n
+			p.PreviewDesktopLines = n
+		}
+	}
+	if v, ok := s.getSetting("preview_mobile"); ok {
+		p.PreviewMobile = v == "1"
+	}
+	if v, ok := s.getSetting("preview_mobile_lines"); ok {
+		if n, err := strconv.Atoi(v); err == nil {
+			p.PreviewMobileLines = n
 		}
 	}
 	if v, ok := s.getSetting("show_avatar"); ok {
@@ -435,37 +456,40 @@ func (s *Store) GetPrefs() Prefs {
 // SavePrefs writes all preference keys.
 func (s *Store) SavePrefs(p Prefs) error {
 	kv := map[string]string{
-		"mark_read_delay":      strconv.Itoa(p.MarkReadDelay),
-		"sync_interval_min":    strconv.Itoa(p.SyncIntervalMin),
-		"preview_lines":        strconv.Itoa(p.PreviewLines),
-		"show_avatar":          boolStr(p.ShowAvatar),
-		"show_account_badge":   boolStr(p.ShowAccountBadge),
-		"show_attach_marker":   boolStr(p.ShowAttachMarker),
-		"show_list_labels":     boolStr(p.ShowListLabels),
-		"show_favicon":         boolStr(p.ShowFavicon),
-		"hide_avatar_mobile":   boolStr(p.HideAvatarMobile),
-		"avatar_shape":         p.AvatarShape,
-		"dark_messages":        boolStr(p.DarkMessages),
-		"remember_msg_theme":   boolStr(p.RememberMsgTheme),
-		"sync_months":          strconv.Itoa(p.SyncMonths),
-		"max_per_sync":         strconv.Itoa(p.MaxPerSync),
-		"body_cache":           strconv.Itoa(p.BodyCache),
-		"quick_actions":        p.QuickActions,
-		"search_scope":         p.SearchScope,
-		"compose_mode":         p.ComposeMode,
-		"compose_layout":       p.ComposeLayout,
-		"reply_layout":         p.ReplyLayout,
-		"compose_autosave":     boolStr(p.ComposeAutosave),
-		"reply_quote":          p.ReplyQuote,
-		"reply_quote_lines":    strconv.Itoa(p.ReplyQuoteLines),
-		"undo_send_delay":      strconv.Itoa(p.UndoSendDelay),
-		"thread_order":         p.ThreadOrder,
-		"row_double_action":    p.RowDoubleAction,
-		"swipe_left_action":    p.SwipeLeftAction,
-		"swipe_right_action":   p.SwipeRightAction,
-		"notify_scope":         p.NotifyScope,
-		"ntfy_url":             p.NtfyURL,
-		"external_burst_limit": strconv.Itoa(p.ExternalBurstLimit),
+		"mark_read_delay":       strconv.Itoa(p.MarkReadDelay),
+		"sync_interval_min":     strconv.Itoa(p.SyncIntervalMin),
+		"preview_desktop":       boolStr(p.PreviewDesktop),
+		"preview_desktop_lines": strconv.Itoa(p.PreviewDesktopLines),
+		"preview_mobile":        boolStr(p.PreviewMobile),
+		"preview_mobile_lines":  strconv.Itoa(p.PreviewMobileLines),
+		"show_avatar":           boolStr(p.ShowAvatar),
+		"show_account_badge":    boolStr(p.ShowAccountBadge),
+		"show_attach_marker":    boolStr(p.ShowAttachMarker),
+		"show_list_labels":      boolStr(p.ShowListLabels),
+		"show_favicon":          boolStr(p.ShowFavicon),
+		"hide_avatar_mobile":    boolStr(p.HideAvatarMobile),
+		"avatar_shape":          p.AvatarShape,
+		"dark_messages":         boolStr(p.DarkMessages),
+		"remember_msg_theme":    boolStr(p.RememberMsgTheme),
+		"sync_months":           strconv.Itoa(p.SyncMonths),
+		"max_per_sync":          strconv.Itoa(p.MaxPerSync),
+		"body_cache":            strconv.Itoa(p.BodyCache),
+		"quick_actions":         p.QuickActions,
+		"search_scope":          p.SearchScope,
+		"compose_mode":          p.ComposeMode,
+		"compose_layout":        p.ComposeLayout,
+		"reply_layout":          p.ReplyLayout,
+		"compose_autosave":      boolStr(p.ComposeAutosave),
+		"reply_quote":           p.ReplyQuote,
+		"reply_quote_lines":     strconv.Itoa(p.ReplyQuoteLines),
+		"undo_send_delay":       strconv.Itoa(p.UndoSendDelay),
+		"thread_order":          p.ThreadOrder,
+		"row_double_action":     p.RowDoubleAction,
+		"swipe_left_action":     p.SwipeLeftAction,
+		"swipe_right_action":    p.SwipeRightAction,
+		"notify_scope":          p.NotifyScope,
+		"ntfy_url":              p.NtfyURL,
+		"external_burst_limit":  strconv.Itoa(p.ExternalBurstLimit),
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

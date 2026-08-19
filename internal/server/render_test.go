@@ -135,6 +135,39 @@ func TestRenderHealthRows(t *testing.T) {
 	}
 }
 
+// TestPreviewPrefsRenderVars pins the CSS mechanism the desktop/mobile
+// message-preview setting rides on: the server doesn't know which breakpoint
+// the browser is at, so the line counts and the disabled-variant flag both
+// have to reach the page as CSS custom properties / classes on the stable
+// inbox root (app.css switches which var -webkit-line-clamp reads per
+// breakpoint), not as a value baked into one rendered variant.
+func TestPreviewPrefsRenderVars(t *testing.T) {
+	s := serverWith(t, nil, func(st *store.Store) {
+		p := st.GetPrefs()
+		p.PreviewDesktop = true
+		p.PreviewDesktopLines = 3
+		p.PreviewMobile = false
+		p.PreviewMobileLines = 2
+		if err := st.SavePrefs(p); err != nil {
+			t.Fatal(err)
+		}
+	})
+	rec := httptest.NewRecorder()
+	s.handleInbox(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/ status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"--preview-lines-desktop:3", "--preview-lines-mobile:2", "preview-hide-mobile"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("inbox root missing %q; body:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "preview-hide-desktop") {
+		t.Errorf("desktop preview is enabled, must not carry preview-hide-desktop")
+	}
+}
+
 // TestEventsOpensWithSyncState pins the SSE contract the spinner rides on: the
 // stream states the aggregate sync flag the moment it opens, so a browser that
 // just reconnected (holding a page rendered who-knows-when) is corrected

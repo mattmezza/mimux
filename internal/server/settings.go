@@ -297,12 +297,10 @@ func (s *Server) applyReading(p *store.Prefs, r *http.Request) {
 	if p.MarkReadDelay < 0 {
 		p.MarkReadDelay = 0
 	}
-	p.PreviewLines = atoiDefault(r.PostFormValue("preview_lines"), 1)
-	if p.PreviewLines < 0 {
-		p.PreviewLines = 0
-	} else if p.PreviewLines > 3 {
-		p.PreviewLines = 3
-	}
+	p.PreviewDesktop = r.PostFormValue("preview_desktop") != ""
+	p.PreviewDesktopLines = clampPreviewLines(atoiDefault(r.PostFormValue("preview_desktop_lines"), 1))
+	p.PreviewMobile = r.PostFormValue("preview_mobile") != ""
+	p.PreviewMobileLines = clampPreviewLines(atoiDefault(r.PostFormValue("preview_mobile_lines"), 1))
 	p.ThreadOrder = oneOf(r.PostFormValue("thread_order"), "oldest", "newest")
 	p.RowDoubleAction = store.ValidRowAction(r.PostFormValue("row_double_action"), "unread")
 	p.SwipeLeftAction = store.ValidRowAction(r.PostFormValue("swipe_left_action"), "none")
@@ -455,6 +453,18 @@ func postedInt64s(r *http.Request, field string) []int64 {
 		}
 	}
 	return out
+}
+
+// clampPreviewLines bounds a preview line-count field to 1..5 — same rule for
+// desktop and mobile, so one helper instead of two copies of an if/else.
+func clampPreviewLines(n int) int {
+	if n < 1 {
+		return 1
+	}
+	if n > 5 {
+		return 5
+	}
+	return n
 }
 
 func atoiDefault(s string, def int) int {

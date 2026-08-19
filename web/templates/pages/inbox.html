@@ -4,9 +4,12 @@
      once a message/thread/compose is open on top. */}}
 {{define "title"}}{{if .SearchView}}Search — mimux{{else if or .Unified .Folder}}{{if .Unified}}All inboxes{{else}}{{folderLabel .Folder}}{{end}} — mimux{{else}}Inbox — mimux{{end}}{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}{{if eq .Prefs.AvatarShape "rounded"}}avatar-rounded {{else if eq .Prefs.AvatarShape "square"}}avatar-square {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="mimuxUI" :data-filter="filter"
-     {{/* Row gesture prefs live here (not on #message-list, which htmx swaps
-          for search results and folder switches — this wrapper survives). */}}
+<div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}{{if eq .Prefs.AvatarShape "rounded"}}avatar-rounded {{else if eq .Prefs.AvatarShape "square"}}avatar-square {{end}}{{if not .Prefs.PreviewDesktop}}preview-hide-desktop {{end}}{{if not .Prefs.PreviewMobile}}preview-hide-mobile {{end}}" x-data="mimuxUI" :data-filter="filter"
+     {{/* Row gesture prefs and the preview vars live here (not on
+          #message-list, which htmx swaps for search results and folder
+          switches — this wrapper survives, and the vars cascade to every
+          .msg-snippet in whatever gets swapped in under it). */}}
+     style="--preview-lines-desktop:{{.Prefs.PreviewDesktopLines}};--preview-lines-mobile:{{.Prefs.PreviewMobileLines}}"
      data-dbl-action="{{.Prefs.RowDoubleAction}}" data-swipe-left="{{.Prefs.SwipeLeftAction}}" data-swipe-right="{{.Prefs.SwipeRightAction}}">
   {{template "topbar" .}}
   <div class="flex-1 flex min-h-0 relative">

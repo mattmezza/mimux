@@ -207,6 +207,35 @@ func TestReplyQuoteSectionSave(t *testing.T) {
 	}
 }
 
+// TestPreviewSectionSave checks the desktop/mobile preview toggles and their
+// line counts round-trip independently, and that the line count is clamped
+// 1..5 same as the reply-quote line count above (0 -> 1, 9 -> 5).
+func TestPreviewSectionSave(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+
+	if rec := postSettings(t, r, url.Values{
+		"section":               {"reading"},
+		"preview_desktop":       {"1"},
+		"preview_desktop_lines": {"9"},
+		// preview_mobile omitted: an unchecked checkbox isn't posted at all.
+		"preview_mobile_lines": {"0"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("reading save = %d: %s", rec.Code, rec.Body.String())
+	}
+	p := s.store.GetPrefs()
+	if !p.PreviewDesktop || p.PreviewDesktopLines != 5 {
+		t.Fatalf("desktop preview not clamped: on=%v lines=%d", p.PreviewDesktop, p.PreviewDesktopLines)
+	}
+	if p.PreviewMobile || p.PreviewMobileLines != 1 {
+		t.Fatalf("mobile preview not clamped: on=%v lines=%d", p.PreviewMobile, p.PreviewMobileLines)
+	}
+
+	if body := renderSection(t, s, "reading"); !strings.Contains(body, `name="preview_desktop"`) || !strings.Contains(body, `name="preview_mobile"`) {
+		t.Error("the Reading page does not offer both preview toggles")
+	}
+}
+
 // TestUnknownSettingsSection: a made-up section is a 404, not a page that
 // renders nothing, and a made-up section on the save path is refused rather
 // than silently applying every section.

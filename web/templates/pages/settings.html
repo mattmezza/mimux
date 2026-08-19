@@ -185,11 +185,42 @@
               </div>
             </fieldset>
 
-            <label class="block space-y-1">
-              <span class="text-sm text-zinc-200">Message preview lines</span>
-              <input type="number" name="preview_lines" min="0" max="3" value="{{.Prefs.PreviewLines}}"
-                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-            </label>
+            {{/* Preview: independent on/off + line count (1-5) for desktop and
+                 mobile — the server can't tell which is rendering, so CSS picks
+                 the right variant per breakpoint (see app.css). Same x-show
+                 (not :disabled) trap as reply-quote's line count above: the
+                 count input must stay submittable while hidden, or toggling
+                 preview off and back on would reset it to 1. */}}
+            <fieldset class="space-y-2" x-data="{ pd: {{if .Prefs.PreviewDesktop}}true{{else}}false{{end}}, pm: {{if .Prefs.PreviewMobile}}true{{else}}false{{end}} }">
+              <legend class="text-sm text-zinc-200 font-medium">Message preview</legend>
+              <p class="text-xs text-zinc-500">The snippet line(s) shown under the subject in the message list.</p>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="preview_desktop" value="1" x-model="pd"
+                    class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="text-sm text-zinc-200">Show on desktop</span>
+                </label>
+                <label class="flex items-center gap-2" x-show="pd" x-cloak>
+                  <span class="text-xs text-zinc-400">Lines</span>
+                  <input type="number" name="preview_desktop_lines" min="1" max="5" value="{{.Prefs.PreviewDesktopLines}}"
+                    class="w-16 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                </label>
+              </div>
+
+              <div class="flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="preview_mobile" value="1" x-model="pm"
+                    class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                  <span class="text-sm text-zinc-200">Show on mobile</span>
+                </label>
+                <label class="flex items-center gap-2" x-show="pm" x-cloak>
+                  <span class="text-xs text-zinc-400">Lines</span>
+                  <input type="number" name="preview_mobile_lines" min="1" max="5" value="{{.Prefs.PreviewMobileLines}}"
+                    class="w-16 rounded-md bg-zinc-800 border border-zinc-700 px-2 py-1 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                </label>
+              </div>
+            </fieldset>
 
             {{/* Avatar: the master toggle plus its dependents, grouped under one
                  sub-heading and visually nested. A disabled checkbox/select

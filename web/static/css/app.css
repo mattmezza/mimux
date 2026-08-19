@@ -171,25 +171,37 @@
 .avatar-rounded .sender-avatar { border-radius: 0.5rem !important; }
 .avatar-square .sender-avatar { border-radius: 0 !important; }
 
-/* List preview lines: wrap the snippet to N lines that fit the list column
-   (0 hides it). The snippet is one collapsed string; line-clamp bounds how many
-   wrapped lines show, so rows never grow unbounded. */
+/* List preview: wrap the snippet to N lines (1-5) that fit the list column.
+   Desktop and mobile are independent settings — --preview-lines-desktop and
+   --preview-lines-mobile live on the inbox root (set once per page render,
+   stable across htmx list swaps) and cascade to every .msg-snippet,
+   including rows swapped in later. The 768px breakpoint (matches the
+   md: / hide-avatars-mobile breakpoint above) switches which var
+   -webkit-line-clamp reads; each side's preview-hide-* class is scoped to its
+   own media query so disabling one surface never touches the other. */
 .msg-snippet {
   white-space: normal;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  -webkit-line-clamp: 1;
-  line-clamp: 1;
+  -webkit-line-clamp: var(--preview-lines-desktop, 1);
+  line-clamp: var(--preview-lines-desktop, 1);
   /* #10: an unbroken long word (URL, tracking id...) must not force the row
      wider than its column, or it pushes the star button off screen. */
   min-width: 0;
   width: 100%;
   overflow-wrap: anywhere;
 }
-.preview-lines-0 .msg-snippet { display: none; }
-.preview-lines-2 .msg-snippet { -webkit-line-clamp: 2; line-clamp: 2; }
-.preview-lines-3 .msg-snippet { -webkit-line-clamp: 3; line-clamp: 3; }
+@media (min-width: 768px) {
+  .preview-hide-desktop .msg-snippet { display: none; }
+}
+@media (max-width: 767px) {
+  .msg-snippet {
+    -webkit-line-clamp: var(--preview-lines-mobile, 1);
+    line-clamp: var(--preview-lines-mobile, 1);
+  }
+  .preview-hide-mobile .msg-snippet { display: none; }
+}
 
 /* --- resizable message-list column (desktop). Width is a CSS variable on the
    stable #main-content so it survives htmx list swaps; #list-resizer drags it,
