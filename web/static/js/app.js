@@ -988,15 +988,24 @@ window.toggleThreadMessage = toggleThreadMessage;
   // long after the fling. A gesture only counts if the list was ALREADY at the
   // top when it started — flinging up from halfway down lands at the top with
   // momentum to spare, exactly the case touch avoids by requiring the pull to
-  // begin at the top. Needs more travel than a finger pull: one mouse notch is
-  // ~100px, so ~2 notches keeps an idle flick at the top from syncing.
-  const IDLE = 250, WHEEL_THRESHOLD = 180;
-  let wheelDist = 0, wheelAt = 0, wheelTimer = 0, startedAtTop = false;
+  // begin at the top.
+  //
+  // A trackpad never goes IDLE during a slow, hesitant scroll at the top of the
+  // list (a finger resting near the pad keeps feeding tiny deltas), so a plain
+  // cumulative counter eventually crosses any fixed threshold from accidental
+  // drift alone. WHEEL_WINDOW fixes that: the accumulator must clear
+  // WHEEL_THRESHOLD within WHEEL_WINDOW ms of the pull starting, or it restarts
+  // — turning this into a force/velocity check, not a patience check. A
+  // deliberate hard pull clears it easily; ambient drift never does. Threshold
+  // itself is also raised well past "one flick": ~5 mouse notches (~100px
+  // each) inside under half a second.
+  const IDLE = 250, WHEEL_THRESHOLD = 500, WHEEL_WINDOW = 450;
+  let wheelDist = 0, wheelAt = 0, wheelTimer = 0, startedAtTop = false, wheelSince = 0;
   document.addEventListener("wheel", (e) => {
     const list = e.target.closest && e.target.closest("#message-list");
     if (!list || pulling || busy) return; // touchscreen laptop: touch path wins
     const now = Date.now();
-    if (now - wheelAt > IDLE) { startedAtTop = list.scrollTop <= 0; wheelDist = 0; }
+    if (now - wheelAt > IDLE) { startedAtTop = list.scrollTop <= 0; wheelDist = 0; wheelSince = now; }
     wheelAt = now;
     // deltaMode 0 = pixels, 1 = lines, 2 = pages.
     const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? list.clientHeight : 1);
@@ -1004,6 +1013,7 @@ window.toggleThreadMessage = toggleThreadMessage;
       if (wheelDist) { wheelDist = 0; hide(); }
       return;
     }
+    if (now - wheelSince > WHEEL_WINDOW) { wheelDist = 0; wheelSince = now; hide(); } // drift, not a pull: restart the clock
     wheelDist = Math.min(wheelDist - dy, WHEEL_THRESHOLD + 40);
     show(wheelDist * THRESHOLD / WHEEL_THRESHOLD); // same reveal curve, longer pull
     clearTimeout(wheelTimer);
