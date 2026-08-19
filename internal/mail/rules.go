@@ -71,10 +71,12 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 		_, _ = m.st.SetStarred(msg.ID, true)
 		return m.setStarred(ctx, c, msg, true)
 	case filter.ActionMove:
-		_ = m.st.DeleteMessage(msg.ID)
+		// moveTo owns the local row: it relocates it with the UID the server
+		// assigned in the destination, or drops it when the server cannot say
+		// (no UIDPLUS). Deleting it here first — which this used to do — left
+		// the move announcing a message id that no longer resolved.
 		return m.moveToFolder(ctx, c, msg, act.Arg)
 	case filter.ActionDelete:
-		_ = m.st.DeleteMessage(msg.ID)
 		// "trash" resolves special-use-first, so this is Move(msg, "trash") with
 		// the connection threaded through.
 		return m.moveToFolder(ctx, c, msg, "trash")

@@ -310,6 +310,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 		return nil
 	}
 	defer m.changed(msg)
+	var destUID imap.UID
 	if err := a.exec(ctx, c, func(c *imapclient.Client) error {
 		if _, err := c.Select(src.Name, nil).Wait(); err != nil {
 			return err
@@ -317,11 +318,18 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 		set := imap.UIDSet{}
 		set.AddNum(imap.UID(msg.UID))
 		if c.Caps().Has(imap.CapMove) {
-			_, err := c.Move(set, target.Name).Wait()
+			data, err := c.Move(set, target.Name).Wait()
+			if err == nil && data != nil {
+				destUID = onlyUID(data.DestUIDs)
+			}
 			return err
 		}
-		if _, err := c.Copy(set, target.Name).Wait(); err != nil {
+		data, err := c.Copy(set, target.Name).Wait()
+		if err != nil {
 			return err
+		}
+		if data != nil {
+			destUID = onlyUID(data.DestUIDs)
 		}
 		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
 			return err
@@ -333,8 +341,35 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 	}); err != nil {
 		return err
 	}
-	m.updated(msg, "moved", originMimux)
+	// The row's UID belonged to the source folder and means nothing in the
+	// destination — it is why an optimistically moved message could not have its
+	// body fetched, and why expunge reconciliation would read it as gone. COPYUID
+	// tells us the real one; without UIDPLUS there is nothing to correct it with,
+	// so the row goes and the destination's next sync brings the message back
+	// with a UID that works.
+	if destUID > 0 {
+		_ = m.st.SetMessageLocation(msg.ID, target.ID, uint32(destUID))
+		msg.FolderID, msg.UID = target.ID, uint32(destUID)
+		m.updated(msg, "moved", originMimux)
+		return nil
+	}
+	_ = m.st.DeleteMessage(msg.ID)
 	return nil
+}
+
+// onlyUID returns the single UID in a COPYUID/MOVE destination set, or 0 when
+// the server did not report one (no UIDPLUS) — mimux moves one message at a
+// time, so anything else is a server being creative and not worth trusting.
+func onlyUID(set imap.NumSet) imap.UID {
+	uids, ok := set.(imap.UIDSet)
+	if !ok {
+		return 0
+	}
+	nums, ok := uids.Nums()
+	if !ok || len(nums) != 1 {
+		return 0
+	}
+	return nums[0]
 }
 
 // changed announces that a message this user acted on is no longer what the

@@ -1,0 +1,13 @@
+-- 0210: the optimistic move needs somewhere to say "this row is a promise".
+--
+-- Archiving a message relocates its local row immediately and defers the real
+-- IMAP move by the undo grace period. Until that move lands, the row sits in the
+-- destination folder carrying the SOURCE folder's UID — a UID that means nothing
+-- there. Expunge reconciliation, which used to run only on a folder's first
+-- sync, now runs every cycle and would read that row as "gone from the server"
+-- and delete it, so the message would vanish and then re-arrive as new mail.
+--
+-- pending_move = 1 means "the server has not been told yet": reconciliation
+-- leaves the row alone, and mail.Manager.moveTo clears it — writing the real
+-- destination UID that MOVE/COPY reported — as soon as the move actually lands.
+ALTER TABLE messages ADD COLUMN pending_move INTEGER NOT NULL DEFAULT 0;

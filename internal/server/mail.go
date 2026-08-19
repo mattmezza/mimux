@@ -805,7 +805,7 @@ func (s *Server) handleMove(target string) http.HandlerFunc {
 			return
 		}
 		srcFolderID := msg.FolderID
-		_ = s.store.SetMessageFolder(msg.ID, tf.ID)
+		_ = s.store.SetMessageFolderPending(msg.ID, tf.ID)
 		_ = s.store.RecountUnread(srcFolderID)
 		_ = s.store.RecountUnread(tf.ID)
 		msgCopy := *msg
@@ -845,7 +845,7 @@ func (s *Server) handleMoveToFolder(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	_ = s.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = s.store.SetMessageFolderPending(msg.ID, tf.ID)
 	_ = s.store.RecountUnread(srcFolderID)
 	_ = s.store.RecountUnread(tf.ID)
 	msgCopy := *msg

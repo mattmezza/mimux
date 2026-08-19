@@ -414,7 +414,7 @@ func (a *api) applyStarred(msg *store.Message, starred bool) {
 // in the same account and differ from the current folder.
 func (a *api) moveFolder(msg *store.Message, tf *store.Folder) {
 	src := msg.FolderID
-	_ = a.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = a.store.SetMessageFolderPending(msg.ID, tf.ID)
 	_ = a.store.RecountUnread(src)
 	_ = a.store.RecountUnread(tf.ID)
 	msgCopy := *msg
@@ -431,7 +431,7 @@ func (a *api) moveSpecial(msg *store.Message, target string) (int64, error) {
 		return 0, fmt.Errorf("this account has no %s folder", target)
 	}
 	src := msg.FolderID
-	_ = a.store.SetMessageFolder(msg.ID, tf.ID)
+	_ = a.store.SetMessageFolderPending(msg.ID, tf.ID)
 	_ = a.store.RecountUnread(src)
 	_ = a.store.RecountUnread(tf.ID)
 	msgCopy := *msg

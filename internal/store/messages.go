@@ -490,9 +490,12 @@ func (s *Store) DistinctLabels() ([]string, error) {
 }
 
 // FolderUIDs returns the set of UIDs currently stored for a folder, for
-// reconciling against the server (detecting expunged messages).
+// reconciling against the server (detecting expunged messages) and for the
+// backfill's "do we already have this one". Rows mid-move are excluded from
+// both: their UID belongs to the folder they came from, so it neither proves
+// they are present here nor means they have gone missing.
 func (s *Store) FolderUIDs(folderID int64) (map[uint32]bool, error) {
-	rows, err := s.DB.Query(`SELECT uid FROM messages WHERE folder_id = ?`, folderID)
+	rows, err := s.DB.Query(`SELECT uid FROM messages WHERE folder_id = ? AND pending_move = 0`, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -606,11 +609,37 @@ func (s *Store) DeleteMessage(id int64) error {
 	return err
 }
 
-// SetMessageFolder relocates a message's local row to another folder, used for
-// the optimistic move/undo-move flow (the real IMAP move is deferred; see
-// Server.schedulePendingMove).
+// SetMessageFolder puts a message's local row in a folder where its UID is
+// valid — today only the undo of a still-pending move, which returns it to the
+// folder it came from. It clears the pending marker for that reason.
 func (s *Store) SetMessageFolder(id, folderID int64) error {
-	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ? WHERE id = ?`, folderID, id)
+	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, pending_move = 0 WHERE id = ?`, folderID, id)
+	return err
+}
+
+// SetMessageFolderPending is the optimistic half of a move: the row shows up in
+// the destination straight away, while the real IMAP move is still deferred
+// behind the undo grace period (see Server.schedulePendingMove). Its UID is the
+// source folder's until then and means nothing in the destination, so the row is
+// marked pending — expunge reconciliation skips it and cannot mistake it for a
+// message the server dropped. mail.Manager.moveTo clears the marker.
+func (s *Store) SetMessageFolderPending(id, folderID int64) error {
+	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, pending_move = 1 WHERE id = ?`, folderID, id)
+	return err
+}
+
+// SetMessageLocation records where a message really lives once the IMAP move has
+// landed: the destination folder and the UID the server assigned it there
+// (MOVE/COPY report it via UIDPLUS). Any row already holding that (folder, uid)
+// — the destination sync having got there first — is dropped, since the two are
+// the same message and the column pair is unique.
+func (s *Store) SetMessageLocation(id, folderID int64, uid uint32) error {
+	if _, err := s.DB.Exec(`DELETE FROM messages WHERE folder_id = ? AND uid = ? AND id != ?`,
+		folderID, uid, id); err != nil {
+		return err
+	}
+	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, uid = ?, pending_move = 0 WHERE id = ?`,
+		folderID, uid, id)
 	return err
 }
 

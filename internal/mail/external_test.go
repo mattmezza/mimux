@@ -2,6 +2,7 @@
 package mail
 
 import (
+	"context"
 	"strconv"
 	"testing"
 	"time"
@@ -123,6 +124,48 @@ func TestExternalBurstCapSuppressesEvents(t *testing.T) {
 	for _, got := range msgs {
 		if !got.IsStarred {
 			t.Errorf("uid %d was not stored as starred: the cap must silence events, not writes", got.UID)
+		}
+	}
+}
+
+// TestMoveRelocatesTheRowWithTheRealUID: the local row used to keep the SOURCE
+// folder's UID after a move, which meant its body could not be fetched from the
+// destination and expunge reconciliation there read it as a message the server
+// had dropped. COPYUID says what the UID really is; the row must take it.
+func TestMoveRelocatesTheRowWithTheRealUID(t *testing.T) {
+	st := testStore(t)
+	c := newTestIMAP(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncInbox(t, a, c)
+
+	inbox, _ := st.FolderBySpecial("acct", "inbox")
+	archive, err := st.FolderBySpecial("acct", "archive")
+	if err != nil || archive == nil {
+		t.Fatalf("FolderBySpecial(archive) = %v, %v", archive, err)
+	}
+	// UID 2 in the inbox: its destination UID must not be assumed to match.
+	msg, err := st.MessageByFolderUID(inbox.ID, 2)
+	if err != nil || msg == nil {
+		t.Fatalf("synced message not found: %v", err)
+	}
+	if err := m.moveTo(context.Background(), c, msg, archive); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := st.MessageByID(msg.ID)
+	if err != nil || got == nil {
+		t.Fatalf("the moved row is gone: %v", err)
+	}
+	if got.FolderID != archive.ID {
+		t.Errorf("row folder = %d, want the archive (%d)", got.FolderID, archive.ID)
+	}
+	if got.UID != 1 {
+		t.Errorf("row uid = %d, want 1 — the UID the destination assigned, not the source's", got.UID)
+	}
+	if _, err := st.MessageByFolderUID(inbox.ID, 2); err == nil {
+		if left, _ := st.ListMessages(inbox.ID, 10); len(left) != 1 {
+			t.Errorf("inbox still holds %d messages after the move", len(left))
 		}
 	}
 }
