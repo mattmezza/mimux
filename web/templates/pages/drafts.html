@@ -35,7 +35,7 @@
             <a href="#" hx-get="{{if .Edit}}/compose?draft={{.Edit}}{{else}}/compose?adopt={{.Message}}{{end}}"
                hx-target="#compose-root" hx-swap="innerHTML" class="min-w-0 flex-1">
               <div class="flex items-center gap-2">
-                {{if $.ShowAccount}}{{$c := index $.AccountColors .Account}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}" title="{{acctLabel .Account}}">{{acctLabel .Account}}</span>{{end}}
+                {{if and $.ShowAccount .Account}}{{$c := index $.AccountColors .Account}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}" title="{{acctLabel .Account}}">{{acctLabel .Account}}</span>{{end}}
                 <div class="truncate text-zinc-100 font-medium">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</div>
               </div>
               <div class="truncate text-zinc-500 text-xs">
