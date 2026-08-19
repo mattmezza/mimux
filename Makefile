@@ -169,8 +169,13 @@ verify-licence: ## Every .go file has an SPDX header, and ELv2 only under pro/
 
 ##@ Release
 .PHONY: release
-release: ## Create a GitHub release (usage: make release name=v0.1)
-	@if [ -z "$(name)" ]; then echo "Usage: make release name=vX.Y"; exit 1; fi
+# Client releases are vMAJOR.MINOR.PATCH. The minor is what a licence covers
+# and what the docs talk about; the patch is just how a fix reaches people
+# inside that minor. The www-v*/account-v* series below stay two-digit — nothing
+# compares them to anything.
+release: ## Create a GitHub release (usage: make release name=v0.1.0)
+	@if [ -z "$(name)" ]; then echo "Usage: make release name=vX.Y.Z"; exit 1; fi
+	@case "$(name)" in v*.*.*) ;; *) echo "Client release tags are vX.Y.Z (got $(name))"; exit 1;; esac
 	@echo "Creating release $(name)..."
 	git tag -a $(name) -m "Release $(name)"
 	git push origin $(name)

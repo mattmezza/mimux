@@ -25,7 +25,7 @@ jobs:
 
   release:
     needs: check
-    # Client releases only: tags look like v0.19. www-v* tags deploy the site
+    # Client releases only: tags look like v0.21.3. www-v* tags deploy the site
     # instead (see www.yml) and must never build or push a client image.
     if: startsWith(github.event.release.tag_name, 'v')
     runs-on: ubuntu-latest
@@ -42,13 +42,41 @@ jobs:
           npm ci
           npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --minify
 
-      # Image tags: v0.1 (tag), 0.1 (tag without leading v), and latest.
+      # Three kinds of image tag, and the difference between them is the whole
+      # pinning story:
+      #
+      #   latest / pro   newest of everything, moves across minors
+      #   v0.21          floating, moves with each patch of that minor — the
+      #                  recommended pin, because a minor is what a licence
+      #                  covers, so this receives fixes and never leaves the
+      #                  thing you paid for
+      #   v0.21.3        exact, never moves (0.21.3 without the v as well)
+      #
+      # The floating alias is emitted only for a plain numeric three-part tag.
+      # ${tag%.*} on a legacy two-part v0.20 would publish an image called "v0",
+      # and on a v1.0.0-rc1 it would quietly point the stable v1.0 pin at a
+      # release candidate.
       - name: Compute image tags
         id: meta
         run: |
           tag="${{ github.event.release.tag_name }}"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
+          img=ghcr.io/mattmezza/mimux
+          free="$img:latest"$'\n'"$img:$tag"$'\n'"$img:${tag#v}"
+          pro="$img:pro"$'\n'"$img:$tag-pro"$'\n'"$img:${tag#v}-pro"
+          case "${tag#v}" in
+            *[!0-9.]*) ;;
+            *.*.*) free="$free"$'\n'"$img:${tag%.*}"; pro="$pro"$'\n'"$img:${tag%.*}-pro" ;;
+          esac
+          {
+            echo "free<<TAGS"; echo "$free"; echo "TAGS"
+            echo "pro<<TAGS";  echo "$pro";  echo "TAGS"
+          } >> "$GITHUB_OUTPUT"
+          # When this release went out, linked into the binary. A perpetual
+          # licence covers every build released before its window ends, and
+          # this is the date that gets compared (pro/licence.go). Falls back to
+          # now, which is within seconds of published_at anyway — an empty
+          # value here would ship binaries that answer "unknown" and fail open.
+          echo "date=$(date -u -d '${{ github.event.release.published_at }}' +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
 
       # Six binaries: three targets by two flavours. The pro one is the same
       # client plus the ELv2 automation layer, with the production licence key
@@ -66,7 +94,7 @@ jobs:
             for target in linux/amd64 linux/arm64 darwin/arm64; do
               GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
                 go build -tags "$tags" \
-                -ldflags="-s -w -X main.version=${version}${pubkey}" \
+                -ldflags="-s -w -X main.version=${version} -X main.buildDate=${{ steps.meta.outputs.date }}${pubkey}" \
                 -o dist/$name-${target%/*}-${target#*/} ./cmd/mimux
             done
           done
@@ -99,12 +127,10 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ github.event.release.tag_name }}
+            BUILD_DATE=${{ steps.meta.outputs.date }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/mattmezza/mimux:latest
-            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.tag }}
-            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.ver }}
+          tags: ${{ steps.meta.outputs.free }}
 
       # The pro image. Same Dockerfile, built with -tags pro and the production
       # licence key. `:pro` is the moving pointer, the way `:latest` is for free.
@@ -116,11 +142,9 @@ jobs:
           push: true
           build-args: |
             VERSION=${{ github.event.release.tag_name }}-pro
+            BUILD_DATE=${{ steps.meta.outputs.date }}
             BUILD_TAGS=pro
             LICENCE_PUBKEY=${{ env.LICENCE_PUBKEY }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          tags: |
-            ghcr.io/mattmezza/mimux:pro
-            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.tag }}-pro
-            ghcr.io/mattmezza/mimux:${{ steps.meta.outputs.ver }}-pro
+          tags: ${{ steps.meta.outputs.pro }}

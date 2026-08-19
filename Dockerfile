@@ -14,6 +14,11 @@ RUN npx @tailwindcss/cli -i web/static/css/app.css -o web/static/css/dist.css --
 # native speed instead of emulating the whole compile.
 FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS go
 ARG VERSION=dev
+# When this build was released, as YYYY-MM-DD. Empty by default and passed only
+# by the release workflow: a perpetual licence is enforced against it, so an
+# image somebody built themselves must stay unversioned in that sense and fail
+# open (see pro/licence.go).
+ARG BUILD_DATE=
 ARG TARGETOS
 ARG TARGETARCH
 # Empty by default, so a plain `docker build` still produces the free (AGPL-only)
@@ -30,7 +35,7 @@ COPY --from=css /build/web/static/css/dist.css web/static/css/dist.css
 # string would blank the compiled-in key and make every licence fail to verify.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags "${BUILD_TAGS}" \
-    -ldflags="-s -w -X main.version=${VERSION}${LICENCE_PUBKEY:+ -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}}" \
+    -ldflags="-s -w -X main.version=${VERSION}${BUILD_DATE:+ -X main.buildDate=${BUILD_DATE}}${LICENCE_PUBKEY:+ -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}}" \
     -o mimux ./cmd/mimux
 # The licence texts that ship with the image. ELv2's Notices clause requires
 # every recipient of pro/ to get its terms, and the AGPL says the same about the
