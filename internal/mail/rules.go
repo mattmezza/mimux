@@ -107,7 +107,7 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 // twice:
 //
 //   - only under the "rules" scope. Under "all" every new inbox message already
-//     notifies (see account.maybeNotify), which makes the action redundant, not
+//     notifies (see Manager.flushNotify), which makes the action redundant, not
 //     additive; under "off" nothing notifies at all.
 //   - inbox only. Rules run for every folder a sync touches, so without this a
 //     rule matching your correspondent fires again on the Sent copy of your own

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	webpush "github.com/SherClockHolmes/webpush-go"
-	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/mattmezza/mimux/internal/store"
 )
@@ -216,19 +215,20 @@ func (m *Manager) NotifyTest() {
 
 // signalNewMessage announces a just-stored message on the hub, by store id, so
 // a subscriber can react to *which* message arrived instead of only "something
-// changed" (which is all the new-mail event has ever said). The browser uses
-// the id to deep-link the message; pro/webhooks.go turns it into a payload.
+// changed" (which is all the new-mail event has ever said). The notifier
+// batches the ids into one buzz; pro/webhooks.go turns each into a payload.
 //
 // Not folder-filtered on purpose — a subscriber knows what it cares about, and
 // the id resolves to the folder anyway — but it is backfill-filtered, or a
-// fresh install would announce months of old mail one event at a time. The two
-// guards are the ones notifiable() documents at length: nothing until the
-// account has completed a successful sync in this process, and nothing older
-// than a day (the backstop for a mid-session UIDVALIDITY re-fetch).
+// fresh install would announce months of old mail one event at a time. Two
+// guards do that: nothing until the account has completed a successful sync in
+// this process (which is what makes the initial backfill silent, at a cost of
+// at most one poll interval of silence after a restart), and nothing older than
+// a day (the backstop for a mid-session UIDVALIDITY re-fetch).
 //
-// notifiable() itself is deliberately not reused: it is also inbox-only and
-// skips already-read mail, and both of those are notification policy — a
-// webhook subscriber wants to hear about the Sent copy of a message too.
+// Everything else is the subscriber's policy, not this function's: the notifier
+// wants unread inbox mail only, a webhook subscriber wants to hear about the
+// Sent copy too. See flushNotify.
 func (a *account) signalNewMessage(f *store.Folder, buf *imapclient.FetchMessageBuffer) {
 	if a.getStatus().LastSync.IsZero() ||
 		buf.InternalDate.IsZero() || time.Since(buf.InternalDate) > 24*time.Hour {
@@ -239,78 +239,6 @@ func (a *account) signalNewMessage(f *store.Folder, buf *imapclient.FetchMessage
 		return
 	}
 	a.m.hub.broadcast(Event{Type: "message-new", Data: strconv.FormatInt(msg.ID, 10)})
-}
-
-// maybeNotify is the "tell me about every new message" path, called for each
-// newly-stored message during a sync.
-//
-// The guards are the entire point of this function. Without them the first sync
-// after a fresh install — or after a UIDVALIDITY reset makes the worker re-fetch
-// a mailbox it already had — announces months of backfilled mail one buzz at a
-// time:
-//
-//   - inbox only, or your own outgoing mail notifies you as it syncs back into
-//     Sent, and Gmail's All Mail copy of every message notifies a second time;
-//   - nothing until the account has completed one successful sync in this
-//     process, which is what makes the initial backfill silent (cost: at most
-//     one poll interval of silence after a restart);
-//   - nothing already marked \Seen — it was read somewhere else;
-//   - nothing older than a day, the backstop for a re-fetch of an old mailbox
-//     that the LastSync guard doesn't cover (a UIDVALIDITY bump mid-session).
-//
-// The in-memory guards run before the scope is read, deliberately: this is
-// called for every newly-stored message, GetPrefs is ~30 queries on the single
-// shared connection, and the 500-message backfill it must stay out of is
-// exactly the case notifiable() rejects without touching the database.
-func (a *account) maybeNotify(f *store.Folder, buf *imapclient.FetchMessageBuffer) {
-	if !notifiable(f, buf.Flags, buf.InternalDate, a.getStatus().LastSync) {
-		return
-	}
-	if a.m.st.GetPrefs().NotifyScope != "all" {
-		return
-	}
-	from := ""
-	if buf.Envelope != nil && len(buf.Envelope.From) > 0 {
-		from = addrDisplay(buf.Envelope.From[0])
-	}
-	subject := ""
-	if buf.Envelope != nil {
-		subject = buf.Envelope.Subject
-	}
-	// The row was upserted immediately before this call (see fetchSet), so it
-	// has an id — which is what lets a tap open this message instead of the
-	// inbox. One extra query, only on the path that is about to buzz a phone.
-	link := ""
-	if msg, err := a.m.st.MessageByFolderUID(f.ID, uint32(buf.UID)); err == nil && msg != nil {
-		link = messageLink(a.m.cfg.Server.BaseURL, f.ID, msg.ID)
-	}
-	go a.m.notify(a.cfg.DisplayLabel(), from, subject, link)
-}
-
-// notifiable holds the guards maybeNotify documents, split out because they are
-// pure branching logic and exactly the kind of thing that silently regresses
-// into notifying about backfill.
-func notifiable(f *store.Folder, flags []imap.Flag, received, lastSync time.Time) bool {
-	switch {
-	case f == nil || f.SpecialUse != "inbox":
-		return false
-	case lastSync.IsZero():
-		return false
-	case hasFlag(flags, imap.FlagSeen):
-		return false
-	case received.IsZero() || time.Since(received) > 24*time.Hour:
-		return false
-	}
-	return true
-}
-
-// addrDisplay is the notification headline for a sender: their name when the
-// envelope carries one, else the bare address.
-func addrDisplay(a imap.Address) string {
-	if n := strings.TrimSpace(a.Name); n != "" {
-		return n
-	}
-	return addrString(a)
 }
 
 // truncateRunes cuts s to at most n runes (never mid-rune), adding an ellipsis.

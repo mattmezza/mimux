@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
 	"github.com/mattmezza/mimux/internal/config"
 	"github.com/mattmezza/mimux/internal/store"
 )
@@ -151,38 +150,6 @@ func TestNotifyNtfy(t *testing.T) {
 func TestNotifyNtfyRejectsNonHTTP(t *testing.T) {
 	m := testManager(t)
 	m.notifyNtfy("file:///etc/passwd", "t", "b", "") // must not panic or dial
-}
-
-// TestNotifiableGuards pins the guards that keep a first sync — or a
-// UIDVALIDITY re-fetch — from announcing months of backfilled mail.
-func TestNotifiableGuards(t *testing.T) {
-	inbox := &store.Folder{SpecialUse: "inbox"}
-	sent := &store.Folder{SpecialUse: "sent"}
-	lastSync := time.Now().Add(-time.Minute)
-	fresh := time.Now().Add(-time.Minute)
-
-	cases := []struct {
-		name     string
-		f        *store.Folder
-		flags    []imap.Flag
-		received time.Time
-		lastSync time.Time
-		want     bool
-	}{
-		{"new inbox mail", inbox, nil, fresh, lastSync, true},
-		{"sent copy of my own mail", sent, nil, fresh, lastSync, false},
-		{"no folder", nil, nil, fresh, lastSync, false},
-		{"first sync backfill", inbox, nil, fresh, time.Time{}, false},
-		{"already read elsewhere", inbox, []imap.Flag{imap.FlagSeen}, fresh, lastSync, false},
-		{"old mail re-fetched", inbox, nil, time.Now().Add(-72 * time.Hour), lastSync, false},
-		{"no internal date", inbox, nil, time.Time{}, lastSync, false},
-		{"flagged but unread", inbox, []imap.Flag{imap.FlagFlagged}, fresh, lastSync, true},
-	}
-	for _, c := range cases {
-		if got := notifiable(c.f, c.flags, c.received, c.lastSync); got != c.want {
-			t.Errorf("%s: notifiable = %v, want %v", c.name, got, c.want)
-		}
-	}
 }
 
 // The scope switch is the master off: with it at its default nothing is sent,
