@@ -270,12 +270,14 @@ func parseDraftMessage(raw []byte) (*store.Draft, []store.DraftAttachment, error
 		}
 	}
 
-	if strings.TrimSpace(htmlBody) != "" {
-		d.Mode, d.Body = "html", SanitizeComposeHTML(htmlBody)
+	if safe := SanitizeComposeHTML(htmlBody); strings.TrimSpace(safe) != "" {
+		d.Mode, d.Body = "html", safe
 	} else {
+		// No HTML part, or one that is nothing but markup compose cannot keep:
+		// the plain text alternative is the honest version of it.
 		d.Body = text
 	}
-	if d.Subject == "" && strings.TrimSpace(d.Body) == "" && len(atts) == 0 {
+	if d.Subject == "" && d.To == "" && d.Cc == "" && strings.TrimSpace(d.Body) == "" && len(atts) == 0 {
 		return nil, nil, fmt.Errorf("nothing readable in this draft")
 	}
 	return d, atts, nil
