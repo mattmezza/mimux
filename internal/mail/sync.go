@@ -326,11 +326,9 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		}
 		if isNew {
 			a.runRules(ctx, c, f.ID, uint32(buf.UID))
-			// Both notification paths are non-blocking (they hand off to a
-			// goroutine) and both are no-ops until the user opts in, so the
-			// sync loop pays nothing for them beyond one Prefs read.
+			// One hub broadcast, and every consumer (notifications, webhooks)
+			// hangs off that. Non-blocking, so the sync loop pays nothing.
 			a.signalNewMessage(f, buf)
-			a.maybeNotify(f, buf)
 		}
 	}
 	return n, nil

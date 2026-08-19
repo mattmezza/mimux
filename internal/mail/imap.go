@@ -67,6 +67,7 @@ func (m *Manager) Start(ctx context.Context) {
 	m.mu.Unlock()
 	m.Reload()
 	go m.runScheduler(ctx)
+	go m.runNotifier(ctx)
 }
 
 // Reload reconciles the running workers with the accounts in the DB: it starts
