@@ -30,8 +30,9 @@ var version = "dev"
 var buildDate = ""
 
 // subcommands maps CLI verbs (mimux <verb> [args…]) to their implementations.
-// Empty in the free build; pro-tagged files in this package register theirs
-// (mcp, …) from init(), so the free binary neither has nor mentions them.
+// Registered from init() by one file each: upgrade.go carries no build tag, so
+// both binaries can update themselves, while the pro-tagged files (mail, mcp,
+// licence) mean the free binary neither has nor mentions those verbs.
 var subcommands = map[string]func(args []string) int{}
 
 func main() {
