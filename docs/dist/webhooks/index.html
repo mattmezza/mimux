@@ -74,9 +74,8 @@
 
 <div class="note">
   <p>
-    <strong>The signing secret is in that response and in no other.</strong>
-    Store it now — nothing returns it again. To change it, delete the endpoint
-    and create another.
+    <strong>The signing secret is in that response and in no other</strong>
+    until you rotate it. Store it now.
   </p>
 </div>
 
@@ -195,6 +194,21 @@ def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
     temporarily.</li>
 </ul>
 
+<h3>Pause and resume</h3>
+
+<pre><code>POST /v1/webhooks/{id}/pause
+POST /v1/webhooks/{id}/resume</code></pre>
+
+<p>
+  <code>pause</code> sets <code>active: false</code> without touching
+  <code>url</code> or <code>events</code> — the narrow version of
+  <code>PATCH</code> for "stop sending to this one for a while". Queued
+  deliveries wait rather than being dropped, and go out when the endpoint is
+  resumed. <code>resume</code> sets <code>active: true</code> and clears
+  <code>auto_disabled_at</code>, whether the endpoint was paused by hand or
+  auto-disabled by the engine.
+</p>
+
 <h3>Auto-disable</h3>
 
 <p>
@@ -226,22 +240,49 @@ def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
   <tbody>
     <tr><th>Request timeout</th><td>10 seconds, end to end</td></tr>
     <tr><th>Redirects followed</th><td>2 hops — enough for http→https and a path move; longer is a misconfigured receiver</td></tr>
-    <tr><th>Response body</th><td>Read a little so the connection can be reused, then discarded. Your reply is not ours to keep.</td></tr>
+    <tr><th>Response body</th><td>The first 2KB of your reply are kept against the delivery row (<code>response_body</code>); the rest is discarded.</td></tr>
     <tr><th>Drain interval</th><td>5 seconds for retries and leftovers; a fresh delivery is sent immediately when queued</td></tr>
   </tbody>
 </table>
 </div>
+
+<h2>Stats</h2>
+
+<p>
+  <code>GET /v1/webhooks</code> returns each endpoint with a <code>stats</code>
+  object folded from its kept delivery log: <code>total</code>,
+  <code>success_rate</code> (percentage of <em>settled</em> deliveries —
+  delivered or dead — that were delivered; absent until something has settled,
+  rather than lying with a <code>0%</code>), <code>failing</code> (retrying
+  plus dead), <code>pending</code>, and <code>last_delivery_at</code> /
+  <code>last_status</code> / <code>last_status_code</code> for the most
+  recently queued delivery. The same object comes back from every other call
+  that returns a webhook — create, <code>PATCH</code>, pause/resume, secret
+  rotation.
+</p>
 
 <h2>The delivery log</h2>
 
 <pre><code>GET /v1/webhooks/{id}/deliveries</code></pre>
 
 <p>
-  The last 100 deliveries for an endpoint, each with its
+  The endpoint's deliveries, newest first, each with its
   <code>delivery_id</code>, event, <code>status</code>
   (<code>pending</code> / <code>failed</code> / <code>ok</code> /
-  <code>dead</code>), attempt count, last HTTP status, last transport error, and
-  when the next attempt is due.
+  <code>dead</code>), attempt count, last HTTP status, last transport error,
+  the receiver's answer (<code>response_body</code>, capped at 2KB) and how
+  long the last attempt took (<code>duration_ms</code>), and when the next
+  attempt is due. The request payload itself is not included — read it from
+  your own receiver, or replay the delivery.
+</p>
+
+<p>
+  Filter with <code>?status=</code> and/or <code>?event=</code>, and page with
+  <code>?limit=</code> (1-100, default 25) and <code>?cursor=</code> (from a
+  previous response's <code>next_cursor</code>) — the same filters and pager
+  the deliveries screen in Settings uses. The underlying log is bounded at the
+  write end regardless of any filter: the last 100 deliveries per endpoint are
+  kept, older rows pruned as new ones arrive.
 </p>
 
 <h3>Replay</h3>
@@ -267,6 +308,25 @@ def verify(secret: str, header: str, body: bytes, tolerance: int = 300) -> bool:
   endpoint subscribed to nothing still receives its test. It goes through the
   normal machinery, which means a failing ping walks the same ladder and can
   auto-disable the endpoint like any other delivery.
+</p>
+
+<h3>Rotating the secret</h3>
+
+<pre><code>curl -X POST "$BASE/api/v1/webhooks/7/secret" \
+  -H "Authorization: Bearer $MIMUX_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'</code></pre>
+
+<p>
+  Replaces the endpoint's signing secret. An empty body (or
+  <code>secret</code> omitted) generates one; supply your own and it is used
+  as given, as long as it is at least 16 characters — the same rule the
+  Settings UI enforces on a hand-typed secret. Either way the response is
+  shaped like the create response (<code>webhook</code>, <code>secret</code>,
+  <code>note</code>), and it is the <strong>only</strong> place the new secret
+  is shown. Every attempt made after this — including a replay of an older
+  delivery — signs with the new secret, so update the receiver at the same
+  time.
 </p>
 
 <div class="note">

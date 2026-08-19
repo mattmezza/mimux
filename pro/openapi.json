@@ -902,7 +902,7 @@
         "tags": ["Webhooks"],
         "operationId": "listWebhooks",
         "summary": "List webhook endpoints",
-        "description": "Every configured endpoint, newest first. The signing secret is **not** included — it is returned once, by the create call, and never again.\n\nNot paginated: `next_cursor` is always `\"\"`.\n\n**Scope: `webhooks:manage`.**",
+        "description": "Every configured endpoint, newest first, each with its `stats` (success rate, failing count, last delivery — folded from the kept delivery log). The signing secret is **not** included — it is returned once, by the create call and by secret rotation, and never again.\n\nNot paginated: `next_cursor` is always `\"\"`.\n\n**Scope: `webhooks:manage`.**",
         "x-required-scope": "webhooks:manage",
         "responses": {
           "200": {
@@ -931,7 +931,7 @@
         "tags": ["Webhooks"],
         "operationId": "createWebhook",
         "summary": "Create a webhook endpoint",
-        "description": "Registers a URL and generates its signing secret. **The secret is in this response and in no other**: store it now, because nothing returns it again — to change it, delete the endpoint and create another.\n\n`url` must be an absolute `http`/`https` URL; anything else is a `400`. Unknown event names are dropped silently, so check the `events` you get back. An endpoint subscribed to nothing is legal and simply never fires (a test delivery still works — see the test endpoint).\n\n**Scope: `webhooks:manage`.**",
+        "description": "Registers a URL and generates its signing secret. **The secret is in this response and in no other** until you rotate it (`POST .../secret`, which is likewise shown once): store it now.\n\n`url` must be an absolute `http`/`https` URL; anything else is a `400`. Unknown event names are dropped silently, so check the `events` you get back. An endpoint subscribed to nothing is legal and simply never fires (a test delivery still works — see the test endpoint).\n\n**Scope: `webhooks:manage`.**",
         "x-required-scope": "webhooks:manage",
         "requestBody": {
           "required": true,
@@ -970,7 +970,7 @@
         "tags": ["Webhooks"],
         "operationId": "updateWebhook",
         "summary": "Update a webhook endpoint",
-        "description": "Merges the provided fields; absent ones keep their stored value. `events` replaces the whole subscription list rather than adding to it.\n\nSetting `active: true` also clears `auto_disabled_at` — switching an endpoint back on is how you say the receiver is fixed. There is no way to rotate the secret: delete and re-create.\n\n**Scope: `webhooks:manage`.**",
+        "description": "Merges the provided fields; absent ones keep their stored value. `events` replaces the whole subscription list rather than adding to it.\n\nSetting `active: true` also clears `auto_disabled_at` — switching an endpoint back on is how you say the receiver is fixed (`POST .../resume` does the same thing without touching `url` or `events`). To rotate the signing secret, use `POST .../secret`.\n\n**Scope: `webhooks:manage`.**",
         "x-required-scope": "webhooks:manage",
         "requestBody": {
           "required": true,
@@ -1014,17 +1014,122 @@
         }
       }
     },
-    "/v1/webhooks/{id}/deliveries": {
+    "/v1/webhooks/{id}/pause": {
       "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "pauseWebhook",
+        "summary": "Pause a webhook endpoint",
+        "description": "Sets `active: false` without touching `url` or `events` — the narrow version of `PATCH` for the common case of \"stop sending to this one for a while\". Deliveries already queued stay queued and go out when the endpoint is resumed.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The paused endpoint.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Webhook" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/resume": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "resumeWebhook",
+        "summary": "Resume a webhook endpoint",
+        "description": "Sets `active: true` and clears `auto_disabled_at` — the way back whether the endpoint was paused by hand or auto-disabled by the engine after exhausting the retry ladder.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "responses": {
+          "200": {
+            "description": "The resumed endpoint.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Webhook" } } }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/secret": {
+      "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
+      "post": {
+        "tags": ["Webhooks"],
+        "operationId": "setWebhookSecret",
+        "summary": "Set or rotate the signing secret",
+        "description": "Replaces the endpoint's HMAC signing secret. **The new secret is in this response and in no other** — store it now, because nothing returns it again until the next rotation.\n\nSend `{}` (or omit `secret`) to have mimux generate one. A supplied `secret` must be at least 16 characters, for a receiver that already has a key of its own; anything shorter is a `400` and the stored secret is left unchanged.\n\nEvery attempt made after this — including a replay of an old delivery — signs with the new secret, so update the receiver at the same time.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WebhookSecretSet" },
+              "examples": {
+                "generate": { "summary": "Generate one", "value": {} },
+                "supply": { "summary": "Bring your own", "value": { "secret": "a-receiver-side-secret-16+chars" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The secret was changed. This is the only sighting of the new value.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WebhookCreated" } } }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "402": { "$ref": "#/components/responses/LicenceRequired" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" },
+          "429": { "$ref": "#/components/responses/RateLimited" },
+          "500": { "$ref": "#/components/responses/InternalError" }
+        }
+      }
+    },
+    "/v1/webhooks/{id}/deliveries": {
+      "parameters": [
+        { "$ref": "#/components/parameters/WebhookID" },
+        {
+          "name": "status",
+          "in": "query",
+          "description": "Only deliveries in this status.",
+          "schema": { "type": "string", "enum": ["pending", "failed", "ok", "dead"] }
+        },
+        {
+          "name": "event",
+          "in": "query",
+          "description": "Only deliveries of this event type (including `ping`).",
+          "schema": { "type": "string" }
+        },
+        {
+          "name": "limit",
+          "in": "query",
+          "description": "Page size, 1-100.",
+          "schema": { "type": "integer", "minimum": 1, "maximum": 100, "default": 25 }
+        },
+        {
+          "name": "cursor",
+          "in": "query",
+          "description": "From a previous response's `next_cursor`. Omit for the first page.",
+          "schema": { "type": "string" }
+        }
+      ],
       "get": {
         "tags": ["Webhooks"],
         "operationId": "listWebhookDeliveries",
         "summary": "Read the delivery log",
-        "description": "The endpoint's recent deliveries, newest first: what was sent, how it went, and when the next attempt is due. The payload itself is not included — read it from your own receiver, or replay the delivery.\n\nThe log is bounded at the write end: the last 100 deliveries per endpoint are kept, older rows are pruned as new ones arrive. That is why there is no cursor here and `next_cursor` is always `\"\"`.\n\n**Scope: `webhooks:manage`.**",
+        "description": "The endpoint's deliveries, newest first: what was sent, how it went, the receiver's answer, and when the next attempt is due. The request payload itself is not included — read it from your own receiver, or replay the delivery.\n\nFilter with `?status` and/or `?event`, and page with `?limit`/`?cursor` — the same two filters and pager the deliveries screen uses. The underlying log is bounded at the write end regardless of any filter: the last 100 deliveries per endpoint are kept, older rows are pruned as new ones arrive.\n\n**Scope: `webhooks:manage`.**",
         "x-required-scope": "webhooks:manage",
         "responses": {
           "200": {
-            "description": "The log.",
+            "description": "One page of the log.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1038,6 +1143,7 @@
               }
             }
           },
+          "400": { "$ref": "#/components/responses/BadRequest" },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "402": { "$ref": "#/components/responses/LicenceRequired" },
           "403": { "$ref": "#/components/responses/Forbidden" },
@@ -1922,8 +2028,8 @@
       },
       "Webhook": {
         "type": "object",
-        "description": "A configured endpoint. The signing secret is deliberately absent — it exists in the create response and nowhere else.",
-        "required": ["id", "url", "events", "active", "created_at"],
+        "description": "A configured endpoint. The signing secret is deliberately absent — it exists in the create and secret-rotation responses and nowhere else.",
+        "required": ["id", "url", "events", "active", "created_at", "stats"],
         "properties": {
           "id": { "type": "integer", "format": "int64" },
           "url": { "type": "string", "format": "uri", "description": "Absolute `http`/`https` URL. Anything else is refused on the way in." },
@@ -1936,9 +2042,29 @@
           "auto_disabled_at": {
             "type": "string",
             "format": "date-time",
-            "description": "Present when the engine switched this endpoint off after a delivery exhausted the retry ladder. `PATCH active: true` clears it."
+            "description": "Present when the engine switched this endpoint off after a delivery exhausted the retry ladder. `PATCH active: true` (or the resume endpoint) clears it."
           },
-          "created_at": { "type": "string", "format": "date-time" }
+          "created_at": { "type": "string", "format": "date-time" },
+          "stats": { "$ref": "#/components/schemas/WebhookStats" }
+        }
+      },
+      "WebhookStats": {
+        "type": "object",
+        "description": "Folded from the endpoint's kept delivery log (the last 100 deliveries, not all time) — the same numbers the Settings UI shows next to each endpoint.",
+        "required": ["total", "failing", "pending"],
+        "properties": {
+          "total": { "type": "integer", "description": "Deliveries in the kept log." },
+          "success_rate": {
+            "type": "integer",
+            "description": "Percentage of *settled* deliveries (delivered or dead) that were delivered. Absent when nothing has settled yet — a fresh or all-pending endpoint has no rate to report, not a `0%`.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "failing": { "type": "integer", "description": "Deliveries that have failed at least once and have not (yet) been delivered: retrying plus dead." },
+          "pending": { "type": "integer", "description": "Queued, no attempt made yet." },
+          "last_delivery_at": { "type": "string", "format": "date-time", "description": "When the most recently queued delivery was created. Absent if nothing has ever been queued." },
+          "last_status": { "type": "string", "enum": ["pending", "failed", "ok", "dead"], "description": "Status of that most recent delivery." },
+          "last_status_code": { "type": "integer", "description": "HTTP status of that delivery's last attempt, if it made one." }
         }
       },
       "WebhookCreate": {
@@ -1961,6 +2087,13 @@
           "url": { "type": "string", "format": "uri" },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/WebhookEventName" } },
           "active": { "type": "boolean", "description": "Setting this to `true` also clears `auto_disabled_at`." }
+        }
+      },
+      "WebhookSecretSet": {
+        "type": "object",
+        "description": "Empty (or `secret` omitted) generates a secret. A supplied `secret` must be at least 16 characters.",
+        "properties": {
+          "secret": { "type": "string", "minLength": 16, "description": "Bring your own signing secret, for a receiver that already has a key." }
         }
       },
       "WebhookCreated": {
@@ -1993,6 +2126,8 @@
           "attempts": { "type": "integer", "description": "Attempts made so far, out of the ladder's seven." },
           "last_status_code": { "type": "integer", "description": "HTTP status of the last attempt. Absent when the request never got an answer." },
           "last_error": { "type": "string", "description": "Transport error from the last attempt, truncated. Absent when the last attempt reached the receiver." },
+          "response_body": { "type": "string", "description": "The first bytes of the receiver's reply to the last attempt, capped by the delivery engine before it is stored. Absent when the receiver answered with nothing, or the request never got an answer." },
+          "duration_ms": { "type": "integer", "description": "How long the last attempt took, end to end, in milliseconds. Absent (`0`) before any attempt has been made." },
           "next_attempt_at": { "type": "string", "format": "date-time", "description": "Present while `pending` or `failed`." },
           "created_at": { "type": "string", "format": "date-time" },
           "delivered_at": { "type": "string", "format": "date-time", "description": "Present once a `2xx` came back." }
