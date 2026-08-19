@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/mattmezza/mimux/internal/ai"
 	"github.com/mattmezza/mimux/internal/auth"
 	"github.com/mattmezza/mimux/internal/config"
 	"github.com/mattmezza/mimux/internal/mail"
@@ -156,7 +157,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if replyID, err := strconv.ParseInt(r.URL.Query().Get("reply"), 10, 64); err == nil && replyID > 0 {
 		if orig, err := s.store.MessageByID(replyID); err == nil && orig != nil {
-			s.prefillReply(&view, orig, r.URL.Query().Get("mode"))
+			s.prefillReply(r.Context(), &view, orig, r.URL.Query().Get("mode"), prefs)
 		}
 	}
 	// Layout depends on the final Kind, so resolve it after the reply prefill.
@@ -221,7 +222,7 @@ func (s *Server) adoptAndOpen(w http.ResponseWriter, r *http.Request, view compo
 
 // prefillReply fills the To/Cc/Subject/Body/threading fields of view for a
 // reply, reply-all or forward of orig.
-func (s *Server) prefillReply(view *composeView, orig *store.Message, mode string) {
+func (s *Server) prefillReply(ctx context.Context, view *composeView, orig *store.Message, mode string, prefs store.Prefs) {
 	view.Account = orig.Account
 	self := orig.Account
 	if ac, ok := s.accountByName(orig.Account); ok {
@@ -249,30 +250,90 @@ func (s *Server) prefillReply(view *composeView, orig *store.Message, mode strin
 		view.To = joinAddrList(mail.ReplyRecipients(self, orig.FromAddress))
 	}
 	view.Subject = mail.PrefixSubject(view.Kind, orig.Subject)
-	// NOTE: quotes the stored snippet (first ~2KB), not the full fetched
-	// body — reusing mail.Body would need an HTML->text conversion this
-	// phase doesn't have. Good enough for a reply quote; revisit if users
-	// complain about truncation.
+	text, htmlBody := s.quoteSource(ctx, orig)
 	if view.Kind == "forward" {
-		if view.Mode == "html" {
-			view.Body = "<p><br></p><blockquote>---------- Forwarded message ----------<br>From: " +
-				htmlEsc(from) + "<br>Date: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
-				"<br>Subject: " + htmlEsc(orig.Subject) + "<br><br>" + htmlEsc(orig.Snippet) + "</blockquote>"
-		} else {
-			view.Body = "\n\n---------- Forwarded message ----------\nFrom: " + from +
-				"\nDate: " + orig.Date.Format("Mon, 2 Jan 2006 15:04") +
-				"\nSubject: " + orig.Subject + "\n\n" + orig.Snippet
-		}
+		// A forward carries the whole original, whatever the reply-quote
+		// preference says: that setting is about how much of a message your
+		// reply repeats back to its own author, and a forward with the message
+		// cut out of it is not a forward.
+		view.Body = forwardBody(view.Mode, orig, from, text, htmlBody)
 	} else {
-		if view.Mode == "html" {
-			view.Body = mail.QuoteBodyHTML(orig.Date, from, orig.Snippet)
-		} else {
-			view.Body = "\n\n" + mail.QuoteBody(orig.Date, from, orig.Snippet)
-		}
+		view.Body = mail.QuoteOriginal(view.Mode, prefs.ReplyQuote, prefs.ReplyQuoteLines,
+			orig.Date, from, text, htmlBody)
 		view.InReplyTo = orig.MessageID
 		view.References = mail.ComputeReferences(orig.Refs, orig.MessageID)
 	}
-	view.ThreadContext = from + " wrote:\n" + orig.Snippet
+	// Independent of the quote setting: "quote nothing" is about what the
+	// recipient reads, not about what the assistant is allowed to see.
+	view.ThreadContext = s.aiThreadContext(orig, text)
+}
+
+// quoteSource reads the original's text and HTML for the quote. A body that
+// can't be fetched (offline, expunged, an account that won't connect) falls
+// back to the stored snippet: a short quote beats a reply window that refuses
+// to open.
+func (s *Server) quoteSource(ctx context.Context, msg *store.Message) (text, htmlBody string) {
+	t, h, err := s.mail.QuoteSource(ctx, msg)
+	if err != nil {
+		slog.Warn("compose: could not read the original for quoting", "message", msg.ID, "err", err)
+		return msg.Snippet, ""
+	}
+	if strings.TrimSpace(t) == "" && strings.TrimSpace(h) == "" {
+		return msg.Snippet, ""
+	}
+	return t, h
+}
+
+// forwardBody renders the "---------- Forwarded message ----------" block, in
+// the compose mode the window opens in.
+func forwardBody(mode string, orig *store.Message, from, text, htmlBody string) string {
+	date := orig.Date.Format("Mon, 2 Jan 2006 15:04")
+	if mode == "html" {
+		body := mail.SanitizeComposeHTML(htmlBody)
+		if strings.TrimSpace(body) == "" {
+			body = strings.ReplaceAll(htmlEsc(text), "\n", "<br>")
+		}
+		return "<p><br></p><blockquote>---------- Forwarded message ----------<br>From: " +
+			htmlEsc(from) + "<br>Date: " + date +
+			"<br>Subject: " + htmlEsc(orig.Subject) + "<br><br>" + body + "</blockquote>"
+	}
+	return "\n\n---------- Forwarded message ----------\nFrom: " + from +
+		"\nDate: " + date + "\nSubject: " + orig.Subject + "\n\n" + text
+}
+
+// aiThreadContext assembles what the AI reply features are given: the message
+// being replied to in full, plus the rest of its conversation for context. The
+// text rides to the browser in a hidden node and comes back on the /ai/* posts,
+// which is where it was already carried from — this only makes it the whole
+// conversation instead of one snippet. Never logged.
+//
+// ponytail: thread members contribute their stored snippet, not their body —
+// one reply window should not cost an IMAP fetch per message in the thread.
+// Fetch bodies for the last few members if the suggestions read too shallow.
+func (s *Server) aiThreadContext(orig *store.Message, text string) string {
+	if strings.TrimSpace(text) == "" {
+		text = orig.Snippet
+	}
+	msgs, err := s.store.ThreadMessages(orig)
+	if err != nil {
+		slog.Warn("compose: thread for the assistant's context", "message", orig.ID, "err", err)
+	}
+	var thread []ai.Msg
+	for i := range msgs {
+		if msgs[i].ID == orig.ID {
+			continue
+		}
+		thread = append(thread, aiMsg(&msgs[i], msgs[i].Snippet))
+	}
+	return ai.BuildContext(aiMsg(orig, text), thread)
+}
+
+func aiMsg(m *store.Message, text string) ai.Msg {
+	from := m.FromAddress
+	if m.FromName != "" {
+		from = m.FromName + " <" + m.FromAddress + ">"
+	}
+	return ai.Msg{From: from, Date: m.Date, Subject: m.Subject, Text: text}
 }
 
 func joinAddrList(addrs []string) string {

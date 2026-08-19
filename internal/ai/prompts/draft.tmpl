@@ -1,8 +1,8 @@
-{{if .ThreadContext}}Here is the email I am replying to:
+{{if .ThreadContext}}Here is the email conversation I am replying to, oldest message first:
 
 {{.ThreadContext}}
 
-Write my reply. The reply should: {{.Direction}}
+Write my reply to the last message, using the earlier ones only as context. The reply should: {{.Direction}}
 {{else}}Write a new email. It should be about: {{.Direction}}
 {{end}}{{if .WantSubject}}
 First output a single line in the form "Subject: <a short, specific subject line>", then one blank line, then the email body.{{end}}
