@@ -13,9 +13,10 @@ import (
 // ExportVersion is the envelope version for portable config dumps. Bump when the
 // shape changes so future imports can migrate older files. v2 added filters,
 // signatures, templates, saved searches, trusted senders and message labels;
-// v3 added the API tokens and the webhook endpoints. Older files still import —
+// v3 added the API tokens and the webhook endpoints; v4 added the per-folder
+// "sync continuously" choices. Older files still import —
 // the sections they lack are simply absent.
-const ExportVersion = 3
+const ExportVersion = 4
 
 // TokenExport is an OAuth2 token in the portable dump (RFC3339 expiry string).
 type TokenExport struct {
@@ -70,6 +71,20 @@ type WebhookExport struct {
 	Active bool   `json:"active"`
 }
 
+// FolderSyncExport is one folder's "sync continuously" choice (Settings →
+// Syncing), keyed by account + IMAP mailbox name. Folder ids are not portable —
+// folder rows are rediscovered by the first LIST on the restored install — and
+// the name is the only handle that survives.
+//
+// Only the folders whose flag differs from the default a fresh discovery would
+// give them travel: an unticked Sent and a ticked Archive, not the forty
+// mailboxes nobody touched.
+type FolderSyncExport struct {
+	Account string `json:"account"`
+	Name    string `json:"name"`
+	Sync    bool   `json:"sync"`
+}
+
 // ConfigExport is the full portable config: accounts (incl credentials, aliases
 // and per-account sync overrides), every app_settings row (prefs +
 // translate/AI keys + colors), OAuth tokens, filter rules, signatures with
@@ -84,18 +99,19 @@ type WebhookExport struct {
 // SECURITY: this contains account passwords, OAuth tokens, API keys, API-token
 // hashes and webhook signing secrets in cleartext.
 type ConfigExport struct {
-	Version        int               `json:"version"`
-	Accounts       []config.Account  `json:"accounts"`
-	Settings       map[string]string `json:"settings"`
-	Tokens         []TokenExport     `json:"tokens,omitempty"`
-	Filters        []filter.Rule     `json:"filters,omitempty"`
-	Signatures     []SignatureExport `json:"signatures,omitempty"`
-	Templates      []Template        `json:"templates,omitempty"`
-	SavedSearches  []SavedSearch     `json:"saved_searches,omitempty"`
-	TrustedSenders []string          `json:"trusted_senders,omitempty"`
-	APITokens      []APITokenExport  `json:"api_tokens,omitempty"`
-	Webhooks       []WebhookExport   `json:"webhooks,omitempty"`
-	Labels         []LabelExport     `json:"labels,omitempty"`
+	Version        int                `json:"version"`
+	Accounts       []config.Account   `json:"accounts"`
+	Settings       map[string]string  `json:"settings"`
+	Tokens         []TokenExport      `json:"tokens,omitempty"`
+	Filters        []filter.Rule      `json:"filters,omitempty"`
+	Signatures     []SignatureExport  `json:"signatures,omitempty"`
+	Templates      []Template         `json:"templates,omitempty"`
+	SavedSearches  []SavedSearch      `json:"saved_searches,omitempty"`
+	TrustedSenders []string           `json:"trusted_senders,omitempty"`
+	APITokens      []APITokenExport   `json:"api_tokens,omitempty"`
+	Webhooks       []WebhookExport    `json:"webhooks,omitempty"`
+	FolderSync     []FolderSyncExport `json:"folder_sync,omitempty"`
+	Labels         []LabelExport      `json:"labels,omitempty"`
 }
 
 // Export builds a ConfigExport snapshot of the current instance.
@@ -168,11 +184,46 @@ func (s *Store) Export() (ConfigExport, error) {
 	if err != nil {
 		return ConfigExport{}, err
 	}
+	fsync, err := s.exportFolderSync()
+	if err != nil {
+		return ConfigExport{}, err
+	}
 	return ConfigExport{
 		Version: ExportVersion, Accounts: accts, Settings: settings, Tokens: tokens,
 		Filters: rules, Signatures: sigs, Templates: tpls, SavedSearches: saved,
-		TrustedSenders: senders, APITokens: apiToks, Webhooks: hooks, Labels: labels,
+		TrustedSenders: senders, APITokens: apiToks, Webhooks: hooks,
+		FolderSync: fsync, Labels: labels,
 	}, nil
+}
+
+// defaultFolderSyncSQL is the sync flag a folder gets on discovery, as SQL over
+// whatever expression carries the special-use value — a bound parameter in
+// UpsertFolder, the column itself in the export's "did the user change this"
+// filter. One definition, so the two cannot drift apart and start disagreeing
+// about which folders are worth exporting.
+func defaultFolderSyncSQL(specialUse string) string {
+	return `(CASE WHEN ` + specialUse + ` IN ('inbox', 'sent', 'drafts') THEN 1 ELSE 0 END)`
+}
+
+// exportFolderSync dumps only the folders the user actually re-decided: a
+// ticked Archive, an unticked Sent. Everything at its discovery default is
+// re-derived on the restored install and would just be noise here.
+func (s *Store) exportFolderSync() ([]FolderSyncExport, error) {
+	rows, err := s.DB.Query(`SELECT account, name, sync FROM folders
+		WHERE sync != ` + defaultFolderSyncSQL("special_use") + ` ORDER BY account, name`)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []FolderSyncExport
+	for rows.Next() {
+		var f FolderSyncExport
+		if err := rows.Scan(&f.Account, &f.Name, &f.Sync); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
 }
 
 // exportAPITokens dumps the token rows as they are stored: the hash is the
@@ -296,6 +347,7 @@ type ImportSummary struct {
 	Senders    int
 	APITokens  int
 	Webhooks   int
+	FolderSync int
 	Labels     int
 }
 
@@ -433,6 +485,9 @@ func (s *Store) Import(e ConfigExport) (ImportSummary, error) {
 	if err := s.importWebhooks(e.Webhooks, &sum); err != nil {
 		return sum, err
 	}
+	if err := s.importFolderSync(e.FolderSync, &sum); err != nil {
+		return sum, err
+	}
 	for _, l := range e.Labels {
 		// NOTE: last write wins over whatever a re-sync put there. Fine for a
 		// restore; make it a union if server-side label edits ever need to survive
@@ -482,6 +537,34 @@ func (s *Store) importWebhooks(hooks []WebhookExport, sum *ImportSummary) error 
 			}
 		}
 		sum.Webhooks++
+	}
+	return nil
+}
+
+// importFolderSync restores the per-folder "sync continuously" choices, keyed
+// by account + mailbox name.
+//
+// The folder row usually does not exist yet: a rebuilt install has no mail data
+// until the first IMAP LIST, which is exactly when the choice has to be in
+// place — discovery would otherwise hand a restored, deliberately unticked Sent
+// the default tick. So the choice is written now, folder row or not, and
+// UpsertFolder does the rest for free: it writes sync on INSERT only, so
+// discovery fills in special_use and the sort order and leaves this alone.
+//
+// A pre-created row for a mailbox the new server does not have is the cost, and
+// it is the same empty row a folder deleted on the server already leaves behind.
+func (s *Store) importFolderSync(folders []FolderSyncExport, sum *ImportSummary) error {
+	for _, f := range folders {
+		// sort 10 is what mail.sortForSpecial gives a non-special folder — the
+		// value discovery would write anyway, so a placeholder row sorts sanely
+		// in the sidebar until the LIST arrives.
+		if _, err := s.DB.Exec(`
+			INSERT INTO folders (account, name, special_use, sort, sync) VALUES (?, ?, '', 10, ?)
+			ON CONFLICT(account, name) DO UPDATE SET sync = excluded.sync`,
+			f.Account, f.Name, f.Sync); err != nil {
+			return err
+		}
+		sum.FolderSync++
 	}
 	return nil
 }

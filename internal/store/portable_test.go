@@ -351,3 +351,80 @@ func TestRoundTripAPITokensAndWebhooks(t *testing.T) {
 		t.Errorf("re-import duplicated rows: %d tokens, %d endpoints", len(toks), len(eps))
 	}
 }
+
+// TestRoundTripFolderSync: the per-folder "sync continuously" choices survive
+// export → wipe → import, including a DEselected default (Sent). Folder rows
+// are mail data and are not in the dump, so the choice has to be re-attachable
+// by mailbox name and has to stick when the first IMAP LIST discovers the
+// folder afterwards.
+func TestRoundTripFolderSync(t *testing.T) {
+	src := open(t)
+	ids := map[string]int64{}
+	for _, f := range []struct{ name, special string }{
+		{"INBOX", "inbox"}, {"Sent", "sent"}, {"Drafts", "drafts"},
+		{"Archive", "archive"}, {"Receipts", ""},
+	} {
+		id, err := src.UpsertFolder("work", f.name, f.special, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids[f.name] = id
+	}
+	// Sent off (a deselected default), Archive on (a selected extra), Drafts
+	// left at its default so it can prove it is re-derived rather than carried.
+	if err := src.SetSyncedFolders("work", []int64{ids["INBOX"], ids["Drafts"], ids["Archive"]}); err != nil {
+		t.Fatal(err)
+	}
+
+	exp, err := src.Export()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(exp.FolderSync) != 2 {
+		t.Fatalf("dump carries %d folder choices, want only the two the user changed: %+v",
+			len(exp.FolderSync), exp.FolderSync)
+	}
+
+	// A rebuilt install: no mail data at all, so not one folder row exists.
+	dst := open(t)
+	sum, err := dst.Import(exp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum.FolderSync != 2 {
+		t.Errorf("summary = %d folder choices, want 2", sum.FolderSync)
+	}
+
+	// The first IMAP LIST discovers the mailboxes, in whatever order.
+	for _, f := range []struct{ name, special string }{
+		{"Archive", "archive"}, {"INBOX", "inbox"}, {"Sent", "sent"},
+		{"Drafts", "drafts"}, {"Receipts", ""},
+	} {
+		if _, err := dst.UpsertFolder("work", f.name, f.special, 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	want := []string{"Archive", "Drafts", "INBOX"}
+	if got := syncedNames(t, dst, "work"); !eq(got, want) {
+		t.Errorf("restored synced set = %v, want %v (Sent stays off, Archive stays on)", got, want)
+	}
+	// Discovery filled the placeholder row in rather than leaving a stub.
+	if f, _ := dst.FolderByName("work", "Archive"); f == nil || f.SpecialUse != "archive" {
+		t.Errorf("the placeholder row was not completed by discovery: %+v", f)
+	}
+}
+
+// TestImportV3DumpKeepsDefaults: a dump taken before folder choices existed
+// carries no folder_sync section, and must import without disturbing anything.
+func TestImportV3DumpKeepsDefaults(t *testing.T) {
+	s := open(t)
+	if _, err := s.UpsertFolder("work", "Sent", "sent", 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Import(ConfigExport{Version: 3, Settings: map[string]string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := syncedNames(t, s, "work"); !eq(got, []string{"Sent"}) {
+		t.Errorf("an old dump changed the synced set to %v", got)
+	}
+}
