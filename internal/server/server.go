@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 	"github.com/mattmezza/mimux/internal/ai"
 	"github.com/mattmezza/mimux/internal/auth"
 	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/ext"
 	"github.com/mattmezza/mimux/internal/filter"
 	"github.com/mattmezza/mimux/internal/mail"
 	"github.com/mattmezza/mimux/internal/store"
@@ -32,19 +34,29 @@ type Server struct {
 	tmpl    map[string]*template.Template
 	secure  bool
 	version string
+	// pro: the pro layer is linked into this binary — nothing registers an
+	// extension in the free build. Captured once so a test can drive both
+	// sides of the gate without a build tag. Nothing flips it at runtime.
+	// Read through proView() where a template needs it.
+	pro bool
 
 	pendingMu sync.Mutex
 	pending   map[int64]*time.Timer // message id -> deferred real IMAP move, cancellable by undo
+
+	cliMu      sync.Mutex
+	cliTickets map[string]cliTicket // one-shot CLI login codes; see cliauth.go
 }
 
 func New(cfg *config.Config, st *store.Store, mgr *mail.Manager, version string) (*Server, error) {
 	s := &Server{
-		cfg:     cfg,
-		store:   st,
-		mail:    mgr,
-		secure:  strings.HasPrefix(cfg.Server.BaseURL, "https://"),
-		version: version,
-		pending: map[int64]*time.Timer{},
+		cfg:        cfg,
+		store:      st,
+		mail:       mgr,
+		secure:     strings.HasPrefix(cfg.Server.BaseURL, "https://"),
+		version:    version,
+		pro:        len(ext.All()) > 0,
+		pending:    map[int64]*time.Timer{},
+		cliTickets: map[string]cliTicket{},
 	}
 	s.refreshAccounts()
 	if err := s.parseTemplates(); err != nil {
@@ -130,10 +142,14 @@ func (s *Server) Handler() http.Handler {
 	// Built first: the CSRF middleware needs their mount patterns, and chi
 	// wants every Use registered before the first route.
 	exts := s.extensions()
-	patterns := make([]string, 0, len(exts))
+	patterns := make([]string, 0, len(exts)+1)
 	for _, e := range exts {
 		patterns = append(patterns, e.Pattern)
 	}
+	// Same reasoning as the extension mounts: the CLI's code-for-token exchange
+	// is a machine call that carries its own one-shot credential and reads no
+	// cookie, so the CSRF check could only reject it. See cliauth.go.
+	patterns = append(patterns, cliExchangePath)
 
 	r := chi.NewRouter()
 	r.Use(middleware.Logger, middleware.Recoverer)
@@ -164,6 +180,9 @@ func (s *Server) Handler() http.Handler {
 	r.Get("/login", s.handleLoginForm)
 	r.Post("/login", s.handleLogin)
 	r.Post("/logout", s.handleLogout)
+	// Outside the auth group and CSRF-exempt: the CLI presents the one-shot code
+	// it was just handed plus its PKCE verifier, and nothing else.
+	r.Post(cliExchangePath, s.handleCLIExchange)
 
 	r.Group(func(r chi.Router) {
 		r.Use(s.requireAuth)
@@ -180,6 +199,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/t/{id}", s.handleThread)
 		r.Get("/t/{id}/rows", s.handleThreadRows)
 		r.Get("/rowmenu/{id}", s.handleRowMenu)
+		r.Get("/cli/auth", s.handleCLIAuthForm)
+		r.Post("/cli/auth", s.handleCLIAuthApprove)
 		r.Get("/oauth/{name}/start", s.handleOAuthStart)
 		r.Get("/oauth/callback", s.handleOAuthCallback)
 		r.Get("/statusbar", s.handleStatusbar)
@@ -277,8 +298,29 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/setup", http.StatusSeeOther)
 			return
 		}
+		// Remember where they were going, so signing in lands there instead of
+		// on the inbox. Only for GETs: a form post cannot be replayed by a
+		// redirect anyway, and its body is gone by then.
+		if r.Method == http.MethodGet {
+			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+			return
+		}
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 	})
+}
+
+// safeNext is the post-login destination. Anything but a plain path on this
+// site collapses to "/": a login form that will redirect wherever its query
+// string says is an open redirect, and a phishing page's favourite fixture.
+func safeNext(next string) string {
+	if next == "" || !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return "/"
+	}
+	u, err := url.Parse(next)
+	if err != nil || u.Scheme != "" || u.Host != "" {
+		return "/"
+	}
+	return next
 }
 
 // --- handlers ---
@@ -310,7 +352,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "setup failed", http.StatusInternalServerError)
 		return
 	}
-	s.startSession(w, r, username)
+	s.startSession(w, r, username, "/")
 }
 
 func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
@@ -318,24 +360,32 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	s.render(w, "login", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)})
+	s.render(w, "login", map[string]any{
+		"CSRF": auth.EnsureCSRF(w, r, s.secure),
+		"Next": safeNext(r.URL.Query().Get("next")),
+	})
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	username, password := r.PostFormValue("username"), r.PostFormValue("password")
+	next := safeNext(r.PostFormValue("next"))
 	u, err := s.store.UserByName(username)
 	if err != nil {
 		http.Error(w, "login failed", http.StatusInternalServerError)
 		return
 	}
 	if u == nil || !auth.VerifyPassword(password, u.PasswordHash) {
-		s.render(w, "login", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure), "Error": "Wrong username or password."})
+		s.render(w, "login", map[string]any{
+			"CSRF":  auth.EnsureCSRF(w, r, s.secure),
+			"Next":  next,
+			"Error": "Wrong username or password.",
+		})
 		return
 	}
-	s.startSession(w, r, username)
+	s.startSession(w, r, username, next)
 }
 
-func (s *Server) startSession(w http.ResponseWriter, r *http.Request, username string) {
+func (s *Server) startSession(w http.ResponseWriter, r *http.Request, username, next string) {
 	u, err := s.store.UserByName(username)
 	if err != nil || u == nil {
 		http.Error(w, "session failed", http.StatusInternalServerError)
@@ -347,7 +397,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, username s
 		return
 	}
 	auth.SetSessionCookie(w, token, s.secure)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

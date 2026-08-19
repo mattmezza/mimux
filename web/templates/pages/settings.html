@@ -717,9 +717,9 @@
           <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">API tokens</h2>
             {{template "pro_notice" (dict "Pro" .Pro "What" "The mimux API"
-              "Why" "The JSON API and the MCP endpoint are served by the pro layer, which this build does not include.")}}
+              "Why" "The JSON API and the MCP endpoint are served by the pro layer, which this build does not include. This build keeps everything you configure here, so a pro build picks it up the moment you switch.")}}
             <p class="text-xs text-zinc-500">Personal access tokens for the mimux API. Send one as <code>Authorization: Bearer &lt;token&gt;</code>. Scopes decide what it may do, and a token can be revoked here at any time.</p>
-            {{template "api_tokens" (dict "CSRF" .CSRF "Tokens" .APITokens "Scopes" .APIScopes "NewSecret" "")}}
+            {{template "api_tokens" (dict "CSRF" .CSRF "Tokens" .APITokens "Scopes" .APIScopes "NewSecret" "" "Pro" .Pro)}}
           </section>
           {{end}}
 
@@ -727,7 +727,7 @@
           <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Webhooks</h2>
             {{template "pro_notice" (dict "Pro" .Pro "What" "Webhook delivery"
-              "Why" "The delivery engine that POSTs to your endpoints, signs the payloads and retries them ships with the pro layer.")}}
+              "Why" "The delivery engine that POSTs to your endpoints, signs the payloads and retries them ships with the pro layer. This build keeps everything you configure here, so a pro build picks it up the moment you switch.")}}
             <p class="text-xs text-zinc-500">
               mimux POSTs a JSON body to your URL when something happens, signed with a per-endpoint
               secret in the <code>X-Mimux-Signature</code> header. Payloads are summaries — never
@@ -914,7 +914,7 @@
           {{if eq .Section "licence"}}
           <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Licence</h2>
-            {{template "pro_notice" (dict "Pro" .Pro "What" "The licence key" "Why" "Only a pro build verifies a key — this one has nothing to unlock.")}}
+            {{template "pro_notice" (dict "Pro" .Pro "What" "The licence key" "Why" "Only a pro build verifies a key — this one has nothing to unlock. This build keeps everything you configure here, so a pro build picks it up the moment you switch.")}}
             <p class="text-xs text-zinc-500">
               The API, the MCP server and webhook delivery are mimux pro. Everything else — reading,
               writing and syncing mail — is free and never checks a key.

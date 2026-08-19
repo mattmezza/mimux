@@ -1,0 +1,75 @@
+{{define "title"}}Sign in a terminal — mimux{{end}}
+{{define "content"}}
+{{/* The approval page for `mimux mail login`. Modelled on login.html: a single
+     plain form, no htmx, because the answer to it is a redirect back to the
+     CLI's loopback listener and htmx would swallow that. */}}
+<div class="h-full flex items-center justify-center p-4">
+  <div class="w-full max-w-md bg-zinc-800/60 rounded-lg shadow-lg p-6 space-y-4">
+    <div class="flex items-center gap-3">
+      <img src="{{.IconURL}}" alt="" class="w-8 h-8">
+      <h1 class="text-lg font-semibold text-zinc-100 tracking-wide">Sign in a terminal</h1>
+    </div>
+
+    {{if .Code}}
+    {{/* --no-browser: nothing is listening on a local port, so the code goes
+         here for the human to carry back across. */}}
+    <p class="text-sm text-zinc-300">Approved “{{.Label}}”. Paste this code into the terminal waiting for it:</p>
+    <code class="block break-all rounded-md bg-zinc-950 border border-zinc-800 px-3 py-2 font-mono text-[13px] text-zinc-100">{{.Code}}</code>
+    <p class="text-xs text-zinc-500">It is good for one use, for the next two minutes. Then you can close this tab.</p>
+
+    {{else if not .Pro.Active}}
+    {{template "pro_notice" (dict "Pro" .Pro "What" "The terminal client"
+      "Why" "The mimux mail command ships with the pro layer, which this build does not include, so signing in would mint a token with nothing to spend it on.")}}
+    <a href="/" class="block text-center text-sm text-zinc-400 hover:text-zinc-100">Back to the mailbox</a>
+
+    {{else}}
+    <p class="text-sm text-zinc-300">
+      A command line on this machine is asking for an API token. Check what it may do, then approve it.
+    </p>
+    <form method="post" action="/cli/auth" class="space-y-4">
+      <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+      <input type="hidden" name="nonce" value="{{.Nonce}}">
+      <input type="hidden" name="state" value="{{.State}}">
+      <input type="hidden" name="port" value="{{.Port}}">
+      <input type="hidden" name="challenge" value="{{.Challenge}}">
+      {{if .NoBrowser}}<input type="hidden" name="nb" value="1">{{end}}
+
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Name it</span>
+        <input type="text" name="label" value="{{.Label}}" autofocus
+          class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+        <span class="block text-xs text-zinc-500">This is how the token appears in Settings → API, where you can revoke it.</span>
+      </label>
+
+      <div class="space-y-1">
+        <span class="block text-xs text-zinc-400">It may</span>
+        {{range .Scopes}}
+        <label class="flex items-center gap-2">
+          <input type="checkbox" name="scopes" value="{{.ID}}" {{if index $.Wanted .ID}}checked{{end}}
+            class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+          <span class="text-sm text-zinc-200">{{.Label}}</span>
+          <code class="text-xs text-zinc-500">{{.ID}}</code>
+        </label>
+        {{end}}
+        <span class="block text-xs text-zinc-500">Pre-ticked from what the command asked for. What you leave ticked is what it gets.</span>
+      </div>
+
+      <label class="block space-y-1">
+        <span class="text-xs text-zinc-400">Expires</span>
+        <input type="date" name="expires"
+          class="w-48 rounded-md bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+        <span class="block text-xs text-zinc-500">Leave blank for a token that never expires.</span>
+      </label>
+
+      <div class="flex items-center gap-3 pt-1">
+        <button class="flex-1 rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white font-medium py-2">Approve</button>
+        <a href="/" class="px-4 py-2 rounded-md border border-zinc-700 text-sm text-zinc-400 hover:text-zinc-100">Cancel</a>
+      </div>
+    </form>
+    <p class="text-xs text-zinc-500">
+      If you did not just run <code>mimux mail login</code>, close this tab — nothing is created until you approve.
+    </p>
+    {{end}}
+  </div>
+</div>
+{{end}}

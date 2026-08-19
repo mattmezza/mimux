@@ -8,6 +8,9 @@
     </div>
     {{with .Error}}<p class="text-red-500 text-xs">{{.}}</p>{{end}}
     <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    {{/* Where to land after signing in — a same-site path, validated server
+         side (safeNext). Carries a CLI login back to its approval page. */}}
+    <input type="hidden" name="next" value="{{.Next}}">
     <label class="block space-y-1">
       <span class="text-xs text-zinc-400">Username</span>
       <input name="username" required autofocus autocomplete="username"

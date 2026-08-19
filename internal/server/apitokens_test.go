@@ -37,6 +37,7 @@ func postAPIToken(t *testing.T, r http.Handler, path string, form url.Values) *h
 // hash was stored.
 func TestAPITokenCreateShowsSecretOnce(t *testing.T) {
 	s := serverWith(t, nil, nil)
+	s.pro = true
 	r := apiTokenRouter(s)
 
 	rec := postAPIToken(t, r, "/settings/api", url.Values{
@@ -97,6 +98,7 @@ func TestAPITokenCreateShowsSecretOnce(t *testing.T) {
 
 func TestAPITokenCreateRejectsBadInput(t *testing.T) {
 	s := serverWith(t, nil, nil)
+	s.pro = true
 	r := apiTokenRouter(s)
 
 	if rec := postAPIToken(t, r, "/settings/api", url.Values{"label": {"  "}}); rec.Code != http.StatusBadRequest {
@@ -128,6 +130,7 @@ func TestAPITokenCreateRejectsBadInput(t *testing.T) {
 // its own endpoint.
 func TestSettingsPageHasAPITab(t *testing.T) {
 	s := serverWith(t, nil, nil)
+	s.pro = true
 	body := renderSection(t, s, "api")
 	for _, want := range []string{
 		`href="/settings/api"`, `id="api-tokens"`, `name="label"`,
@@ -152,5 +155,29 @@ func TestAPITokenExpiryIsEndOfDay(t *testing.T) {
 	}
 	if blank, err := parseTokenExpiry(""); err != nil || !blank.IsZero() {
 		t.Errorf("blank expiry = %v, %v", blank, err)
+	}
+}
+
+// A free build has no API, no MCP server and no CLI, so Settings → API offers
+// the conversion notice instead of a create form — and refuses the post even if
+// something aims one at the endpoint anyway.
+func TestAPITokenCreateRefusedInFreeBuild(t *testing.T) {
+	s := serverWith(t, nil, nil) // s.pro is false: nothing registered an extension
+	rec := postAPIToken(t, apiTokenRouter(s), "/settings/api", url.Values{"label": {"nope"}})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("create = %d, want 403", rec.Code)
+	}
+	if toks, _ := s.store.ListAPITokens(); len(toks) != 0 {
+		t.Errorf("a free build minted %d tokens", len(toks))
+	}
+
+	body := renderSection(t, s, "api")
+	if strings.Contains(body, `hx-post="/settings/api"`) {
+		t.Error("the create form is still rendered in a free build")
+	}
+	for _, want := range []string{"mimux.dev/pricing", "support@mimux.dev"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings page missing the pro notice %q", want)
+		}
 	}
 }

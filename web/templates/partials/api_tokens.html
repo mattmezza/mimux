@@ -49,6 +49,11 @@
     {{end}}
   </ul>
 
+  {{/* A free build has no API, no MCP server and no CLI to spend a token on,
+       so it does not mint one: the credential would authenticate against
+       nothing. The section's pro notice says so; existing tokens stay listed
+       and revocable above. */}}
+  {{if .Pro.Active}}
   {{/* Create form — not a <form> (the settings page is one big form): posts via htmx. */}}
   <div id="api-token-fields" class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-4 space-y-3">
     <h3 class="text-sm font-semibold text-zinc-100">New token</h3>
@@ -89,5 +94,6 @@
         class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Create token</button>
     </div>
   </div>
+  {{end}}
 </div>
 {{end}}

@@ -29,12 +29,17 @@ func (s *Server) renderAPITokens(w http.ResponseWriter, r *http.Request, secret 
 		"Tokens":    toks,
 		"Scopes":    store.APIScopes,
 		"NewSecret": secret,
+		"Pro":       s.proView(),
 	})
 }
 
 // handleAPITokenCreate mints a token and renders it back once. Posts via htmx
 // like the other sub-managers (the settings page is one big form).
 func (s *Server) handleAPITokenCreate(w http.ResponseWriter, r *http.Request) {
+	if !s.pro {
+		http.Error(w, proNoticeTokens, http.StatusForbidden)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
@@ -49,25 +54,35 @@ func (s *Server) handleAPITokenCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "That expiry date isn't valid.", http.StatusBadRequest)
 		return
 	}
-	secret := auth.NewAPIToken()
-	hash, err := auth.HashPassword(secret)
+	secret, _, err := s.mintAPIToken(label, r.PostForm["scopes"], expires)
 	if err != nil {
-		slog.Error("api token: hash", "err", err)
-		http.Error(w, "Couldn't create the token.", http.StatusInternalServerError)
-		return
-	}
-	tok := &store.APIToken{
-		Label:     label,
-		Hash:      hash,
-		Scopes:    store.ValidScopes(r.PostForm["scopes"]),
-		ExpiresAt: expires,
-	}
-	if err := s.store.CreateAPIToken(tok); err != nil {
 		slog.Error("api token: create", "err", err) // never the secret or the hash
 		http.Error(w, "Couldn't create the token.", http.StatusInternalServerError)
 		return
 	}
 	s.renderAPITokens(w, r, secret)
+}
+
+// mintAPIToken creates one token and returns its plaintext secret alongside the
+// stored record — the only moment the plaintext exists, since the database
+// holds an argon2id hash. Shared by Settings → API and the CLI login approval,
+// so the two cannot drift on scope filtering or on what gets stored.
+func (s *Server) mintAPIToken(label string, scopes []string, expires time.Time) (string, *store.APIToken, error) {
+	secret := auth.NewAPIToken()
+	hash, err := auth.HashPassword(secret)
+	if err != nil {
+		return "", nil, err
+	}
+	tok := &store.APIToken{
+		Label:     label,
+		Hash:      hash,
+		Scopes:    store.ValidScopes(scopes),
+		ExpiresAt: expires,
+	}
+	if err := s.store.CreateAPIToken(tok); err != nil {
+		return "", nil, err
+	}
+	return secret, tok, nil
 }
 
 func (s *Server) handleAPITokenRevoke(w http.ResponseWriter, r *http.Request) {

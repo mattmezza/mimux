@@ -21,9 +21,14 @@ func TestCSRFExceptExtensionMounts(t *testing.T) {
 		{"/api/v1/messages/send", true},
 		{"/apiary", false}, // a sibling path, not a mount: still guarded
 		{"/messages/1/read", false},
+		// The CLI's code-for-token exchange is the same kind of caller: it
+		// carries a one-shot code and reads no cookie. The approval form one
+		// path up is an ordinary cookie-authenticated post and stays guarded.
+		{cliExchangePath, true},
+		{"/cli/auth", false},
 	} {
 		var reached bool
-		h := csrfExcept([]string{"/api"})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+		h := csrfExcept([]string{"/api", cliExchangePath})(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, httptest.NewRequest("POST", tc.path, nil))
 		if reached != tc.reach {
