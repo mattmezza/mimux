@@ -73,6 +73,30 @@ func TestLicenceSaveRemove(t *testing.T) {
 	}
 }
 
+// TestLicenceSavedInAFreeBuildSaysSo: storing a key in a build with no pro
+// layer is accepted, and the block that comes back says the key does nothing
+// here and names the image that would read it.
+func TestLicenceSavedInAFreeBuildSaysSo(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	body := postAPIToken(t, licenceRouter(s), "/settings/licence", url.Values{"licence_key": {testLicenceKey}}).Body.String()
+	for _, want := range []string{
+		"this build has no pro layer", "ghcr.io/mattmezza/mimux:pro", proPricingURL, proContactMail,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the saved-in-a-free-build note is missing %q: %s", want, body)
+		}
+	}
+
+	// A pro build stores the same key and says nothing: the licence line it
+	// writes within the minute is the verdict there.
+	s.pro = true
+	rec := httptest.NewRecorder()
+	licenceRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/licence", nil))
+	if strings.Contains(rec.Body.String(), "no pro layer") {
+		t.Error("a pro build tells itself it has no pro layer")
+	}
+}
+
 func TestLicenceSaveRejectsBlank(t *testing.T) {
 	s := serverWith(t, nil, nil)
 	r := licenceRouter(s)

@@ -17,15 +17,19 @@ import (
 
 // licenceView is the licence block's data.
 type licenceView struct {
-	Key     string // masked; blank when nothing is stored
-	Status  string // the pro layer's last evaluation; blank in a free build
-	FromEnv bool   // MIMUX_LICENCE_KEY is set, and it wins over the stored key
+	Key     string  // masked; blank when nothing is stored
+	Status  string  // the pro layer's last evaluation; blank in a free build
+	FromEnv bool    // MIMUX_LICENCE_KEY is set, and it wins over the stored key
+	Pro     proInfo // so a stored key in a free build can say so, here, on save
 }
 
 func (s *Server) licenceView() licenceView {
 	key, _ := s.store.Setting(store.SettingLicenceKey)
 	status, _ := s.store.Setting(store.SettingLicenceStatus)
-	return licenceView{Key: maskLicenceKey(key), Status: status, FromEnv: s.cfg.LicenceKey != ""}
+	return licenceView{
+		Key: maskLicenceKey(key), Status: status,
+		FromEnv: s.cfg.LicenceKey != "", Pro: s.proView(),
+	}
 }
 
 // maskLicenceKey keeps the parts that identify a key at a glance and drops the
@@ -51,6 +55,11 @@ func (s *Server) renderLicence(w http.ResponseWriter, r *http.Request) {
 // handleLicenceSave stores a pasted key. It is not validated here — only pro/
 // holds the public key, and a free build rejecting a perfectly good key would
 // be worse than storing one that a pro build will then explain.
+//
+// A free build says that out loud instead of accepting the paste in silence:
+// the block it renders back carries the "this build has no pro layer" note (see
+// licenceView.Pro and partials/licence.html), because a key that appears to
+// have been accepted and then does nothing is the worse failure of the two.
 func (s *Server) handleLicenceSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)

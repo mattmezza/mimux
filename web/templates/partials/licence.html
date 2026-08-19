@@ -20,6 +20,17 @@
     <p class="text-sm text-zinc-500">No licence key. The API and MCP endpoints run on a 14-day trial from the first pro boot.</p>
     {{end}}
 
+    {{/* A key stored in a build that cannot read it: said plainly, and only
+         here, because this block is what htmx swaps in after a save. */}}
+    {{if and .Licence.Key (not .Licence.Pro.Active)}}
+    <p class="text-xs text-amber-400/90">Saved — but this build has no pro layer, so nothing here verifies it.
+      Switch the image to <code class="font-mono">ghcr.io/mattmezza/mimux:pro</code> and the key takes effect on boot.
+      <a href="{{.Licence.Pro.BuyURL}}" target="_blank" rel="noreferrer" class="underline hover:text-amber-300">Pricing</a>
+      ·
+      <a href="mailto:{{.Licence.Pro.Contact}}" class="underline hover:text-amber-300">{{.Licence.Pro.Contact}}</a>
+    </p>
+    {{end}}
+
     {{if .Licence.FromEnv}}
     <p class="text-xs text-amber-400/90">MIMUX_LICENCE_KEY is set in the environment and takes precedence over anything saved here.</p>
     {{end}}
