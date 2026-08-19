@@ -189,6 +189,261 @@ func TestSearchCompletedFires(t *testing.T) {
 	}
 }
 
+// seedDelivery writes one delivery straight through the store, bypassing the
+// engine, so a stats/filter test can pin an exact status and code instead of
+// waiting on a real retry ladder.
+func seedDelivery(t *testing.T, st *store.Store, epID int64, event, status string, code int) *store.WebhookDelivery {
+	t.Helper()
+	d := &store.WebhookDelivery{EndpointID: epID, EventType: event, DeliveryID: "seed", Payload: "{}"}
+	if err := st.EnqueueWebhookDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	d.DeliveryID = "seed-" + strconv.FormatInt(d.ID, 10)
+	d.Status = status
+	d.Attempts = 1
+	d.LastStatusCode = code
+	d.ResponseBody = "seeded response"
+	d.DurationMS = 42
+	if status == store.WebhookOK {
+		d.DeliveredAt = time.Now().UTC()
+	}
+	if err := st.SaveWebhookDelivery(d); err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// TestWebhookStats: the numbers the Settings UI shows next to each endpoint —
+// success rate over settled deliveries, the failing count, and the last
+// delivery — come back on both the listing and any single-webhook response.
+func TestWebhookStats(t *testing.T) {
+	ta := newTestAPI(t)
+	id, _ := createWebhook(t, ta, "https://example.test/hook", "message.received")
+
+	seedDelivery(t, ta.st, id, "message.received", store.WebhookOK, 200)
+	seedDelivery(t, ta.st, id, "message.received", store.WebhookOK, 200)
+	seedDelivery(t, ta.st, id, "message.received", store.WebhookDead, 500)
+	seedDelivery(t, ta.st, id, "message.received", store.WebhookFailed, 503)
+	last := seedDelivery(t, ta.st, id, "message.received", store.WebhookPending, 0)
+
+	rec := ta.req(t, http.MethodGet, "/v1/webhooks", nil)
+	var list struct {
+		Data []webhookJSON `json:"data"`
+	}
+	decodeBody(t, rec, &list)
+	if len(list.Data) != 1 {
+		t.Fatalf("list = %+v", list.Data)
+	}
+	st := list.Data[0].Stats
+	if st.Total != 5 {
+		t.Errorf("total = %d, want 5", st.Total)
+	}
+	// 2 ok out of 3 settled (2 ok + 1 dead) = 66%.
+	if st.SuccessRate == nil || *st.SuccessRate != 66 {
+		t.Errorf("success_rate = %v, want 66", st.SuccessRate)
+	}
+	if st.Failing != 2 { // 1 failed (retrying) + 1 dead
+		t.Errorf("failing = %d, want 2", st.Failing)
+	}
+	if st.Pending != 1 {
+		t.Errorf("pending = %d, want 1", st.Pending)
+	}
+	if st.LastStatus != store.WebhookPending || st.LastDeliveryAt == "" {
+		t.Errorf("last delivery = %+v, want the most recently queued row (%d)", st, last.ID)
+	}
+
+	// A patch response carries the same numbers — it is not list-only.
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10)
+	rec = ta.req(t, http.MethodPatch, path, map[string]any{"active": true})
+	var patched webhookJSON
+	decodeBody(t, rec, &patched)
+	if patched.Stats.Total != 5 {
+		t.Errorf("patch stats.total = %d, want 5", patched.Stats.Total)
+	}
+
+	// A fresh endpoint has nothing settled yet: success_rate stays absent
+	// rather than lying with a 0%. Decoded into its own variable — reusing
+	// list here would leave a stale pointer from the row above, since
+	// encoding/json does not zero fields absent from the new JSON.
+	id2, _ := createWebhook(t, ta, "https://example.test/other", "message.received")
+	rec = ta.req(t, http.MethodGet, "/v1/webhooks", nil)
+	var list2 struct {
+		Data []webhookJSON `json:"data"`
+	}
+	decodeBody(t, rec, &list2)
+	for _, w := range list2.Data {
+		if w.ID == id2 && w.Stats.SuccessRate != nil {
+			t.Errorf("fresh endpoint success_rate = %v, want absent", *w.Stats.SuccessRate)
+		}
+	}
+}
+
+// TestWebhookDeliveriesFilterAndPaginate: ?status and ?event narrow the log,
+// ?limit and ?cursor page through it, and response_body/duration_ms ride
+// along on every row.
+func TestWebhookDeliveriesFilterAndPaginate(t *testing.T) {
+	ta := newTestAPI(t)
+	id, _ := createWebhook(t, ta, "https://example.test/hook", "message.received", "sync.error")
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10) + "/deliveries"
+
+	for i := 0; i < 3; i++ {
+		seedDelivery(t, ta.st, id, "message.received", store.WebhookOK, 200)
+	}
+	seedDelivery(t, ta.st, id, "sync.error", store.WebhookDead, 500)
+
+	// response_body and duration_ms are on the wire.
+	rec := ta.req(t, http.MethodGet, path+"?limit=1", nil)
+	var page struct {
+		Data       []deliveryJSON `json:"data"`
+		NextCursor string         `json:"next_cursor"`
+	}
+	decodeBody(t, rec, &page)
+	if len(page.Data) != 1 || page.Data[0].ResponseBody != "seeded response" || page.Data[0].DurationMS != 42 {
+		t.Fatalf("page = %+v", page.Data)
+	}
+	if page.NextCursor == "" {
+		t.Fatal("next_cursor is empty with more rows left")
+	}
+
+	// Follow the cursor to the end without dropping or repeating a row.
+	seen := map[int64]bool{page.Data[0].ID: true}
+	cursor := page.NextCursor
+	for cursor != "" {
+		rec = ta.req(t, http.MethodGet, path+"?limit=1&cursor="+cursor, nil)
+		decodeBody(t, rec, &page)
+		if len(page.Data) != 1 {
+			t.Fatalf("page at cursor %s = %+v", cursor, page.Data)
+		}
+		if seen[page.Data[0].ID] {
+			t.Fatalf("delivery %d seen twice while paging", page.Data[0].ID)
+		}
+		seen[page.Data[0].ID] = true
+		cursor = page.NextCursor
+	}
+	if len(seen) != 4 {
+		t.Fatalf("paged through %d deliveries, want 4", len(seen))
+	}
+
+	// status filter.
+	rec = ta.req(t, http.MethodGet, path+"?status="+store.WebhookDead, nil)
+	decodeBody(t, rec, &page)
+	if len(page.Data) != 1 || page.Data[0].Status != store.WebhookDead {
+		t.Fatalf("status filter = %+v", page.Data)
+	}
+
+	// event filter.
+	rec = ta.req(t, http.MethodGet, path+"?event=sync.error", nil)
+	decodeBody(t, rec, &page)
+	if len(page.Data) != 1 || page.Data[0].Event != "sync.error" {
+		t.Fatalf("event filter = %+v", page.Data)
+	}
+
+	// A bad limit is a 400, not a silently clamped one.
+	if rec := ta.req(t, http.MethodGet, path+"?limit=0", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("limit=0 = %d, want 400", rec.Code)
+	}
+	if rec := ta.req(t, http.MethodGet, path+"?limit=101", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("limit=101 = %d, want 400", rec.Code)
+	}
+}
+
+// TestWebhookPauseResume: pause stops nothing from being queued (that is the
+// engine's job — see webhooks_test.go), it only flips active; resume flips it
+// back and clears an auto-disabled stamp the same way PATCH active:true does.
+func TestWebhookPauseResume(t *testing.T) {
+	ta := newTestAPI(t)
+	id, _ := createWebhook(t, ta, "https://example.test/hook", "message.received")
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10)
+
+	rec := ta.req(t, http.MethodPost, path+"/pause", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause = %d: %s", rec.Code, rec.Body.String())
+	}
+	var wj webhookJSON
+	decodeBody(t, rec, &wj)
+	if wj.Active {
+		t.Fatal("paused webhook still active")
+	}
+
+	if err := ta.st.AutoDisableWebhookEndpoint(id, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	rec = ta.req(t, http.MethodPost, path+"/resume", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resume = %d: %s", rec.Code, rec.Body.String())
+	}
+	decodeBody(t, rec, &wj)
+	if !wj.Active || wj.AutoDisabledAt != "" {
+		t.Fatalf("resume = %+v, want active with no auto_disabled_at", wj)
+	}
+
+	if rec := ta.req(t, http.MethodPost, "/v1/webhooks/99999/pause", nil); rec.Code != http.StatusNotFound {
+		t.Errorf("pause of an unknown webhook = %d, want 404", rec.Code)
+	}
+}
+
+// TestWebhookSecretSetAndRotate: the same rule the Settings UI enforces (16
+// character minimum, or generate one) and the same one-shot visibility as
+// creation — the secret is in this response and never again.
+func TestWebhookSecretSetAndRotate(t *testing.T) {
+	ta := newTestAPI(t)
+	id, original := createWebhook(t, ta, "https://example.test/hook", "message.received")
+	path := "/v1/webhooks/" + strconv.FormatInt(id, 10) + "/secret"
+
+	// Too short is a 400, and the stored secret is untouched.
+	rec := ta.req(t, http.MethodPost, path, map[string]any{"secret": "short"})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("short secret = %d: %s", rec.Code, rec.Body.String())
+	}
+	stored, _ := ta.st.WebhookEndpointByID(id)
+	if stored.Secret != original {
+		t.Fatal("a rejected secret was still written")
+	}
+
+	// Blank generates one, shown once.
+	rec = ta.req(t, http.MethodPost, path, map[string]any{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("generate secret = %d: %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Webhook webhookJSON `json:"webhook"`
+		Secret  string      `json:"secret"`
+		Note    string      `json:"note"`
+	}
+	decodeBody(t, rec, &out)
+	if out.Secret == "" || out.Secret == original || !strings.Contains(out.Note, "shown once") {
+		t.Fatalf("generated secret response = %+v", out)
+	}
+	stored, _ = ta.st.WebhookEndpointByID(id)
+	if stored.Secret != out.Secret {
+		t.Error("the returned secret is not the one that will sign")
+	}
+	if strings.Contains(rec.Body.String(), original) {
+		t.Error("rotate response leaked the previous secret")
+	}
+
+	// A caller-supplied secret at the minimum length is taken as given.
+	mine := "exactly-16-chars"
+	if len(mine) != 16 {
+		t.Fatalf("test fixture is %d chars, want 16", len(mine))
+	}
+	rec = ta.req(t, http.MethodPost, path, map[string]any{"secret": mine})
+	decodeBody(t, rec, &out)
+	if out.Secret != mine {
+		t.Errorf("secret = %q, want the supplied one", out.Secret)
+	}
+
+	// The secret never reappears in a listing.
+	rec = ta.req(t, http.MethodGet, "/v1/webhooks", nil)
+	if strings.Contains(rec.Body.String(), mine) {
+		t.Error("the webhook list leaks the signing secret")
+	}
+
+	if rec := ta.req(t, http.MethodPost, "/v1/webhooks/99999/secret", map[string]any{}); rec.Code != http.StatusNotFound {
+		t.Errorf("secret on an unknown webhook = %d, want 404", rec.Code)
+	}
+}
+
 // TestWebhookScopeEnforced: every webhook route needs webhooks:manage, and a
 // token without it gets a 403 naming the scope.
 func TestWebhookScopeEnforced(t *testing.T) {
@@ -202,6 +457,9 @@ func TestWebhookScopeEnforced(t *testing.T) {
 		{http.MethodPost, "/v1/webhooks"},
 		{http.MethodPatch, path},
 		{http.MethodDelete, path},
+		{http.MethodPost, path + "/pause"},
+		{http.MethodPost, path + "/resume"},
+		{http.MethodPost, path + "/secret"},
 		{http.MethodGet, path + "/deliveries"},
 		{http.MethodPost, path + "/deliveries/1/replay"},
 		{http.MethodPost, path + "/test"},
