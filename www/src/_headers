@@ -29,6 +29,14 @@
 /css/*
   Cache-Control: public, max-age=3600
 
+# The installer. text/plain so a browser shows it instead of offering a
+# download — anyone about to pipe a script into bash should be one click from
+# reading it. Barely cached, because it names release URLs and has to be able
+# to change with a release rather than a day later.
+/install.sh
+  Content-Type: text/plain; charset=utf-8
+  Cache-Control: public, max-age=300
+
 # Filenames are content-hashed at build time (site.<hash>.js), so a new build
 # is a new URL and this can never serve stale code. build.sh keeps the previous
 # build's bundle on disk for a month so the HTML below, which may be a few

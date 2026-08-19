@@ -403,7 +403,7 @@
         <ol class="space-y-7 text-sm leading-relaxed">
           <li class="flex gap-4" data-reveal>
             <span class="font-mono text-accent-600 shrink-0 mt-0.5">01</span>
-            <p class="text-ink-600"><strong class="text-ink-950 font-medium">Start it.</strong> One command: the container runs with a named volume for persistence and opens on port 8083.</p>
+            <p class="text-ink-600"><strong class="text-ink-950 font-medium">Start it.</strong> One command, your pick: a container with a named volume, or a checksum-verified binary on your PATH. Either opens on port 8083.</p>
           </li>
           <li class="flex gap-4" data-reveal="60">
             <span class="font-mono text-accent-600 shrink-0 mt-0.5">02</span>
@@ -428,6 +428,9 @@
 <pre class="code"><code><span class="c"># the whole install</span>
 <span class="p">$</span> <span class="w">docker run -d --name mimux -p 8083:8083 \</span>
 <span class="w">    -v mimux-data:/data ghcr.io/mattmezza/mimux:latest</span>
+
+<span class="c"># or, no container — a binary on your PATH</span>
+<span class="p">$</span> <span class="w">curl -fsSL https://mimux.dev/install.sh | bash</span>
 
 <span class="c"># then open</span>
 <span class="w">http://localhost:8083</span></code></pre>
