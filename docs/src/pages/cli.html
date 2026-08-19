@@ -66,8 +66,9 @@ description: Every subcommand the mimux binary has — running the server, the -
 
 <p>
   Full descriptions are on the <a href="../install/">Installation</a> page. The
-  pre-rename <code>SM_*</code> names still work in v0.20, logging one
-  deprecation warning per variable, and are removed in v0.21.
+  pre-rename <code>SM_*</code> names still work throughout the v0.20 series,
+  logging one deprecation warning per variable, and are removed in the v0.21
+  series.
 </p>
 
 <p>
@@ -495,7 +496,8 @@ mimux mail star: this token is missing the mail:modify scope — tick it in Sett
 <pre><code>$ mimux licence status
 status:    Annual licence, expires 2027-03-14 (m…o@example.com, from env).
 key:       MIMUX_LICENCE_KEY
-build:     v0.20-pro
+build:     v0.21.0-pro
+released:  2026-03-10
 plan:      annual
 email:     m…o@example.com
 issued:    2026-03-14
@@ -508,8 +510,17 @@ api:       answering</code></pre>
   licence at all it prints a <code>trial:</code> line instead of the payload
   fields — either when the trial started, or a note that the server stamps that
   on its first pro boot. An expired annual licence inside its grace period adds
-  a <code>grace:</code> line; a perpetual licence adds a
-  <code>watermark:</code> line saying whether it covers this build.
+  a <code>grace:</code> line.
+</p>
+
+<p>
+  <code>released:</code> is the date this build went out, linked into the
+  binary. A perpetual licence adds a <code>covered:</code> line giving the date
+  its coverage runs to and whether this build falls inside it — that comparison
+  is the whole perpetual rule. A binary you compiled yourself has no release
+  date, prints <code>unknown</code>, and is never gated on one. Keys issued
+  before coverage dates existed carry a <code>watermark:</code> line instead,
+  which for them is what is enforced.
 </p>
 
 <div class="table-wrap">

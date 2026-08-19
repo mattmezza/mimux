@@ -29,15 +29,15 @@ old tags stay where they are; they simply stop getting new releases.
 | `SM_SECRET` | `MIMUX_SECRET` |
 | `SM_AI_BASE_URL` | `MIMUX_AI_BASE_URL` |
 
-**Deprecation window:** the `SM_` names still work in v0.20. Each one that is
+**Deprecation window:** the `SM_` names still work throughout the v0.20 series. Each one that is
 read logs a warning naming the old and the new variable:
 
 ```
 level=WARN msg="config: deprecated env var, rename it" old=SM_DB new=MIMUX_DB
 ```
 
-`MIMUX_*` wins when both are set. **The `SM_` fallback is removed in v0.21** —
-rename them before then.
+`MIMUX_*` wins when both are set. **The `SM_` fallback is removed in the v0.21
+series** — rename them before then.
 
 ## 3. Database file: `sm.db` → `mimux.db`
 

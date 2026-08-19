@@ -42,7 +42,7 @@ description: mimux pro — the REST API, MCP server, CLI and webhooks. API token
 
 <pre><code>services:
   mimux:
-    image: ghcr.io/mattmezza/mimux:pro   # or :v0.20-pro to pin
+    image: ghcr.io/mattmezza/mimux:pro   # or :v0.21-pro to stay on one minor
     environment:
       - MIMUX_LICENCE_KEY=mimuxlic1....  # from account.mimux.dev</code></pre>
 
@@ -70,7 +70,7 @@ description: mimux pro — the REST API, MCP server, CLI and webhooks. API token
   <tbody>
     <tr><td><strong>Trial</strong></td><td>A pro build with no usable key runs for <strong>14 days</strong> from its first pro boot. Responses carry an <code>X-Mimux-Trial</code> header counting down.</td></tr>
     <tr><td><strong>Annual licence</strong></td><td>Works until it expires, then keeps working through a <strong>45-day grace period</strong> during which responses carry <code>X-Mimux-Licence-Warning</code>. After that the API and MCP pause.</td></tr>
-    <tr><td><strong>Perpetual licence</strong></td><td>Covers builds up to its watermark version, forever. A newer build is not covered, and says so out loud rather than degrading silently.</td></tr>
+    <tr><td><strong>Perpetual licence</strong></td><td>Covers every build <strong>released within a year of purchase</strong>, and those builds run forever. A build released after that window is not covered, and says so out loud rather than degrading silently.</td></tr>
     <tr><td><strong>Invalid key</strong></td><td>Treated as no key at all: the trial rules apply and the status line explains why the key was ignored, rather than hard-failing the install over a mangled paste.</td></tr>
   </tbody>
 </table>
@@ -84,6 +84,34 @@ description: mimux pro — the REST API, MCP server, CLI and webhooks. API token
   <code>/api/health</code> and <code>/api/v1/openapi.json</code> — a probe and
   the documentation are not the product.
 </p>
+
+<h3>How perpetual coverage is decided</h3>
+
+<p>
+  A perpetual key carries the date its coverage runs to — your purchase date
+  plus a year — signed into it by the shop. Every mimux build carries the date
+  it was released, linked into the binary. The rule is the comparison of those
+  two: if this build went out before your coverage ended, it is covered, and it
+  stays covered for as long as you keep running it. Nothing re-checks, nothing
+  expires underneath you, and nothing phones home to ask.
+</p>
+
+<p>
+  The version number is not part of the decision. <code>mimux licence status</code>
+  prints both dates so there is nothing to guess about; a binary you compiled
+  yourself carries no release date and is never gated on one.
+</p>
+
+<div class="note">
+  <p>
+    <strong>Keys issued before mid-2026</strong> predate coverage dates and
+    carry only a <em>version watermark</em> — the version the shop was selling
+    at the time. Those keep the rule they were sold under: builds up to and
+    including that minor version, forever. Nothing about an existing key
+    changes, and <code>mimux licence status</code> says which rule applies to
+    yours.
+  </p>
+</div>
 
 <div class="note">
   <p>

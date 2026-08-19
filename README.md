@@ -262,7 +262,7 @@ run). Swap the image and add your key:
 ```yaml
 services:
   mimux:
-    image: ghcr.io/mattmezza/mimux:pro   # or :v0.20-pro to pin
+    image: ghcr.io/mattmezza/mimux:pro   # or :v0.21-pro to stay on one minor
     environment:
       - MIMUX_LICENCE_KEY=mimuxlic1....  # from account.mimux.dev
 ```

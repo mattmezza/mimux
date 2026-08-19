@@ -135,7 +135,7 @@ Everything is an environment variable. There is no config file.
 | `STRIPE_WEBHOOK_SECRET` | yes | — | `whsec_...`, from the webhook endpoint you create below |
 | `LICENCE_SIGNING_KEY_B64` | yes | — | base64 of the 64-byte ed25519 private key. The service refuses to start without it. |
 | `BASE_URL` | yes | — | `https://account.mimux.dev` — used to build Stripe return URLs |
-| `CURRENT_VERSION` | yes | — | e.g. `v0.20`; becomes the licence watermark |
+| `CURRENT_VERSION` | yes | — | `vMAJOR.MINOR`, e.g. `v0.20`; becomes the licence watermark. Validated at boot — see below |
 | `SMTP_HOST` | yes | — | submission host |
 | `SMTP_FROM` | yes | — | envelope and header From |
 | `SMTP_PORT` | no | `587` | STARTTLS submission port. Implicit TLS (465) is not supported. |
@@ -237,8 +237,19 @@ proxy, and reading the last hop stops someone who goes *through* it from setting
 their own header and rotating past the per-IP limit.
 
 Bump `CURRENT_VERSION` in `account.env` and `docker compose up -d` on every
-mimux release: it is the watermark stamped into new perpetual licences, so a
-stale value under-sells them.
+mimux **minor** release: it is the version stamped into new licences, which is
+what the customer reads on their key and in `mimux licence status`.
+
+**It is always `vX.Y`, never `vX.Y.Z`.** The client is tagged and shipped as
+`vX.Y.Z`, but the minor is the unit a licence is sold in — `v0.20.3` and
+`v0.20.0` are the same purchase — so a patch release needs no change here.
+Stamping a patch would mint keys that read as narrower than what was sold. The
+service refuses to boot on a three-part or otherwise malformed value rather than
+finding out at the first purchase; a patch release is simply a deploy you skip.
+
+Since perpetual coverage is now a date (purchase + one year, signed into the key
+as `covered_until`), a stale value here no longer under-sells anything — it just
+prints the wrong version on the key.
 
 The SQLite file in the `account-data` volume is the only state. Back it up —
 `docker compose exec account sh -c 'sqlite3 /data/account.db .dump'` or just
