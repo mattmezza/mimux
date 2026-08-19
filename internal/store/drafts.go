@@ -141,3 +141,65 @@ func (s *Store) DeleteDraft(id int64) error {
 	_, err := s.DB.Exec(`DELETE FROM drafts WHERE id = ?`, id)
 	return err
 }
+
+// DraftAttachment is one file kept with a saved draft: the bytes live in
+// SQLite (migration 0240) so they survive a reopen, ride along in the copy
+// published to the IMAP Drafts folder, and are attached at send exactly like a
+// file picked in the compose window.
+type DraftAttachment struct {
+	ID          int64
+	Filename    string
+	ContentType string
+	Data        []byte
+}
+
+// AddDraftAttachment stores one file against a draft, writing back its id.
+func (s *Store) AddDraftAttachment(draftID int64, a *DraftAttachment) error {
+	res, err := s.DB.Exec(`INSERT INTO draft_attachments (draft_id, filename, content_type, content)
+		VALUES (?, ?, ?, ?)`, draftID, a.Filename, a.ContentType, a.Data)
+	if err != nil {
+		return err
+	}
+	a.ID, err = res.LastInsertId()
+	return err
+}
+
+// DraftAttachments returns a draft's files, oldest first, bytes included.
+//
+// ponytail: content is always read, even for the compose window's chip list
+// which only wants names and sizes. The cap is 25MB per draft and this runs on
+// a reopen/save/send, not in a list view — add a metadata-only query if a
+// profile ever says otherwise.
+func (s *Store) DraftAttachments(draftID int64) ([]DraftAttachment, error) {
+	rows, err := s.DB.Query(`SELECT id, filename, content_type, content
+		FROM draft_attachments WHERE draft_id = ? ORDER BY id`, draftID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []DraftAttachment
+	for rows.Next() {
+		var a DraftAttachment
+		if err := rows.Scan(&a.ID, &a.Filename, &a.ContentType, &a.Data); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// DraftAttachmentsSize is the total bytes already stored against a draft, so
+// the save path can enforce the send path's cap without reading the blobs.
+func (s *Store) DraftAttachmentsSize(draftID int64) (int64, error) {
+	var n int64
+	err := s.DB.QueryRow(`SELECT COALESCE(SUM(LENGTH(content)), 0)
+		FROM draft_attachments WHERE draft_id = ?`, draftID).Scan(&n)
+	return n, err
+}
+
+// DeleteDraftAttachment removes one file from a draft. The draft id is part of
+// the match so a stale id from one compose window cannot reach into another.
+func (s *Store) DeleteDraftAttachment(draftID, id int64) error {
+	_, err := s.DB.Exec(`DELETE FROM draft_attachments WHERE id = ? AND draft_id = ?`, id, draftID)
+	return err
+}

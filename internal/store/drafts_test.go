@@ -50,6 +50,60 @@ func TestDraftsCRUD(t *testing.T) {
 	}
 }
 
+// TestDraftAttachments: files stored against a draft come back in order, the
+// running total is what the size cap is checked against, and discarding the
+// draft takes them with it (FK cascade) rather than leaking blobs.
+func TestDraftAttachments(t *testing.T) {
+	s := open(t)
+
+	d := &Draft{Account: "work", Subject: "with files", Kind: "new"}
+	if err := s.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	a := &DraftAttachment{Filename: "one.txt", ContentType: "text/plain", Data: []byte("hello")}
+	b := &DraftAttachment{Filename: "two.bin", Data: []byte("\x00\x01\x02")}
+	for _, at := range []*DraftAttachment{a, b} {
+		if err := s.AddDraftAttachment(d.ID, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.DraftAttachments(d.ID)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("DraftAttachments = %v, %v, want 2", got, err)
+	}
+	if got[0].Filename != "one.txt" || string(got[0].Data) != "hello" || got[0].ContentType != "text/plain" {
+		t.Errorf("first attachment = %+v", got[0])
+	}
+	if n, err := s.DraftAttachmentsSize(d.ID); err != nil || n != 8 {
+		t.Errorf("DraftAttachmentsSize = %d, %v, want 8", n, err)
+	}
+
+	if err := s.DeleteDraftAttachment(d.ID, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.DraftAttachments(d.ID); len(got) != 1 || got[0].ID != b.ID {
+		t.Errorf("after delete = %+v, want just the second file", got)
+	}
+	// A stale id from another draft must not delete anything here.
+	other := &Draft{Account: "work", Kind: "new"}
+	if err := s.UpsertDraft(other); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteDraftAttachment(other.ID, b.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.DraftAttachments(d.ID); len(got) != 1 {
+		t.Errorf("a delete aimed at another draft removed %d file(s)", 1-len(got))
+	}
+
+	if err := s.DeleteDraft(d.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.DraftAttachments(d.ID); err != nil || len(got) != 0 {
+		t.Errorf("attachments left after the draft was deleted: %v, %v", got, err)
+	}
+}
+
 // TestDraftIMAPDirty is the write-through cache contract: a save owes a push, a
 // completed push clears the debt and records where the revision landed, and a
 // save that raced the push leaves the debt standing.
