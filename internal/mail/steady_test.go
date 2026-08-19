@@ -158,6 +158,16 @@ func TestSelectInboxAfterReadOnlyCommand(t *testing.T) {
 	if err := a.selectInbox(c); err != nil {
 		t.Fatal(err)
 	}
+	// Wait() returns the moment the tagged OK lands on the command's buffered
+	// done channel; go-imap records the new selection a few instructions later,
+	// on its reader goroutine — and the "* OK [CLOSED]" that precedes every
+	// re-SELECT has already blanked Mailbox() by then. Reading it straight after
+	// Wait() therefore sees nil on a busy two-core runner. A NOOP round trip is
+	// the barrier: the reader handles responses in order, so its tagged OK
+	// cannot come back before the SELECT bookkeeping is in place.
+	if err := c.Noop().Wait(); err != nil {
+		t.Fatal(err)
+	}
 	if mbox := c.Mailbox(); mbox == nil || mbox.Name != "INBOX" {
 		t.Fatalf("selected %v before idling, want INBOX", mbox)
 	}
