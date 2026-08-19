@@ -418,6 +418,7 @@ func (a *api) mcpDraftReply(_ context.Context, _ *mcp.CallToolRequest, in draftR
 	if err := a.store.UpsertDraft(d); err != nil {
 		return nil, nil, fmt.Errorf("couldn't save the draft: %w", err)
 	}
+	a.publishDraft(d)
 	return structured(draftPreview{
 		DraftID: d.ID, Account: d.Account,
 		To: mail.SplitAddrList(d.To), Cc: mail.SplitAddrList(d.Cc), Bcc: mail.SplitAddrList(d.Bcc),
@@ -460,6 +461,9 @@ func (a *api) mcpSendDraft(ctx context.Context, _ *mcp.CallToolRequest, in sendD
 		return nil, nil, fmt.Errorf("send failed: %w", err)
 	}
 	_ = a.store.DeleteDraft(d.ID)
+	// The Drafts folder copy has to go too, or the human's other clients keep
+	// offering to resume a message that is already out.
+	a.background("drop draft", func(ctx context.Context) error { return a.mail.DropDraft(ctx, d) })
 	return structured(map[string]any{"status": "sent", "message_id": msgID, "draft_id": d.ID})
 }
 

@@ -259,6 +259,7 @@ func (a *api) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, "internal", "Couldn't save the draft.")
 		return
 	}
+	a.publishDraft(d)
 	writeJSONStatus(w, http.StatusCreated, toDraftJSON(*d))
 }
 
@@ -309,7 +310,20 @@ func (a *api) handleUpdateDraft(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusInternalServerError, "internal", "Couldn't save the draft.")
 		return
 	}
+	a.publishDraft(d)
 	writeJSON(w, toDraftJSON(*d))
+}
+
+// publishDraft appends a draft saved through the API to the account's IMAP
+// Drafts folder, so an agent's draft shows up in the human's mail client. Store
+// first, IMAP in the background — the same shape as handlePatchMessage, and the
+// row already carries the "push still owed" marker the sync worker retries.
+func (a *api) publishDraft(d *store.Draft) {
+	if d.ID == 0 || d.Account == "" {
+		return
+	}
+	dc := *d
+	a.background("push draft", func(ctx context.Context) error { return a.mail.PushDraft(ctx, &dc) })
 }
 
 // --- mutations ---

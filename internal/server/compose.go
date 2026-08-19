@@ -2,6 +2,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"html"
 	"io"
@@ -254,6 +255,9 @@ func (s *Server) accountByName(name string) (config.Account, bool) {
 // The draft row is created lazily here on the first save (draft_id 0); the new
 // id is handed back as an out-of-band swap so subsequent saves update the same
 // row. Returns 204 once the id is known (the client leaves the modal open).
+// Idempotent per revision: the local row is updated in place and publishDraft
+// replaces whatever copy the last save left in the IMAP Drafts folder, so
+// hitting save ten times leaves one draft, here and on the server.
 func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
@@ -277,6 +281,7 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft save", "err", err)
 	}
+	s.publishDraft(d)
 	if id == 0 && d.ID != 0 {
 		// First save: tell the open form its new draft id via OOB swap so later
 		// saves target this row instead of creating more.
@@ -285,6 +290,46 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// publishDraft appends the just-saved draft to the account's IMAP Drafts folder
+// so it turns up on the user's phone. Background and silent on purpose: the
+// SQLite row is already written and marked as owing a push, so an unreachable
+// server costs a retry on the next sync cycle and never the draft. The user
+// asked to save a draft; it is saved.
+func (s *Server) publishDraft(d *store.Draft) {
+	if d.ID == 0 || d.Account == "" {
+		return
+	}
+	s.background(func(ctx context.Context) error {
+		if err := s.mail.PushDraft(ctx, d); err != nil {
+			slog.Warn("compose: draft push", "draft", d.ID, "err", err)
+		}
+		return nil
+	})
+}
+
+// dropDraft deletes a draft — sent, or discarded — and clears the copy it
+// published to the Drafts folder, so the other clients lose it too. Reading the
+// row first is what makes the second half possible: it carries the folder and
+// UID of the published revision.
+func (s *Server) dropDraft(id int64) {
+	if id <= 0 {
+		return
+	}
+	d, err := s.store.DraftByID(id)
+	if err != nil || d == nil {
+		return
+	}
+	if err := s.store.DeleteDraft(id); err != nil {
+		slog.Error("drafts: delete", "err", err)
+	}
+	s.background(func(ctx context.Context) error {
+		if err := s.mail.DropDraft(ctx, d); err != nil {
+			slog.Warn("drafts: mailbox copy not removed", "draft", id, "err", err)
+		}
+		return nil
+	})
 }
 
 // handleComposePreview serves POST /compose/preview in two shapes:
@@ -471,9 +516,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 			s.renderCompose(w, view)
 			return
 		}
-		if draftID > 0 {
-			_ = s.store.DeleteDraft(draftID)
-		}
+		s.dropDraft(draftID)
 		s.mail.Toast("Sent.")
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -503,9 +546,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		s.renderCompose(w, view)
 		return
 	}
-	if draftID > 0 {
-		_ = s.store.DeleteDraft(draftID)
-	}
+	s.dropDraft(draftID)
 	if scheduled {
 		w.Header().Set("Mimux-Scheduled", sendAt.UTC().Format(time.RFC3339))
 	} else {
@@ -602,8 +643,6 @@ func (s *Server) handleDraftDelete(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if err := s.store.DeleteDraft(id); err != nil {
-		slog.Error("drafts: delete", "err", err)
-	}
+	s.dropDraft(id)
 	http.Redirect(w, r, "/drafts", http.StatusSeeOther)
 }

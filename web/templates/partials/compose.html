@@ -253,6 +253,13 @@
       </div>
 
       <div class="shrink-0 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-900 px-4 sm:px-6 py-3">
+        {{/* Interim: a draft is published to the IMAP Drafts folder as a plain
+             message, and the files sitting in the form are not part of it.
+             Reads off attachBox's own state, so this disappears with the note
+             when draft attachments are persisted. */}}
+        <p x-show="items.length" x-cloak class="mr-auto self-center text-xs text-amber-400/90">
+          Attachments aren’t kept with saved drafts yet — they go out when you send.
+        </p>
         <button type="button" id="compose-save-draft" title="Save draft"
           onclick="syncComposeEditor()"
           hx-post="/compose/draft" hx-include="closest form" hx-swap="none"
