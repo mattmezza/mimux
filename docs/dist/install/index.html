@@ -173,7 +173,7 @@ chmod +x mimux
     <tr><td><code>MIMUX_SECRET</code></td><td><em>generated</em></td><td>Session and CSRF signing secret. When unset it is generated once and persisted to a <code>secret</code> file next to the database, so sessions survive restarts.</td></tr>
     <tr><td><code>MIMUX_AI_BASE_URL</code></td><td><em>OpenRouter</em></td><td>Any OpenAI-compatible chat-completions endpoint — another provider, or a local runner such as <code>http://llama:8080/v1</code>. <code>/chat/completions</code> is appended to the base. With this set, the OpenRouter key becomes optional.</td></tr>
     <tr><td><code>MIMUX_API_RATE_LIMIT</code></td><td><code>120</code></td><td><span class="pro-tag">pro</span> API requests per token per minute. <code>0</code> disables limiting.</td></tr>
-    <tr><td><code>MIMUX_LICENCE_KEY</code></td><td><em>unset</em></td><td><span class="pro-tag">pro</span> Licence key. Takes precedence over the one saved in Settings → API. Free builds ignore it.</td></tr>
+    <tr><td><code>MIMUX_LICENCE_KEY</code></td><td><em>unset</em></td><td><span class="pro-tag">pro</span> Licence key. Takes precedence over the one saved in Settings → Licence. Free builds ignore it.</td></tr>
   </tbody>
 </table>
 </div>

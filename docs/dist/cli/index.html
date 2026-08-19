@@ -111,7 +111,7 @@
     <tr><td><code>MIMUX_SECRET</code></td><td>generated once, persisted next to the database</td></tr>
     <tr><td><code>MIMUX_AI_BASE_URL</code></td><td>OpenRouter</td></tr>
     <tr><td><code>MIMUX_API_RATE_LIMIT</code> <span class="pro-tag">pro</span></td><td><code>120</code> requests per token per minute; <code>0</code> disables</td></tr>
-    <tr><td><code>MIMUX_LICENCE_KEY</code> <span class="pro-tag">pro</span></td><td>unset; takes precedence over the key saved in Settings → API</td></tr>
+    <tr><td><code>MIMUX_LICENCE_KEY</code> <span class="pro-tag">pro</span></td><td>unset; takes precedence over the key saved in Settings → Licence</td></tr>
   </tbody>
 </table>
 </div>
@@ -479,7 +479,7 @@ api:       answering</code></pre>
 
 <p>
   <code>key:</code> is one of <code>MIMUX_LICENCE_KEY</code>,
-  <code>saved in Settings → API</code>, or <code>none configured</code>. With no
+  <code>saved in Settings → Licence</code>, or <code>none configured</code>. With no
   licence at all it prints a <code>trial:</code> line instead of the payload
   fields — either when the trial started, or a note that the server stamps that
   on its first pro boot. An expired annual licence inside its grace period adds

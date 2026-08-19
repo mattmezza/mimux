@@ -15,7 +15,7 @@
 //	                                        to the DB so sessions survive restarts)
 //	MIMUX_API_RATE_LIMIT  API requests per token per minute (default 120, 0 = off)
 //	MIMUX_LICENCE_KEY     pro licence key; takes precedence over the one saved
-//	                        in Settings → API (free builds ignore it)
+//	                        in Settings → Licence (free builds ignore it)
 //
 // The pre-rename SM_* names still work for one release — see Env.
 package config

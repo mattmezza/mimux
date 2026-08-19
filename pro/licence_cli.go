@@ -58,7 +58,7 @@ func licenceReport(w io.Writer, cfg *config.Config, st *store.Store, now time.Ti
 	fmt.Fprintf(&b, "status:    %s\n", s.Line)
 	fmt.Fprintf(&b, "key:       %s\n", map[string]string{
 		"env":  "MIMUX_LICENCE_KEY",
-		"db":   "saved in Settings → API",
+		"db":   "saved in Settings → Licence",
 		"none": "none configured",
 	}[s.Source])
 	fmt.Fprintf(&b, "build:     %s\n", buildLabel(cfg.Version))

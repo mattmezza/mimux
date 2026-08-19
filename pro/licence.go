@@ -46,7 +46,7 @@ const (
 	// trialDays is the no-key trial, from the first boot of a pro build.
 	trialDays = 14
 	// recheckAfter is how stale a cached evaluation may get. The key can change
-	// under us (Settings → API writes the DB row), so the middleware re-reads,
+	// under us (Settings → Licence writes the DB row), so the middleware re-reads,
 	// but at most once a minute: this is a per-request path.
 	recheckAfter = time.Minute
 
@@ -238,7 +238,7 @@ func trialState(st *store.Store, now time.Time, source, invalid string) licenceS
 		s.Allowed = false
 		s.Code = "licence_required"
 		s.Message = fmt.Sprintf("The %d-day trial of the mimux pro layer ended on %s, so the API and MCP "+
-			"endpoints are paused. Get a licence at %s and paste it into Settings → API. "+
+			"endpoints are paused. Get a licence at %s and paste it into Settings → Licence. "+
 			"Your mail keeps syncing and sending as normal.", trialDays, day(end), accountURL)
 		s.Line = fmt.Sprintf("Trial ended %s — API and MCP are paused.", day(end))
 	}
