@@ -1,0 +1,18 @@
+{{define "settings_nav"}}
+{{/* The settings index. One link per section — the section is the URL
+     (/settings/<id>), so Back works and a link to a screen is a link. */}}
+{{$cur := .Section}}{{$pro := .Pro}}
+<nav class="shrink-0 border-b border-zinc-800 md:border-b-0 md:border-r md:w-52 md:py-4" aria-label="Settings sections">
+  <ul class="flex md:flex-col gap-1 overflow-x-auto px-2 py-2 md:px-3 md:py-0">
+    {{range .Sections}}
+    <li class="shrink-0 md:shrink">
+      <a href="/settings/{{.ID}}" {{if eq $cur .ID}}aria-current="page"{{end}}
+        class="flex items-center gap-1.5 w-full whitespace-nowrap px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-150 {{if eq $cur .ID}}bg-indigo-500/15 text-indigo-300 md:bg-zinc-800 md:text-zinc-100{{else}}text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800{{end}}">
+        <span>{{.Label}}</span>
+        {{if and .Pro (not $pro.Active)}}<span class="text-[10px] font-semibold uppercase tracking-wide text-amber-400/80">pro</span>{{end}}
+      </a>
+    </li>
+    {{end}}
+  </ul>
+</nav>
+{{end}}

@@ -1,0 +1,16 @@
+{{define "pro_notice"}}
+{{/* Shown on the pro-only sections of a build that has no pro layer compiled
+     in. Says what is missing, what still works, and how to fix it — a banner
+     that only sells is a banner that lies about what the section does. */}}
+{{if not .Pro.Active}}
+<div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 space-y-2">
+  <p class="text-sm font-semibold text-amber-200">{{.What}} is part of mimux pro</p>
+  <p class="text-xs text-amber-200/90">{{.Why}} This build keeps everything you configure here, so a pro build picks it up the moment you switch.</p>
+  <div class="flex flex-wrap items-center gap-3 pt-1">
+    <a href="{{.Pro.BuyURL}}" target="_blank" rel="noreferrer"
+      class="px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white text-sm font-medium transition-colors duration-150">Get mimux pro</a>
+    <a href="mailto:{{.Pro.Contact}}" class="text-xs text-amber-200/90 hover:text-amber-100 underline">Questions? {{.Pro.Contact}}</a>
+  </div>
+</div>
+{{end}}
+{{end}}

@@ -15,7 +15,21 @@ func settingsRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/settings", s.handleSettings)
 	r.Post("/settings", s.handleSettingsSave)
+	r.Get("/settings/{section}", s.handleSettingsSection)
 	return r
+}
+
+// renderSection renders one settings section page the way the router does.
+// Settings is a page per section now, so a test that wants the markup has to
+// say which screen it means.
+func renderSection(t *testing.T, s *Server, section string) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	settingsRouter(s).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/"+section, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /settings/%s = %d", section, rec.Code)
+	}
+	return rec.Body.String()
 }
 
 func postSettings(t *testing.T, r http.Handler, form url.Values) *httptest.ResponseRecorder {
@@ -82,6 +96,63 @@ func TestAvatarDependentsSurviveAvatarsOff(t *testing.T) {
 	}
 }
 
+// TestSectionSaveLeavesOtherSectionsAlone is the trap the page-per-section
+// split introduced: the Reading form carries no ntfy URL, no compose mode and
+// no AI key, so a save that rebuilt Prefs from the form alone would store the
+// zero value of every field the posted page doesn't have.
+func TestSectionSaveLeavesOtherSectionsAlone(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+
+	// Set up two other sections first.
+	if rec := postSettings(t, r, url.Values{
+		"section":  {"notifications"},
+		"ntfy_url": {"https://ntfy.sh/mimux-test"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("notifications save = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := postSettings(t, r, url.Values{
+		"section":      {"composing"},
+		"compose_mode": {"markdown"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("composing save = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Now save Reading, which posts neither of those fields.
+	if rec := postSettings(t, r, url.Values{
+		"section":         {"reading"},
+		"mark_read_delay": {"7"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("reading save = %d: %s", rec.Code, rec.Body.String())
+	}
+	p := s.store.GetPrefs()
+	if p.MarkReadDelay != 7 {
+		t.Errorf("MarkReadDelay = %d, want the value just saved", p.MarkReadDelay)
+	}
+	if p.NtfyURL != "https://ntfy.sh/mimux-test" {
+		t.Errorf("NtfyURL = %q, wiped by a save from another section", p.NtfyURL)
+	}
+	if p.ComposeMode != "markdown" {
+		t.Errorf("ComposeMode = %q, wiped by a save from another section", p.ComposeMode)
+	}
+}
+
+// TestUnknownSettingsSection: a made-up section is a 404, not a page that
+// renders nothing, and a made-up section on the save path is refused rather
+// than silently applying every section.
+func TestUnknownSettingsSection(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/nope", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("GET /settings/nope = %d, want 404", rec.Code)
+	}
+	if rec := postSettings(t, r, url.Values{"section": {"nope"}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("save with an unknown section = %d, want 400", rec.Code)
+	}
+}
+
 // TestAvatarShapeValidated checks an out-of-allowlist shape falls back to the
 // default instead of being stored verbatim.
 func TestAvatarShapeValidated(t *testing.T) {
@@ -102,9 +173,7 @@ func TestAvatarShapeValidated(t *testing.T) {
 // reachable through the master toggle.
 func TestSettingsPageGroupsAvatarControls(t *testing.T) {
 	s := serverWith(t, nil, nil)
-	rec := httptest.NewRecorder()
-	s.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
-	body := rec.Body.String()
+	body := renderSection(t, s, "reading")
 	for _, want := range []string{
 		`name="show_avatar"`, `name="show_favicon"`, `name="hide_avatar_mobile"`,
 		`name="avatar_shape"`, `:disabled="!avatarsOn"`, `value="circle"`, `value="rounded"`, `value="square"`,

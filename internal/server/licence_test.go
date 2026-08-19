@@ -100,13 +100,10 @@ func TestLicenceEnvWins(t *testing.T) {
 // with the honest note that this build may not be the one enforcing it.
 func TestSettingsPageHasLicenceBlock(t *testing.T) {
 	s := serverWith(t, nil, nil)
-	rec := httptest.NewRecorder()
-	s.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
-	body := rec.Body.String()
+	body := renderSection(t, s, "licence")
 	for _, want := range []string{
 		`id="licence"`, `name="licence_key"`, `hx-post="/settings/licence"`,
-		"Licence keys are enforced by mimux pro.",
-		"No status yet",
+		"is part of mimux pro", "No status yet",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page missing %q", want)

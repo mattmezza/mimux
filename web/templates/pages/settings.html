@@ -1,75 +1,42 @@
-{{define "title"}}Settings — mimux{{end}}
+{{define "title"}}{{.Page.Label}} · Settings — mimux{{end}}
 {{define "content"}}
-<div class="h-dvh flex flex-col min-h-0"
-     x-data="{
-       tabs: ['appearance','reading','composing','quick-actions','notifications','syncing','search','accounts','signatures','templates','api','integrations','backup'],
-       tab: 'appearance',
-       init() {
-         const h = (location.hash.slice(1) || localStorage.getItem('mimux.settingsTab') || '').trim();
-         if (this.tabs.includes(h)) this.tab = h;
-         this.$watch('tab', (t) => {
-           localStorage.setItem('mimux.settingsTab', t);
-           history.replaceState(null, '', '#' + t);
-         });
-       }
-     }">
+{{/* One page per section, at /settings/<id>. The section is server-rendered:
+     no tab state to restore, no wrong panel painted for a frame, and the Back
+     button walks the sections the way it walks every other page. */}}
+<div class="h-dvh flex flex-col min-h-0">
   <header class="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-zinc-800 bg-zinc-900">
     <a href="/" class="p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" title="Back to inbox" aria-label="Back to inbox">
       <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
     </a>
     <h1 class="text-base font-semibold text-zinc-100">Settings</h1>
+    <span class="text-sm text-zinc-500">· {{.Page.Label}}</span>
   </header>
 
   {{/* Empty stand-in form for the sub-manager CRUD controls (accounts,
-       signatures, templates). They live inside the big settings form below, so
-       htmx would otherwise serialize the *whole* page into every sub-request:
-       field names collide across managers (three inputs named "name", two named
-       "id", one "signature_id" per identity row) and the first one wins,
-       and API keys and account passwords ride along on every save. Pointing
-       those controls here with form="settings-subform" — the native HTML
-       form-association attribute, which htmx honours via elt.form — limits each
-       request to its own hx-include. Must sit outside the settings form: nested
-       forms are illegal and the parser drops them. */}}
+       signatures, templates, tokens, webhooks). They live inside the settings
+       form below, so htmx would otherwise serialize the whole page into every
+       sub-request. Pointing those controls here with form="settings-subform" —
+       the native HTML form-association attribute, which htmx honours via
+       elt.form — limits each request to its own hx-include. Must sit outside
+       the settings form: nested forms are illegal and the parser drops them. */}}
   <form id="settings-subform" hidden></form>
 
   <form method="post" action="/settings" hx-post="/settings" hx-swap="none"
         hx-on::after-request="if (event.detail.successful) { toast('Settings saved'); } else { toast(&quot;Couldn't save settings — please try again.&quot;); }"
         class="flex-1 min-h-0 flex flex-col">
     <input type="hidden" name="csrf_token" value="{{.CSRF}}">
+    {{/* Which section's fields this post carries. Everything else in Prefs and
+         AppConfig is left exactly as stored — see handleSettingsSave. */}}
+    <input type="hidden" name="section" value="{{.Section}}">
 
     <div class="flex-1 min-h-0 flex flex-col md:flex-row w-full max-w-4xl mx-auto">
-      {{/* Nav: horizontal scrollable segmented tabs on mobile, vertical list on desktop. */}}
-      <nav class="shrink-0 border-b border-zinc-800 md:border-b-0 md:border-r md:w-52 md:py-4">
-        <ul class="flex md:flex-col gap-1 overflow-x-auto px-2 py-2 md:px-3 md:py-0">
-          <template x-for="t in [
-            {id:'appearance', label:'Appearance'},
-            {id:'reading', label:'Reading'},
-            {id:'composing', label:'Composing'},
-            {id:'quick-actions', label:'Quick actions'},
-            {id:'notifications', label:'Notifications'},
-            {id:'syncing', label:'Syncing'},
-            {id:'search', label:'Search'},
-            {id:'accounts', label:'Accounts'},
-            {id:'signatures', label:'Signatures'},
-            {id:'templates', label:'Templates'},
-            {id:'api', label:'API'},
-            {id:'integrations', label:'Integrations'},
-            {id:'backup', label:'Backup & restore'}
-          ]" :key="t.id">
-            <li class="shrink-0 md:shrink">
-              <button type="button" @click="tab = t.id" x-text="t.label"
-                :class="tab === t.id ? 'bg-indigo-500/15 text-indigo-300 md:bg-zinc-800 md:text-zinc-100' : 'text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800'"
-                class="w-full text-left whitespace-nowrap px-3 py-1.5 rounded-md text-sm font-medium transition-colors duration-150"></button>
-            </li>
-          </template>
-        </ul>
-      </nav>
+      {{template "settings_nav" .}}
 
-      {{/* Panels: x-show keeps hidden inputs in the DOM (still submitted). */}}
-      <div class="flex-1 min-h-0 overflow-y-auto">
+      <div class="flex-1 min-h-0 overflow-y-auto" id="main-content">
         <div class="max-w-2xl w-full p-6">
 
-          <section x-show="tab === 'appearance'" x-cloak class="space-y-4">
+          {{if eq .Section "appearance"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Appearance</h2>
             <label class="block space-y-1">
               <span class="text-sm text-zinc-200">App theme</span>
@@ -185,8 +152,10 @@
               </div>
             </div>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'reading'" x-cloak class="space-y-4">
+          {{if eq .Section "reading"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Reading</h2>
 
             <label class="block space-y-1">
@@ -293,8 +262,10 @@
               <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
             </label>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'composing'" x-cloak class="space-y-4">
+          {{if eq .Section "composing"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Composing</h2>
             <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200">Editor mode</legend>
@@ -361,8 +332,10 @@
               </select>
             </fieldset>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'quick-actions'" x-cloak class="space-y-4">
+          {{if eq .Section "quick-actions"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Message quick actions</h2>
             <div class="space-y-2" x-data="qaEditor">
               <p class="text-xs text-zinc-500">Pick which actions sit directly in the action bar, which fold into the "⋯" menu (one click away), and in what order they appear.</p>
@@ -411,6 +384,7 @@
               });
             </script>
           </section>
+          {{end}}
 
           {{/* Notifications. Two independent transports, one master switch.
                Nothing here is ever disabled: a disabled control isn't submitted
@@ -420,8 +394,8 @@
                to. The Web Push half degrades to an explanation (never a broken
                button) when the browser, the connection or the permission can't
                support it; ntfy needs none of that and stands alone. */}}
-          <section x-show="tab === 'notifications'" x-cloak class="space-y-5"
-                   x-data="pushUI('{{.VAPIDKey}}')" x-init="refresh()">
+          {{if eq .Section "notifications"}}
+          <section class="space-y-5" x-data="pushUI('{{.VAPIDKey}}')" x-init="refresh()">
             <h2 class="text-sm font-semibold text-zinc-100">Notifications</h2>
             <p class="text-xs text-zinc-500">
               Off until you turn them on. mimux only ever notifies about new mail arriving in an inbox —
@@ -525,8 +499,10 @@
               Send a test notification
             </button>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'syncing'" x-cloak class="space-y-4">
+          {{if eq .Section "syncing"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Syncing</h2>
             <p class="text-xs text-zinc-500">Database: {{.DBSize}} · {{.MessageCount}} messages</p>
             <label class="block space-y-1">
@@ -601,8 +577,10 @@
             </div>
             {{end}}
           </section>
+          {{end}}
 
-          <section x-show="tab === 'search'" x-cloak class="space-y-4">
+          {{if eq .Section "search"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Search</h2>
             <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200">Default search scope</legend>
@@ -635,8 +613,10 @@
               </div>
             </fieldset>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'accounts'" x-cloak class="space-y-6">
+          {{if eq .Section "accounts"}}
+          <section class="space-y-6">
             <div class="space-y-3">
               <h2 class="text-sm font-semibold text-zinc-100">Accounts</h2>
               <p class="text-xs text-zinc-500">Add, edit and remove the email accounts mimux syncs. Changes take effect immediately — no restart needed.</p>
@@ -684,8 +664,10 @@
             </div>
             {{end}}
           </section>
+          {{end}}
 
-          <section x-show="tab === 'signatures'" x-cloak class="space-y-4">
+          {{if eq .Section "signatures"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Signatures</h2>
             <p class="text-xs text-zinc-500">Create signatures with plain-text, HTML and Markdown variants; the variant matching your compose editor is inserted. Then link one to each sender identity below.</p>
             {{template "signatures_manager" (dict "CSRF" .CSRF "Signatures" .Signatures "Accounts" .Accounts "Identities" .Identities)}}
@@ -706,8 +688,10 @@
               });
             </script>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'templates'" x-cloak class="space-y-4">
+          {{if eq .Section "templates"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Templates</h2>
             <p class="text-xs text-zinc-500">Reusable message bodies, listed alphabetically. Pick one from the Template menu in the compose panel to drop it above whatever you've already written.</p>
             {{template "templates_manager" (dict "CSRF" .CSRF "Templates" .Templates)}}
@@ -727,32 +711,34 @@
               });
             </script>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'api'" x-cloak class="space-y-4">
+          {{if eq .Section "api"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">API tokens</h2>
+            {{template "pro_notice" (dict "Pro" .Pro "What" "The mimux API"
+              "Why" "The JSON API and the MCP endpoint are served by the pro layer, which this build does not include.")}}
             <p class="text-xs text-zinc-500">Personal access tokens for the mimux API. Send one as <code>Authorization: Bearer &lt;token&gt;</code>. Scopes decide what it may do, and a token can be revoked here at any time.</p>
             {{template "api_tokens" (dict "CSRF" .CSRF "Tokens" .APITokens "Scopes" .APIScopes "NewSecret" "")}}
+          </section>
+          {{end}}
 
-            <h2 class="text-sm font-semibold text-zinc-100 pt-4 border-t border-zinc-800">Webhooks</h2>
+          {{if eq .Section "webhooks"}}
+          <section class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Webhooks</h2>
+            {{template "pro_notice" (dict "Pro" .Pro "What" "Webhook delivery"
+              "Why" "The delivery engine that POSTs to your endpoints, signs the payloads and retries them ships with the pro layer.")}}
             <p class="text-xs text-zinc-500">
               mimux POSTs a JSON body to your URL when something happens, signed with a per-endpoint
               secret in the <code>X-Mimux-Signature</code> header. Payloads are summaries — never
               message bodies.
-              <span class="block pt-1 text-amber-400/90">Webhooks are delivered by mimux pro. This build stores what you configure here, and the endpoints below only ever fire in a pro build.</span>
             </p>
             {{template "webhooks" (dict "CSRF" .CSRF "Webhooks" .Webhooks "Events" .WebhookEvents "NewSecret" "")}}
-
-            <h2 class="text-sm font-semibold text-zinc-100 pt-4 border-t border-zinc-800">Licence</h2>
-            <p class="text-xs text-zinc-500">
-              The API, the MCP server and webhook delivery are mimux pro. Everything else — reading,
-              writing and syncing mail — is free and never checks a key.
-              <span class="block pt-1 text-amber-400/90">Licence keys are enforced by mimux pro. This build stores the key you paste here; a pro build is what verifies it, and only ever pauses <code>/api/v1</code> and <code>/api/mcp</code>.</span>
-            </p>
-            {{template "licence" (dict "CSRF" .CSRF "Licence" .Licence)}}
           </section>
+          {{end}}
 
-          <section x-show="tab === 'integrations'" x-cloak class="space-y-6"
-                   x-data="{ showT: false, showA: false }">
+          {{if eq .Section "integrations"}}
+          <section class="space-y-6" x-data="{ showT: false, showA: false }">
             <div class="space-y-3">
               <h2 class="text-sm font-semibold text-zinc-100">Translation</h2>
               <p class="text-xs text-zinc-500">Google Translate API key. Leave blank to disable the Translate action.</p>
@@ -890,12 +876,14 @@
               <p class="text-xs text-zinc-500">Keys and settings are saved with the Save button below.</p>
             </div>
           </section>
+          {{end}}
 
-          <section x-show="tab === 'backup'" x-cloak class="space-y-4">
+          {{if eq .Section "backup"}}
+          <section class="space-y-4">
             <h2 class="text-sm font-semibold text-zinc-100">Backup &amp; restore</h2>
-            <p class="text-xs text-zinc-500">Export or restore a single portable file covering your <strong class="text-zinc-300">entire configuration</strong> — accounts and their credentials, aliases, OAuth tokens, per-account sync options, filters, signatures, templates, saved searches, trusted senders, Translate/AI keys, and all preferences. Message labels ride along too, but only re-attach to mail that is already synced — import again after the first full sync to recover them. It does not include your synced mail, drafts or login sessions.</p>
+            <p class="text-xs text-zinc-500">Export or restore a single portable file covering your <strong class="text-zinc-300">entire configuration</strong> — accounts and their credentials, aliases, OAuth tokens, per-account sync options, filters, signatures, templates, saved searches, trusted senders, API tokens, webhook endpoints (with their signing secrets and paused state), Translate/AI keys, and all preferences. Message labels ride along too, but only re-attach to mail that is already synced — import again after the first full sync to recover them. It does not include your synced mail, drafts, login sessions or the webhook delivery log.</p>
             <div class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-              The exported file contains your account <strong>passwords</strong> and API keys in plain text. Store it somewhere safe and never share it.
+              The exported file contains your account <strong>passwords</strong>, API keys, API-token hashes and webhook signing secrets in plain text. Store it somewhere safe and never share it.
             </div>
             <div class="flex flex-wrap items-center gap-2">
               <a href="/settings/export" download
@@ -909,17 +897,31 @@
                 <input type="file" name="file" accept="application/json,.json" class="hidden"
                   hx-post="/settings/import" hx-encoding="multipart/form-data" hx-trigger="change"
                   hx-swap="none"
-                  hx-on::after-request="if(event.detail.successful){toast(event.detail.xhr.responseText);htmx.ajax('GET','/settings/accounts',{target:'#accounts-manager',swap:'outerHTML'});}else{toast(event.detail.xhr.responseText||'Import failed')}">
+                  hx-on::after-request="toast(event.detail.xhr.responseText || (event.detail.successful ? 'Imported' : 'Import failed'))">
               </label>
             </div>
             <p class="text-xs text-zinc-500">Importing upserts everything in the file (accounts are matched by name) and applies account changes immediately.</p>
           </section>
+          {{end}}
+
+          {{if eq .Section "licence"}}
+          <section class="space-y-4">
+            <h2 class="text-sm font-semibold text-zinc-100">Licence</h2>
+            {{template "pro_notice" (dict "Pro" .Pro "What" "The licence key" "Why" "Only a pro build verifies a key — this one has nothing to unlock.")}}
+            <p class="text-xs text-zinc-500">
+              The API, the MCP server and webhook delivery are mimux pro. Everything else — reading,
+              writing and syncing mail — is free and never checks a key.
+            </p>
+            {{template "licence" (dict "CSRF" .CSRF "Licence" .Licence)}}
+          </section>
+          {{end}}
 
         </div>
       </div>
     </div>
 
-    {{/* One persistent Save button for every screen. */}}
+    {{if .Page.Form}}
+    {{/* Only on the sections that have fields for it to save. */}}
     <div class="shrink-0 border-t border-zinc-800 bg-zinc-900 px-6 py-3">
       <div class="max-w-4xl mx-auto flex justify-end">
         <button id="settings-save" type="submit"
@@ -928,6 +930,7 @@
         </button>
       </div>
     </div>
+    {{end}}
   </form>
 </div>
 {{end}}

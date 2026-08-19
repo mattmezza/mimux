@@ -220,27 +220,29 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/outbox/{id}/cancel", s.handleOutboxCancel)
 		r.Post("/outbox/{id}/retry", s.handleOutboxRetry)
 		r.Post("/outbox/{id}/delete", s.handleOutboxDelete)
+		// Settings is one page per section (GET /settings/{section}); the POSTs
+		// below are the sub-managers, which answer with their own fragment. A
+		// GET on those paths is the page, not the fragment: chi prefers the
+		// static routes here over the {section} wildcard, so /settings/export
+		// stays the export and everything else falls through to the page.
 		r.Get("/settings", s.handleSettings)
 		r.Post("/settings", s.handleSettingsSave)
-		r.Get("/settings/accounts", s.handleAccountsManager)
 		r.Post("/settings/accounts", s.handleAccountSave)
 		r.Post("/settings/accounts/{name}/delete", s.handleAccountDelete)
-		r.Get("/settings/signatures", s.handleSignaturesManager)
 		r.Post("/settings/signatures", s.handleSignatureSave)
 		r.Post("/settings/signatures/link", s.handleSignatureLink)
 		r.Post("/settings/signatures/{id}/delete", s.handleSignatureDelete)
-		r.Get("/settings/api", s.handleAPITokensManager)
 		r.Post("/settings/api", s.handleAPITokenCreate)
 		r.Post("/settings/api/{id}/revoke", s.handleAPITokenRevoke)
-		r.Get("/settings/webhooks", s.handleWebhooksManager)
 		r.Post("/settings/webhooks", s.handleWebhookCreate)
+		r.Post("/settings/webhooks/{id}/pause", s.handleWebhookPause)
 		r.Post("/settings/webhooks/{id}/enable", s.handleWebhookEnable)
+		r.Post("/settings/webhooks/{id}/secret", s.handleWebhookSecret)
 		r.Post("/settings/webhooks/{id}/delete", s.handleWebhookDelete)
+		r.Get("/settings/webhooks/{id}/deliveries", s.handleWebhookDeliveries)
 		r.Post("/settings/webhooks/{id}/deliveries/{did}/replay", s.handleWebhookReplay)
-		r.Get("/settings/licence", s.handleLicenceManager)
 		r.Post("/settings/licence", s.handleLicenceSave)
 		r.Post("/settings/licence/remove", s.handleLicenceRemove)
-		r.Get("/settings/templates", s.handleTemplatesManager)
 		r.Post("/settings/templates", s.handleTemplateSave)
 		r.Post("/settings/templates/{id}/delete", s.handleTemplateDelete)
 		r.Get("/push/devices", s.handlePushDevices)
@@ -249,6 +251,10 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/push/test", s.handleNotifyTest)
 		r.Get("/settings/export", s.handleConfigExport)
 		r.Post("/settings/import", s.handleConfigImport)
+		// Last: the catch-all for the section pages. Registered after the static
+		// /settings/* routes above for readability — chi's trie prefers a static
+		// segment over a wildcard whatever the registration order.
+		r.Get("/settings/{section}", s.handleSettingsSection)
 		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
 		// Clients are built per request so AI keys edited in Settings take
 		// effect without a restart (translate does the same, in handleMessageBody).

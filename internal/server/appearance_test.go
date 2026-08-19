@@ -166,9 +166,7 @@ func TestAccentReachesCSS(t *testing.T) {
 
 	// The Settings → Appearance controls must render too — html/template's CSS
 	// filter is happy to blank out a swatch colour it doesn't like.
-	rec = httptest.NewRecorder()
-	s.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
-	set := rec.Body.String()
+	set := renderSection(t, s, "appearance")
 	for _, want := range []string{`name="ui_accent"`, `name="icon_bg"`, `name="icon_shape"`,
 		"background-color: " + emerald[3], `:src="iconSrc"`} {
 		if !strings.Contains(set, want) {

@@ -18,8 +18,11 @@ func webhookRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/settings/webhooks", s.handleWebhooksManager)
 	r.Post("/settings/webhooks", s.handleWebhookCreate)
+	r.Post("/settings/webhooks/{id}/pause", s.handleWebhookPause)
 	r.Post("/settings/webhooks/{id}/enable", s.handleWebhookEnable)
+	r.Post("/settings/webhooks/{id}/secret", s.handleWebhookSecret)
 	r.Post("/settings/webhooks/{id}/delete", s.handleWebhookDelete)
+	r.Get("/settings/webhooks/{id}/deliveries", s.handleWebhookDeliveries)
 	r.Post("/settings/webhooks/{id}/deliveries/{did}/replay", s.handleWebhookReplay)
 	return r
 }
@@ -92,7 +95,7 @@ func TestWebhookManagerLifecycle(t *testing.T) {
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/webhooks", nil))
 	body := rec.Body.String()
-	for _, want := range []string{"auto-disabled", "message.received", "dead", "HTTP 500", "Enable", "Replay"} {
+	for _, want := range []string{"auto-disabled", "message.received", "dead", "HTTP 500", "Resume", "Replay"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("manager render missing %q", want)
 		}
@@ -127,16 +130,136 @@ func TestWebhookManagerLifecycle(t *testing.T) {
 	}
 }
 
+// TestWebhookPauseResumeAndSecret: pausing keeps the endpoint and its queue,
+// resuming clears the auto-disabled stamp, and the secret can be rotated —
+// generated (shown once) or brought along by the user.
+func TestWebhookPauseResumeAndSecret(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := webhookRouter(s)
+	ep := &store.WebhookEndpoint{URL: "https://example.test/hook", Secret: "the-old-secret-value", Events: "message.received", Active: true}
+	if err := s.store.CreateWebhookEndpoint(ep); err != nil {
+		t.Fatal(err)
+	}
+	id := strconv.FormatInt(ep.ID, 10)
+
+	if rec := postAPIToken(t, r, "/settings/webhooks/"+id+"/pause", nil); rec.Code != http.StatusOK {
+		t.Fatalf("pause = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got, _ := s.store.WebhookEndpointByID(ep.ID); got.Active {
+		t.Error("pause did not deactivate the endpoint")
+	}
+	if rec := postAPIToken(t, r, "/settings/webhooks/"+id+"/enable", nil); rec.Code != http.StatusOK {
+		t.Fatalf("resume = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got, _ := s.store.WebhookEndpointByID(ep.ID); !got.Active {
+		t.Error("resume did not reactivate the endpoint")
+	}
+
+	// A secret the user typed is stored as given, and not echoed back.
+	rec := postAPIToken(t, r, "/settings/webhooks/"+id+"/secret", url.Values{"secret": {"a-brand-new-secret-value"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("set secret = %d: %s", rec.Code, rec.Body.String())
+	}
+	got, _ := s.store.WebhookEndpointByID(ep.ID)
+	if got.Secret != "a-brand-new-secret-value" {
+		t.Errorf("secret = %q, want the one just set", got.Secret)
+	}
+	if strings.Contains(rec.Body.String(), got.Secret) {
+		t.Error("a secret the user typed is echoed back into the page")
+	}
+
+	// Too short is refused rather than stored.
+	if rec := postAPIToken(t, r, "/settings/webhooks/"+id+"/secret", url.Values{"secret": {"short"}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("short secret = %d, want 400", rec.Code)
+	}
+
+	// Blank generates one and shows it exactly once.
+	rec = postAPIToken(t, r, "/settings/webhooks/"+id+"/secret", url.Values{"secret": {""}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("generate secret = %d: %s", rec.Code, rec.Body.String())
+	}
+	after, _ := s.store.WebhookEndpointByID(ep.ID)
+	if after.Secret == got.Secret {
+		t.Error("blank did not generate a new secret")
+	}
+	if !strings.Contains(rec.Body.String(), after.Secret) {
+		t.Error("a generated secret is never shown")
+	}
+}
+
+// TestWebhookDeliveriesPage: the debugging view shows the request body and the
+// receiver's answer, filters, and sends a replay back to where it came from.
+func TestWebhookDeliveriesPage(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := webhookRouter(s)
+	ep := &store.WebhookEndpoint{URL: "https://example.test/hook", Secret: "s", Events: "message.received", Active: true}
+	if err := s.store.CreateWebhookEndpoint(ep); err != nil {
+		t.Fatal(err)
+	}
+	ok := &store.WebhookDelivery{EndpointID: ep.ID, EventType: "message.sent", DeliveryID: "d-ok", Payload: `{"marker":"payload-one"}`}
+	bad := &store.WebhookDelivery{EndpointID: ep.ID, EventType: "message.received", DeliveryID: "d-bad", Payload: `{"marker":"payload-two"}`}
+	for _, d := range []*store.WebhookDelivery{ok, bad} {
+		if err := s.store.EnqueueWebhookDelivery(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ok.Status, ok.LastStatusCode, ok.DurationMS = store.WebhookOK, 200, 42
+	bad.Status, bad.LastStatusCode, bad.ResponseBody = store.WebhookDead, 400, "unknown event type"
+	for _, d := range []*store.WebhookDelivery{ok, bad} {
+		if err := s.store.SaveWebhookDelivery(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	base := "/settings/webhooks/" + strconv.FormatInt(ep.ID, 10) + "/deliveries"
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("deliveries = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{"payload-one", "payload-two", "unknown event type", "42 ms", "50% delivered"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("deliveries page missing %q", want)
+		}
+	}
+
+	// Filtering is a plain query string, so it is a bookmarkable URL.
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base+"?status=dead", nil))
+	filtered := rec.Body.String()
+	if strings.Contains(filtered, "payload-one") || !strings.Contains(filtered, "payload-two") {
+		t.Error("status filter did not narrow the log")
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, base+"?event=message.sent", nil))
+	if body := rec.Body.String(); strings.Contains(body, "payload-two") || !strings.Contains(body, "payload-one") {
+		t.Error("event filter did not narrow the log")
+	}
+
+	// A replay from this screen comes back to this screen.
+	rec = postAPIToken(t, r, base+"/"+strconv.FormatInt(bad.ID, 10)+"/replay", url.Values{"back": {base + "?status=dead"}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("replay from the deliveries page = %d, want a redirect back", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != base+"?status=dead" {
+		t.Errorf("replay redirected to %q", loc)
+	}
+	// An off-site "back" is ignored rather than followed.
+	rec = postAPIToken(t, r, base+"/"+strconv.FormatInt(bad.ID, 10)+"/replay", url.Values{"back": {"https://evil.test/"}})
+	if rec.Code != http.StatusOK {
+		t.Errorf("off-site back = %d, want the fragment render", rec.Code)
+	}
+}
+
 // TestSettingsPageHasWebhooks checks the section is wired into the settings
 // page itself, including the honest note that the free build never delivers.
 func TestSettingsPageHasWebhooks(t *testing.T) {
 	s := serverWith(t, nil, nil)
-	rec := httptest.NewRecorder()
-	s.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
-	body := rec.Body.String()
+	body := renderSection(t, s, "webhooks")
 	for _, want := range []string{
 		`id="webhooks"`, `name="url"`, `name="events" value="message.received"`,
-		`hx-post="/settings/webhooks"`, "Webhooks are delivered by mimux pro.",
+		`hx-post="/settings/webhooks"`, "Webhook delivery is part of mimux pro",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("settings page missing %q", want)

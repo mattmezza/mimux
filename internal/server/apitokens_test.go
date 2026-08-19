@@ -128,11 +128,9 @@ func TestAPITokenCreateRejectsBadInput(t *testing.T) {
 // its own endpoint.
 func TestSettingsPageHasAPITab(t *testing.T) {
 	s := serverWith(t, nil, nil)
-	rec := httptest.NewRecorder()
-	s.handleSettings(rec, httptest.NewRequest(http.MethodGet, "/settings", nil))
-	body := rec.Body.String()
+	body := renderSection(t, s, "api")
 	for _, want := range []string{
-		`{id:'api', label:'API'}`, `id="api-tokens"`, `name="label"`,
+		`href="/settings/api"`, `id="api-tokens"`, `name="label"`,
 		`name="scopes" value="mail:read"`, `name="expires"`, `hx-post="/settings/api"`,
 	} {
 		if !strings.Contains(body, want) {

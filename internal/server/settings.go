@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/mattmezza/mimux/internal/account"
 	"github.com/mattmezza/mimux/internal/auth"
 	"github.com/mattmezza/mimux/internal/config"
@@ -15,7 +17,77 @@ import (
 	"github.com/mattmezza/mimux/internal/translate"
 )
 
+// Settings is one page per section, at /settings/<id>. The section lives in the
+// URL rather than in a hash or localStorage, so a link to "the webhooks screen"
+// is a link, the Back button works, and the browser doesn't paint the wrong
+// panel for a frame on a cold load.
+//
+// Pro marks the sections that only do something in a pro build: they still
+// render (the free build stores what you configure), with a banner saying so.
+// Form marks the ones that carry fields the page's Save button writes — the
+// rest are self-contained managers that post their own htmx requests, and a
+// Save button there would save nothing.
+type settingsPage struct {
+	ID, Label string
+	Pro       bool
+	Form      bool
+}
+
+var settingsSections = []settingsPage{
+	{ID: "appearance", Label: "Appearance", Form: true},
+	{ID: "reading", Label: "Reading", Form: true},
+	{ID: "composing", Label: "Composing", Form: true},
+	{ID: "quick-actions", Label: "Quick actions", Form: true},
+	{ID: "notifications", Label: "Notifications", Form: true},
+	{ID: "syncing", Label: "Syncing", Form: true},
+	{ID: "search", Label: "Search", Form: true},
+	{ID: "accounts", Label: "Accounts", Form: true},
+	{ID: "signatures", Label: "Signatures"},
+	{ID: "templates", Label: "Templates"},
+	{ID: "api", Label: "API", Pro: true},
+	{ID: "webhooks", Label: "Webhooks", Pro: true},
+	{ID: "integrations", Label: "Integrations", Form: true},
+	{ID: "backup", Label: "Backup & restore"},
+	// Last on purpose: it is the section you visit once, not the one you live in.
+	{ID: "licence", Label: "Licence", Pro: true},
+}
+
+// defaultSettingsSection is where a bare /settings lands.
+const defaultSettingsSection = "appearance"
+
+// settingsSection returns the section with this id, or nil.
+func settingsSection(id string) *settingsPage {
+	for i := range settingsSections {
+		if settingsSections[i].ID == id {
+			return &settingsSections[i]
+		}
+	}
+	return nil
+}
+
+// handleSettings keeps /settings working as a bookmark: it lands on the first
+// section rather than rendering a fourteenth copy of the page.
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings/"+defaultSettingsSection, http.StatusSeeOther)
+}
+
+func (s *Server) handleSettingsSection(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "section")
+	sec := settingsSection(id)
+	if sec == nil {
+		http.NotFound(w, r)
+		return
+	}
+	data := s.settingsData(w, r)
+	data["Section"] = sec.ID
+	data["Page"] = *sec
+	s.render(w, "settings", data)
+}
+
+// settingsData is the settings page's model. Built whole rather than per
+// section: it is a dozen small queries on a page nobody opens in a loop, and a
+// per-section switch here is a per-section bug waiting to happen.
+func (s *Server) settingsData(w http.ResponseWriter, r *http.Request) map[string]any {
 	prefs := s.store.GetPrefs()
 	sigs, _ := s.store.ListSignatures()
 	tpls, _ := s.store.ListTemplates()
@@ -26,8 +98,10 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	pushDevices, _ := s.store.ListPushSubs()
 	apiTokens, _ := s.store.ListAPITokens()
 	webhooks, _ := s.webhookViews()
-	s.render(w, "settings", map[string]any{
+	return map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
+		"Sections":     settingsSections,
+		"Pro":          s.proView(),
 		"Prefs":        prefs,
 		"Accounts":     s.accounts(),
 		"AccountViews": s.accountViews(),
@@ -54,7 +128,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"Identities":    s.identityLinks(),
 		"DBSize":        s.dbSizeHuman(),
 		"MessageCount":  msgCount,
-	})
+	}
 }
 
 // dbSizeHuman totals the main SQLite file plus its -wal/-shm siblings (present
@@ -89,162 +163,82 @@ func humanBytes(n int64) string {
 	}
 }
 
+// handleSettingsSave writes back the section the form came from.
+//
+// Each page posts a hidden `section`, and only that section's fields are read —
+// the rest of Prefs and AppConfig is loaded from the database and written back
+// untouched. Without that, saving the Reading page would post no ntfy URL, no
+// AI key and no accent, and store the zero value of each.
+//
+// A post without a section applies every section, which is what the whole-page
+// form used to do (and what the tests below still exercise).
 func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
-	p := store.Prefs{
-		MarkReadDelay:    atoiDefault(r.PostFormValue("mark_read_delay"), 0),
-		SyncIntervalMin:  atoiDefault(r.PostFormValue("sync_interval_min"), 5),
-		PreviewLines:     atoiDefault(r.PostFormValue("preview_lines"), 1),
-		ShowAvatar:       r.PostFormValue("show_avatar") != "",
-		ShowAccountBadge: r.PostFormValue("show_account_badge") != "",
-		ShowAttachMarker: r.PostFormValue("show_attach_marker") != "",
-		ShowListLabels:   r.PostFormValue("show_list_labels") != "",
-		ShowFavicon:      r.PostFormValue("show_favicon") != "",
-		HideAvatarMobile: r.PostFormValue("hide_avatar_mobile") != "",
-		AvatarShape:      r.PostFormValue("avatar_shape"),
-		DarkMessages:     r.PostFormValue("dark_messages") != "",
-		RememberMsgTheme: r.PostFormValue("remember_msg_theme") != "",
-		SyncMonths:       atoiDefault(r.PostFormValue("sync_months"), 0),
-		MaxPerSync:       atoiDefault(r.PostFormValue("max_per_sync"), 500),
-		BodyCache:        atoiDefault(r.PostFormValue("body_cache"), config.DefaultBodyCache),
-		AccountColors:    map[string]string{},
-		QuickActions:     store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions"))),
-		SearchScope:      r.PostFormValue("search_scope"),
-		ComposeMode:      r.PostFormValue("compose_mode"),
-		ComposeLayout:    r.PostFormValue("compose_layout"),
-		ReplyLayout:      r.PostFormValue("reply_layout"),
-		UndoSendDelay:    atoiDefault(r.PostFormValue("undo_send_delay"), 5),
-		ThreadOrder:      r.PostFormValue("thread_order"),
-		RowDoubleAction:  store.ValidRowAction(r.PostFormValue("row_double_action"), "unread"),
-		SwipeLeftAction:  store.ValidRowAction(r.PostFormValue("swipe_left_action"), "none"),
-		SwipeRightAction: store.ValidRowAction(r.PostFormValue("swipe_right_action"), "unread"),
-		// Notifications. Neither control is ever disabled in the UI — the whole
-		// section stays submittable whatever the master switch says — so unlike
-		// the avatar dependents below there is nothing here to preserve
-		// server-side: an absent field really does mean the user cleared it.
-		NotifyScope: store.ValidNotifyScope(r.PostFormValue("notify_scope"), "off"),
-		NtfyURL:     strings.TrimSpace(r.PostFormValue("ntfy_url")),
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
 	}
-	// A topic URL that isn't http(s) would be posted to on every new message and
-	// fail every time; refuse it at the boundary instead.
-	if u := p.NtfyURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
-		p.NtfyURL = ""
+	section := r.PostFormValue("section")
+	if section != "" && settingsSection(section) == nil {
+		http.Error(w, "unknown settings section", http.StatusBadRequest)
+		return
 	}
-	switch p.UndoSendDelay {
-	case 3, 5, 10:
-	default:
-		p.UndoSendDelay = 5
+	in := func(id string) bool { return section == "" || section == id }
+
+	p := s.store.GetPrefs()
+	cfg := s.store.GetAppConfig()
+	if in("appearance") {
+		applyAppearance(&cfg, r)
 	}
-	switch p.ThreadOrder {
-	case "oldest", "newest":
-	default:
-		p.ThreadOrder = "oldest"
+	if in("reading") {
+		s.applyReading(&p, r)
 	}
-	switch p.SearchScope {
-	case "all", "account", "folder":
-	default:
-		p.SearchScope = "all"
+	if in("composing") {
+		applyComposing(&p, r)
 	}
-	switch p.ComposeMode {
-	case "plain", "html", "markdown":
-	default:
-		p.ComposeMode = "html"
+	if in("quick-actions") {
+		p.QuickActions = store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions")))
 	}
-	switch p.ComposeLayout {
-	case "fullscreen", "popup", "modal":
-	default:
-		p.ComposeLayout = "fullscreen"
+	if in("notifications") {
+		applyNotifications(&p, r)
 	}
-	switch p.ReplyLayout {
-	case "fullscreen", "popup", "modal":
-	default:
-		p.ReplyLayout = "popup"
+	if in("syncing") {
+		applySyncing(&p, r)
 	}
-	switch p.AvatarShape {
-	case "circle", "rounded", "square":
-	default:
-		p.AvatarShape = "circle"
+	if in("search") {
+		p.SearchScope = oneOf(r.PostFormValue("search_scope"), "all", "account", "folder")
 	}
-	// The avatar dependents (favicon/shape/hide-on-mobile) are disabled in the
-	// UI when show_avatar is off, and a disabled control isn't submitted at
-	// all — so an absent field here doesn't mean "off"/"circle", it means
-	// "the browser didn't send it". Keep whatever was already stored instead
-	// of overwriting it with the form's zero values, or turning avatars back
-	// on later would come back to reset favicon/shape/mobile choices.
-	if !p.ShowAvatar {
-		prev := s.store.GetPrefs()
-		p.ShowFavicon, p.HideAvatarMobile, p.AvatarShape = prev.ShowFavicon, prev.HideAvatarMobile, prev.AvatarShape
-	}
-	if p.SyncMonths < 0 {
-		p.SyncMonths = 0
-	}
-	if p.MarkReadDelay < 0 {
-		p.MarkReadDelay = 0
-	}
-	if p.SyncIntervalMin < 1 {
-		p.SyncIntervalMin = 1
-	}
-	if p.PreviewLines < 0 {
-		p.PreviewLines = 0
-	} else if p.PreviewLines > 3 {
-		p.PreviewLines = 3
-	}
-	if p.MaxPerSync < 1 {
-		p.MaxPerSync = 500
-	}
-	if p.BodyCache < 0 {
-		p.BodyCache = 0 // 0 = off: no prefetching, no bodies kept on disk
-	}
-	for _, a := range s.accounts() {
-		if c := r.PostFormValue("color:" + a.Name); c != "" {
-			p.AccountColors[a.Name] = c
+	if in("accounts") {
+		for _, a := range s.accounts() {
+			if c := r.PostFormValue("color:" + a.Name); c != "" {
+				p.AccountColors[a.Name] = c
+			}
 		}
+	}
+	if in("integrations") {
+		applyIntegrations(&cfg, r)
 	}
 	if err := s.store.SavePrefs(p); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return
 	}
-	// The form is a <select> of known languages; a posted code that isn't one
-	// falls back to English rather than being stored and later sent to Google.
-	target := r.PostFormValue("translate_target")
-	if !translate.Supported(target) {
-		target = "en"
-	}
-	if err := s.store.SaveAppConfig(store.AppConfig{
-		TranslateAPIKey: r.PostFormValue("translate_api_key"),
-		TranslateTarget: target,
-		AIKey:           r.PostFormValue("ai_openrouter_key"),
-		AIModel:         r.PostFormValue("ai_model"),
-		// Per-feature model overrides: blank inherits the default model above.
-		AIComposeModel:   strings.TrimSpace(r.PostFormValue("ai_compose_model")),
-		AIOptionsModel:   strings.TrimSpace(r.PostFormValue("ai_options_model")),
-		AIRefineModel:    strings.TrimSpace(r.PostFormValue("ai_refine_model")),
-		AISummarizeModel: strings.TrimSpace(r.PostFormValue("ai_summarize_model")),
-		AITone:           r.PostFormValue("ai_tone"),
-		AIBrevity:        r.PostFormValue("ai_brevity"),
-		AIReplyOptions:   atoiDefault(r.PostFormValue("ai_reply_options"), 3),
-		AILanguage:       r.PostFormValue("ai_language"),
-		AISummaryLevel:   r.PostFormValue("ai_summary_level"),
-		// Look (Settings → Appearance). SaveAppConfig validates every colour;
-		// nothing unvalidated reaches the icon SVG or the accent <style>.
-		Accent:     r.PostFormValue("ui_accent"),
-		IconBG:     r.PostFormValue("icon_bg"),
-		IconAccent: r.PostFormValue("icon_accent"),
-		IconLeaf:   r.PostFormValue("icon_leaf"),
-		IconShape:  r.PostFormValue("icon_shape"),
-	}); err != nil {
+	// SaveAppConfig validates every colour; nothing unvalidated reaches the icon
+	// SVG or the accent <style>.
+	if err := s.store.SaveAppConfig(cfg); err != nil {
 		http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 		return
 	}
 	// Per-account sync overrides (Settings → Syncing, per-account section):
 	// blank inherits the global values just saved above.
-	for _, a := range s.accounts() {
-		interval := parseOverride(r.PostFormValue("sync_interval_min:"+a.Name), 1)
-		maxPerSync := parseOverride(r.PostFormValue("max_per_sync:"+a.Name), 1)
-		syncMonths := parseOverride(r.PostFormValue("sync_months:"+a.Name), 0)
-		bodyCache := parseOverride(r.PostFormValue("body_cache:"+a.Name), 0)
-		if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths, bodyCache); err != nil {
-			http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
-			return
+	if in("syncing") {
+		for _, a := range s.accounts() {
+			interval := parseOverride(r.PostFormValue("sync_interval_min:"+a.Name), 1)
+			maxPerSync := parseOverride(r.PostFormValue("max_per_sync:"+a.Name), 1)
+			syncMonths := parseOverride(r.PostFormValue("sync_months:"+a.Name), 0)
+			bodyCache := parseOverride(r.PostFormValue("body_cache:"+a.Name), 0)
+			if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths, bodyCache); err != nil {
+				http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
+				return
+			}
 		}
 	}
 	// Reload so running workers pick up any changed per-account override.
@@ -253,7 +247,135 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	http.Redirect(w, r, "/settings", http.StatusSeeOther)
+	dest := section
+	if dest == "" {
+		dest = defaultSettingsSection
+	}
+	http.Redirect(w, r, "/settings/"+dest, http.StatusSeeOther)
+}
+
+// applyAppearance reads Settings → Appearance (the accent and the app icon).
+func applyAppearance(c *store.AppConfig, r *http.Request) {
+	c.Accent = r.PostFormValue("ui_accent")
+	c.IconBG = r.PostFormValue("icon_bg")
+	c.IconAccent = r.PostFormValue("icon_accent")
+	c.IconLeaf = r.PostFormValue("icon_leaf")
+	c.IconShape = r.PostFormValue("icon_shape")
+}
+
+// applyReading reads Settings → Reading.
+func (s *Server) applyReading(p *store.Prefs, r *http.Request) {
+	p.MarkReadDelay = atoiDefault(r.PostFormValue("mark_read_delay"), 0)
+	if p.MarkReadDelay < 0 {
+		p.MarkReadDelay = 0
+	}
+	p.PreviewLines = atoiDefault(r.PostFormValue("preview_lines"), 1)
+	if p.PreviewLines < 0 {
+		p.PreviewLines = 0
+	} else if p.PreviewLines > 3 {
+		p.PreviewLines = 3
+	}
+	p.ThreadOrder = oneOf(r.PostFormValue("thread_order"), "oldest", "newest")
+	p.RowDoubleAction = store.ValidRowAction(r.PostFormValue("row_double_action"), "unread")
+	p.SwipeLeftAction = store.ValidRowAction(r.PostFormValue("swipe_left_action"), "none")
+	p.SwipeRightAction = store.ValidRowAction(r.PostFormValue("swipe_right_action"), "unread")
+	p.ShowAccountBadge = r.PostFormValue("show_account_badge") != ""
+	p.ShowAttachMarker = r.PostFormValue("show_attach_marker") != ""
+	p.ShowListLabels = r.PostFormValue("show_list_labels") != ""
+	p.DarkMessages = r.PostFormValue("dark_messages") != ""
+	p.RememberMsgTheme = r.PostFormValue("remember_msg_theme") != ""
+	// The avatar dependents (favicon/shape/hide-on-mobile) are disabled in the
+	// UI when show_avatar is off, and a disabled control isn't submitted at
+	// all — so an absent field here doesn't mean "off"/"circle", it means
+	// "the browser didn't send it". Keep whatever was already stored instead
+	// of overwriting it with the form's zero values, or turning avatars back
+	// on later would come back to reset favicon/shape/mobile choices.
+	if p.ShowAvatar = r.PostFormValue("show_avatar") != ""; p.ShowAvatar {
+		p.ShowFavicon = r.PostFormValue("show_favicon") != ""
+		p.HideAvatarMobile = r.PostFormValue("hide_avatar_mobile") != ""
+		p.AvatarShape = oneOf(r.PostFormValue("avatar_shape"), "circle", "rounded", "square")
+	}
+}
+
+// applyComposing reads Settings → Composing.
+func applyComposing(p *store.Prefs, r *http.Request) {
+	p.ComposeMode = oneOf(r.PostFormValue("compose_mode"), "html", "plain", "markdown")
+	p.ComposeLayout = oneOf(r.PostFormValue("compose_layout"), "fullscreen", "popup", "modal")
+	p.ReplyLayout = oneOf(r.PostFormValue("reply_layout"), "popup", "fullscreen", "modal")
+	switch p.UndoSendDelay = atoiDefault(r.PostFormValue("undo_send_delay"), 5); p.UndoSendDelay {
+	case 3, 5, 10:
+	default:
+		p.UndoSendDelay = 5
+	}
+}
+
+// applyNotifications reads Settings → Notifications. Neither control is ever
+// disabled in the UI — the whole section stays submittable whatever the master
+// switch says — so unlike the avatar dependents there is nothing to preserve:
+// an absent field really does mean the user cleared it.
+func applyNotifications(p *store.Prefs, r *http.Request) {
+	p.NotifyScope = store.ValidNotifyScope(r.PostFormValue("notify_scope"), "off")
+	p.NtfyURL = strings.TrimSpace(r.PostFormValue("ntfy_url"))
+	// A topic URL that isn't http(s) would be posted to on every new message and
+	// fail every time; refuse it at the boundary instead.
+	if u := p.NtfyURL; u != "" && !strings.HasPrefix(u, "https://") && !strings.HasPrefix(u, "http://") {
+		p.NtfyURL = ""
+	}
+}
+
+// applySyncing reads Settings → Syncing (the global half; the per-account
+// overrides are written separately, outside the Prefs row).
+func applySyncing(p *store.Prefs, r *http.Request) {
+	p.SyncIntervalMin = atoiDefault(r.PostFormValue("sync_interval_min"), 5)
+	if p.SyncIntervalMin < 1 {
+		p.SyncIntervalMin = 1
+	}
+	p.MaxPerSync = atoiDefault(r.PostFormValue("max_per_sync"), 500)
+	if p.MaxPerSync < 1 {
+		p.MaxPerSync = 500
+	}
+	p.SyncMonths = atoiDefault(r.PostFormValue("sync_months"), 0)
+	if p.SyncMonths < 0 {
+		p.SyncMonths = 0
+	}
+	p.BodyCache = atoiDefault(r.PostFormValue("body_cache"), config.DefaultBodyCache)
+	if p.BodyCache < 0 {
+		p.BodyCache = 0 // 0 = off: no prefetching, no bodies kept on disk
+	}
+}
+
+// applyIntegrations reads Settings → Integrations (Translate and AI).
+func applyIntegrations(c *store.AppConfig, r *http.Request) {
+	c.TranslateAPIKey = r.PostFormValue("translate_api_key")
+	// The form is a <select> of known languages; a posted code that isn't one
+	// falls back to English rather than being stored and later sent to Google.
+	if c.TranslateTarget = r.PostFormValue("translate_target"); !translate.Supported(c.TranslateTarget) {
+		c.TranslateTarget = "en"
+	}
+	c.AIKey = r.PostFormValue("ai_openrouter_key")
+	c.AIModel = r.PostFormValue("ai_model")
+	// Per-feature model overrides: blank inherits the default model above.
+	c.AIComposeModel = strings.TrimSpace(r.PostFormValue("ai_compose_model"))
+	c.AIOptionsModel = strings.TrimSpace(r.PostFormValue("ai_options_model"))
+	c.AIRefineModel = strings.TrimSpace(r.PostFormValue("ai_refine_model"))
+	c.AISummarizeModel = strings.TrimSpace(r.PostFormValue("ai_summarize_model"))
+	c.AITone = r.PostFormValue("ai_tone")
+	c.AIBrevity = r.PostFormValue("ai_brevity")
+	c.AIReplyOptions = atoiDefault(r.PostFormValue("ai_reply_options"), 3)
+	c.AILanguage = r.PostFormValue("ai_language")
+	c.AISummaryLevel = r.PostFormValue("ai_summary_level")
+}
+
+// oneOf returns v when it is one of the allowed values, else the first one —
+// which is the default by construction, so a hand-posted value cannot store
+// something the UI would then fail to render.
+func oneOf(v string, allowed ...string) string {
+	for _, a := range allowed {
+		if v == a {
+			return v
+		}
+	}
+	return allowed[0]
 }
 
 // qaEditorRows builds the ordered rows for the settings quick-action editor:
