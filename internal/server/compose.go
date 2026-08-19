@@ -86,6 +86,10 @@ type composeView struct {
 	// Templates are the saved message templates, alphabetical, offered in the
 	// compose picker. Filled in by renderCompose.
 	Templates []store.Template
+	// Attachments are the files already kept with the saved draft (as opposed to
+	// the ones sitting unsaved in the file input, which the client owns). Empty
+	// until the draft has been saved at least once.
+	Attachments []store.DraftAttachment
 }
 
 // validLayout whitelists a compose layout to the three the partial can render,
@@ -154,11 +158,15 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			if mode == "" {
 				mode = view.Mode
 			}
+			atts, err := s.store.DraftAttachments(d.ID)
+			if err != nil {
+				slog.Error("compose: draft attachments", "draft", d.ID, "err", err)
+			}
 			s.renderCompose(w, composeView{
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
-				Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave,
+				Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave, Attachments: atts,
 			})
 			return
 		}
@@ -260,7 +268,7 @@ func (s *Server) accountByName(name string) (config.Account, bool) {
 // replaces whatever copy the last save left in the IMAP Drafts folder, so
 // hitting save ten times leaves one draft, here and on the server.
 func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
+	if err := parseComposeForm(w, r); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -282,15 +290,109 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft save", "err", err)
 	}
+	// The files picked since the last save join the draft before it is
+	// published, so what lands in the Drafts folder is the message as the window
+	// shows it. The client empties its own pending list on the way back, which
+	// is why a save never stores the same file twice.
+	atts, attErr := readAttachments(r)
+	if attErr == "" {
+		attErr = s.keepDraftAttachments(d.ID, atts)
+	}
+	if attErr != "" {
+		s.mail.Toast(attErr)
+	}
 	s.publishDraft(d)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if id == 0 && d.ID != 0 {
 		// First save: tell the open form its new draft id via OOB swap so later
 		// saves target this row instead of creating more.
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = fmt.Fprintf(w, `<input type="hidden" id="compose-draft-id" name="draft_id" value="%d" hx-swap-oob="true">`, d.ID)
+	}
+	s.renderDraftAttachments(w, d.ID)
+}
+
+// keepDraftAttachments stores the freshly uploaded files against a draft,
+// enforcing the send path's total cap across what is already kept plus what has
+// just arrived. Returns a user-facing message when something was refused ("" if
+// all of it was stored) — the save itself still stands, files and all the rest
+// of the draft are two separate promises.
+func (s *Server) keepDraftAttachments(draftID int64, atts []mail.OutAttachment) string {
+	if draftID == 0 || len(atts) == 0 {
+		return ""
+	}
+	total, err := s.store.DraftAttachmentsSize(draftID)
+	if err != nil {
+		slog.Error("compose: draft attachment size", "draft", draftID, "err", err)
+		return ""
+	}
+	for _, a := range atts {
+		total += int64(len(a.Data))
+		if total > maxAttachTotal {
+			return fmt.Sprintf("Attachments exceed the %dMB limit — %q was not kept with the draft.",
+				maxAttachTotal>>20, a.Filename)
+		}
+		if err := s.store.AddDraftAttachment(draftID, &store.DraftAttachment{
+			Filename: a.Filename, ContentType: a.ContentType, Data: a.Data,
+		}); err != nil {
+			slog.Error("compose: draft attachment save", "draft", draftID, "err", err)
+			return fmt.Sprintf("Could not keep %q with the draft.", a.Filename)
+		}
+	}
+	return ""
+}
+
+// renderDraftAttachments writes the draft's file chips as an out-of-band swap,
+// so every save and every removal leaves the open compose window showing
+// exactly what the draft holds.
+func (s *Server) renderDraftAttachments(w http.ResponseWriter, draftID int64) {
+	atts, err := s.store.DraftAttachments(draftID)
+	if err != nil {
+		slog.Error("compose: draft attachments", "draft", draftID, "err", err)
+	}
+	s.renderPartial(w, "compose_attachments", map[string]any{
+		"DraftID": draftID, "Attachments": atts, "OOB": true,
+	})
+}
+
+// handleDraftAttachmentDelete removes one stored file from a saved draft and
+// republishes the draft without it.
+func (s *Server) handleDraftAttachmentDelete(w http.ResponseWriter, r *http.Request) {
+	draftID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	attID, aerr := strconv.ParseInt(chi.URLParam(r, "aid"), 10, 64)
+	if err != nil || aerr != nil {
+		http.NotFound(w, r)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent)
+	d, err := s.store.DraftByID(draftID)
+	if err != nil || d == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.store.DeleteDraftAttachment(draftID, attID); err != nil {
+		slog.Error("compose: draft attachment delete", "draft", draftID, "err", err)
+	}
+	// Re-save so the published copy loses the file too: the content changed, so
+	// the mailbox revision is stale until the push replaces it.
+	if err := s.store.UpsertDraft(d); err != nil {
+		slog.Error("compose: draft re-save", "draft", draftID, "err", err)
+	}
+	s.publishDraft(d)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	s.renderDraftAttachments(w, draftID)
+}
+
+// parseComposeForm parses a compose POST in either shape it arrives in: a
+// multipart body when files ride along (send, and a save that carries newly
+// picked ones) or a plain form otherwise. The body is capped so a giant upload
+// cannot exhaust disk; the per-file sum in readAttachments gives the clean
+// 25MB error before this trips.
+func parseComposeForm(w http.ResponseWriter, r *http.Request) error {
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		return r.ParseForm()
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAttachTotal+(1<<20))
+	// #nosec G120 -- body is capped by MaxBytesReader above
+	return r.ParseMultipartForm(maxAttachTotal + (1 << 20))
 }
 
 // publishDraft appends the just-saved draft to the account's IMAP Drafts folder
@@ -412,8 +514,8 @@ const maxAttachTotal = mail.MaxAttachTotal
 // readAttachments pulls the uploaded "attachments" files off a parsed multipart
 // form, enforcing the total size cap. The second return is a user-facing error
 // message ("" on success). Returns nil for a non-multipart request (no files).
-// Draft-attachment persistence is intentionally not implemented — attachments
-// only ride along with the outgoing send.
+// These are the files picked since the last save; whatever the draft already
+// keeps is read from the store instead (see keepDraftAttachments).
 func readAttachments(r *http.Request) ([]mail.OutAttachment, string) {
 	if r.MultipartForm == nil {
 		return nil, ""
@@ -451,17 +553,7 @@ func readAttachments(r *http.Request) ([]mail.OutAttachment, string) {
 // re-renders the compose partial with an error banner, modal stays open,
 // draft stays saved.
 func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
-	multipart := strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data")
-	if multipart {
-		// Hard cap the whole request so a giant upload can't exhaust disk;
-		// the per-file sum below gives the clean 25MB error before this trips.
-		r.Body = http.MaxBytesReader(w, r.Body, maxAttachTotal+(1<<20))
-		// #nosec G120 -- body is capped by MaxBytesReader above
-		if err := r.ParseMultipartForm(maxAttachTotal + (1 << 20)); err != nil {
-			http.Error(w, "bad form", http.StatusBadRequest)
-			return
-		}
-	} else if err := r.ParseForm(); err != nil {
+	if err := parseComposeForm(w, r); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
@@ -473,7 +565,9 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		Mode:      r.PostFormValue("mode"),
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
 	}
-	// Keep the window in whatever layout it was opened in across an error re-render.
+	// Keep the window in whatever layout it was opened in — and the draft's kept
+	// files listed — across an error re-render.
+	view.Attachments, _ = s.store.DraftAttachments(draftID)
 	prefs := s.store.GetPrefs()
 	view.Layout = validLayout(r.PostFormValue("layout"), layoutForKind(prefs, view.Kind))
 	view.Autosave = prefs.ComposeAutosave
@@ -498,7 +592,14 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		s.renderCompose(w, view)
 		return
 	}
-	atts, attErr := readAttachments(r)
+	// The draft's kept files go out first, then whatever was picked since the
+	// last save: the send attaches exactly what the compose window shows.
+	atts, attErr := s.draftAttachments(draftID)
+	if attErr == "" {
+		var fresh []mail.OutAttachment
+		fresh, attErr = readAttachments(r)
+		atts = append(atts, fresh...)
+	}
 	if attErr != "" {
 		view.Error = attErr
 		s.renderCompose(w, view)
@@ -558,6 +659,24 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// draftAttachments loads a draft's kept files in the form the send path
+// attaches. The second return is a user-facing error message ("" on success).
+func (s *Server) draftAttachments(draftID int64) ([]mail.OutAttachment, string) {
+	if draftID == 0 {
+		return nil, ""
+	}
+	kept, err := s.store.DraftAttachments(draftID)
+	if err != nil {
+		slog.Error("compose: draft attachments", "draft", draftID, "err", err)
+		return nil, "Could not read the files kept with this draft."
+	}
+	out := make([]mail.OutAttachment, len(kept))
+	for i, a := range kept {
+		out[i] = mail.OutAttachment{Filename: a.Filename, ContentType: a.ContentType, Data: a.Data}
+	}
+	return out, ""
+}
+
 // outAttachments converts freshly-uploaded attachments to the store's persisted
 // form (so a queued message survives a restart).
 func outAttachments(atts []mail.OutAttachment) []store.OutAttachment {
@@ -569,8 +688,9 @@ func outAttachments(atts []mail.OutAttachment) []store.OutAttachment {
 }
 
 // handleOutboxUndo cancels a just-queued delayed send and reopens the compose
-// window with the draft restored (attachments excepted — they can't be put back
-// into a file input). Wired to the toast "Undo" action.
+// window with the draft restored, attachments included: they cannot go back
+// into a file input, but they can go back into the draft, which is where the
+// compose window now reads them from. Wired to the toast "Undo" action.
 func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil {
@@ -599,6 +719,14 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 		Body: o.Body, InReplyTo: o.InReplyTo, Kind: "new", Mode: o.Mode,
 	}
 	_ = s.store.UpsertDraft(d)
+	for _, a := range o.Attachments {
+		if err := s.store.AddDraftAttachment(d.ID, &store.DraftAttachment{
+			Filename: a.Filename, ContentType: a.ContentType, Data: a.Data,
+		}); err != nil {
+			slog.Error("outbox: undo attachment", "outbox", id, "err", err)
+		}
+	}
+	kept, _ := s.store.DraftAttachments(d.ID)
 	prefs := s.store.GetPrefs()
 	from := o.From
 	if from == "" {
@@ -615,6 +743,7 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 		Account: o.Account, From: from, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
 		Body: o.Body, Mode: o.Mode, Kind: "new", InReplyTo: o.InReplyTo, References: refs,
 		UndoSendDelay: prefs.UndoSendDelay, Layout: layoutForKind(prefs, "new"), Autosave: prefs.ComposeAutosave,
+		Attachments: kept,
 	})
 }
 

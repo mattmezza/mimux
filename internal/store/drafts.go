@@ -153,6 +153,10 @@ type DraftAttachment struct {
 	Data        []byte
 }
 
+// Size is the file's size in bytes — a method so templates can format it
+// without a conversion helper (len returns an int, humanBytes wants int64).
+func (a DraftAttachment) Size() int64 { return int64(len(a.Data)) }
+
 // AddDraftAttachment stores one file against a draft, writing back its id.
 func (s *Store) AddDraftAttachment(draftID int64, a *DraftAttachment) error {
 	res, err := s.DB.Exec(`INSERT INTO draft_attachments (draft_id, filename, content_type, content)

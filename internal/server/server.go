@@ -232,6 +232,7 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/compose/suggest", s.handleAddressSuggest)
 		r.Post("/compose", s.handleComposeSend)
 		r.Post("/compose/draft", s.handleComposeDraftSave)
+		r.Post("/compose/draft/{id}/attachment/{aid}/delete", s.handleDraftAttachmentDelete)
 		r.Post("/compose/preview", s.handleComposePreview)
 		r.Get("/drafts", s.handleDraftsPage)
 		r.Post("/drafts/{id}/delete", s.handleDraftDelete)

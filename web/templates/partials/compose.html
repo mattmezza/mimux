@@ -46,6 +46,7 @@
       class="flex-1 min-h-0 flex flex-col"
       x-data="attachBox()" :class="over && 'ring-2 ring-inset ring-indigo-500'"
       @dragover="onDragOver($event)" @dragleave="onDragLeave($event)" @drop="onDrop($event)"
+      @compose-saved.window="items.splice(0, $event.detail.n); sync()"
       hx-on::after-request="if(event.detail.elt===this){onComposeResponse(event)}">
       {{/* Scrolling body + pinned footer, so Send sits on the window's bottom
            edge in every layout instead of floating wherever the content ends. */}}
@@ -157,9 +158,15 @@
           <span x-show="over" x-cloak class="text-xs text-indigo-400">Drop files to attach</span>
         </div>
 
-        {{/* Attachment list: one chip per file, filename inline-editable (the
-             typed name is what gets uploaded — attachBox rebuilds the File),
-             size, and a remove control. */}}
+        {{/* Files already kept with the saved draft. Server-rendered, and
+             re-rendered out of band by every save and every removal, so this
+             row always shows what the draft actually holds. */}}
+        {{template "compose_attachments" (dict "DraftID" .DraftID "Attachments" .Attachments)}}
+
+        {{/* Attachment list: one chip per file picked but not yet saved,
+             filename inline-editable (the typed name is what gets uploaded —
+             attachBox rebuilds the File), size, and a remove control. Saving
+             hands these to the draft and empties this row. */}}
         <div x-show="items.length" x-cloak class="mt-2 flex flex-wrap gap-1.5">
           <template x-for="(it, i) in items" :key="it.id">
             <span class="inline-flex items-center gap-1 max-w-full rounded-md border border-zinc-700 bg-zinc-800 py-1 pl-1.5 pr-1 text-xs text-zinc-200">
@@ -253,16 +260,12 @@
       </div>
 
       <div class="shrink-0 flex justify-end gap-2 border-t border-zinc-800 bg-zinc-900 px-4 sm:px-6 py-3">
-        {{/* Interim: a draft is published to the IMAP Drafts folder as a plain
-             message, and the files sitting in the form are not part of it.
-             Reads off attachBox's own state, so this disappears with the note
-             when draft attachments are persisted. */}}
-        <p x-show="items.length" x-cloak class="mr-auto self-center text-xs text-amber-400/90">
-          Attachments aren’t kept with saved drafts yet — they go out when you send.
-        </p>
+        {{/* hx-encoding: the button is not the form, so htmx would otherwise
+             url-encode the save and leave the picked files behind. */}}
         <button type="button" id="compose-save-draft" title="Save draft"
           onclick="syncComposeEditor()"
           hx-post="/compose/draft" hx-include="closest form" hx-swap="none"
+          hx-encoding="multipart/form-data"
           hx-on::after-request="onDraftSaved(event)"
           class="rounded-md bg-zinc-800 hover:bg-zinc-700 transition-colors duration-150 text-zinc-200 text-sm font-medium px-4 py-1.5">
           Save draft
@@ -346,6 +349,30 @@
       </div>
     </div>
   </div>
+</div>
+{{end}}
+
+
+{{/* compose_attachments: the files the saved draft keeps (as opposed to the
+     ones still sitting in the file input, which attachBox owns client side).
+     Rendered inside the form on open, and swapped out of band — .OOB set — by
+     the save and removal endpoints, which is why the id lives here and not on
+     a wrapper. Removing one re-saves and republishes the draft without it. */}}
+{{define "compose_attachments"}}
+<div id="compose-attachments" class="mt-2 flex flex-wrap gap-1.5"{{if .OOB}} hx-swap-oob="true"{{end}}>
+  {{$draft := .DraftID}}
+  {{range .Attachments}}
+  <span class="inline-flex items-center gap-1.5 max-w-full rounded-md border border-zinc-700 bg-zinc-800 py-1 pl-2 pr-1 text-xs text-zinc-200">
+    <svg class="w-3.5 h-3.5 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+    <span class="truncate">{{.Filename}}</span>
+    <span class="shrink-0 text-zinc-500">{{humanBytes .Size}}</span>
+    <button type="button" title="Remove attachment" aria-label="Remove attachment {{.Filename}}"
+      hx-post="/compose/draft/{{$draft}}/attachment/{{.ID}}/delete" hx-swap="none"
+      class="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-400 transition-colors duration-150">
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+    </button>
+  </span>
+  {{end}}
 </div>
 {{end}}
 

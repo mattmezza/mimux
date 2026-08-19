@@ -1286,12 +1286,27 @@ window.composeGuardKeep = composeGuardKeep;
 window.composeGuardDiscard = composeGuardDiscard;
 window.composeGuardSave = composeGuardSave;
 
+// composeAttachSent: how many picked files the in-flight save handed over. The
+// server keeps those with the draft and sends back its own chip row for them,
+// so the form drops exactly that many — the ones picked while the request was
+// in flight are the tail of the list and stay, to go up with the next save.
+let composeAttachSent = 0;
+document.body.addEventListener("htmx:beforeRequest", (e) => {
+  if (e.detail.elt?.id !== "compose-save-draft") return;
+  composeAttachSent = document.querySelector('#compose-form input[type=file][name="attachments"]')?.files.length || 0;
+});
+
 // onDraftSaved runs after the "Save draft" hx-post returns: confirm, mark the
-// session clean, and finish a save-and-close if the guard requested one.
+// session clean, hand the uploaded files over to the draft, and finish a
+// save-and-close if the guard requested one.
 function onDraftSaved(event) {
   if (!event.detail.successful) return;
   toast("Draft saved");
   markComposeClean();
+  if (composeAttachSent) {
+    window.dispatchEvent(new CustomEvent("compose-saved", { detail: { n: composeAttachSent } }));
+    composeAttachSent = 0;
+  }
   if (composeCloseAfterSave) forceCloseCompose();
 }
 window.onDraftSaved = onDraftSaved;

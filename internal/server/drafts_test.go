@@ -2,12 +2,21 @@
 package server
 
 import (
+	"bytes"
+	"io"
+	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/mail"
 	"github.com/mattmezza/mimux/internal/store"
 )
 
@@ -40,6 +49,160 @@ func TestDraftSaveIsLocalFirst(t *testing.T) {
 	s.dropDraft(drafts[0].ID)
 	if left, _ := s.store.ListDrafts(); len(left) != 0 {
 		t.Errorf("%d draft(s) left after dropDraft", len(left))
+	}
+}
+
+// composeUpload builds a multipart compose POST carrying one file, the shape
+// the browser sends when something is attached.
+func composeUpload(t *testing.T, path string, fields url.Values, filename, content string) *http.Request {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, vs := range fields {
+		for _, v := range vs {
+			if err := mw.WriteField(k, v); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	if filename != "" {
+		w, err := mw.CreateFormFile("attachments", filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := io.WriteString(w, content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	r := httptest.NewRequest("POST", path, &buf)
+	r.Header.Set("Content-Type", mw.FormDataContentType())
+	return r
+}
+
+// TestDraftKeepsItsAttachments is the whole point of draft attachments: a file
+// picked in compose is still there after the window is closed and the draft
+// reopened, and removing it removes it for good.
+func TestDraftKeepsItsAttachments(t *testing.T) {
+	s := testServer(t)
+	fields := url.Values{
+		"draft_id": {"0"}, "account": {"Personal"}, "to": {"ada@example.com"},
+		"subject": {"the numbers"}, "body": {"see attached"}, "kind": {"new"}, "mode": {"plain"},
+	}
+	rec := httptest.NewRecorder()
+	s.handleComposeDraftSave(rec, composeUpload(t, "/compose/draft", fields, "numbers.txt", "41,42,43"))
+
+	drafts, err := s.store.ListDrafts()
+	if err != nil || len(drafts) != 1 {
+		t.Fatalf("ListDrafts = %v, %v", drafts, err)
+	}
+	id := drafts[0].ID
+	atts, err := s.store.DraftAttachments(id)
+	if err != nil || len(atts) != 1 || string(atts[0].Data) != "41,42,43" {
+		t.Fatalf("stored attachments = %+v, %v, want the uploaded file", atts, err)
+	}
+	// The save answers with the draft's own chip row, so the window stops
+	// showing the file as still-unsaved.
+	if body := rec.Body.String(); !strings.Contains(body, "numbers.txt") || !strings.Contains(body, "hx-swap-oob") {
+		t.Errorf("save response = %q, want an out-of-band chip row", body)
+	}
+
+	// Reopening lists it, with a way to remove it.
+	rec = httptest.NewRecorder()
+	s.handleComposeNew(rec, httptest.NewRequest("GET", "/compose?draft="+strconv.FormatInt(id, 10), nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "numbers.txt") {
+		t.Errorf("reopened compose does not list the attachment: %q", body)
+	}
+	del := "/compose/draft/" + strconv.FormatInt(id, 10) + "/attachment/" + strconv.FormatInt(atts[0].ID, 10) + "/delete"
+	if !strings.Contains(body, del) {
+		t.Errorf("reopened compose has no remove control for the attachment")
+	}
+
+	// Removing it re-owes the push, so the mailbox copy loses it too.
+	if err := s.store.ClearDraftDirty(id, "x@example.com", 0, 0, drafts[0].UpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	router := chi.NewRouter()
+	router.Post("/compose/draft/{id}/attachment/{aid}/delete", s.handleDraftAttachmentDelete)
+	router.ServeHTTP(rec, httptest.NewRequest("POST", del, nil))
+	if left, _ := s.store.DraftAttachments(id); len(left) != 0 {
+		t.Errorf("%d attachment(s) left after removal", len(left))
+	}
+	got, _ := s.store.DraftByID(id)
+	if got == nil || !got.IMAPDirty {
+		t.Errorf("after removing a file the draft = %+v, want it owing a fresh push", got)
+	}
+}
+
+// TestSendAttachesTheDraftsFiles: what the draft kept goes out with it, in
+// front of anything picked since the last save.
+func TestSendAttachesTheDraftsFiles(t *testing.T) {
+	s := testServer(t)
+	s.cfg.Accounts = []config.Account{{Name: "Personal", Email: "me@example.com"}}
+
+	d := &store.Draft{Account: "Personal", To: "ada@example.com", Subject: "hi", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.AddDraftAttachment(d.ID, &store.DraftAttachment{
+		Filename: "kept.txt", ContentType: "text/plain", Data: []byte("from the draft"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	fields := url.Values{
+		"draft_id": {strconv.FormatInt(d.ID, 10)}, "from": {"me@example.com"},
+		"to": {"ada@example.com"}, "subject": {"hi"}, "body": {"there"},
+		"kind": {"new"}, "mode": {"plain"}, "send_mode": {"later"},
+	}
+	rec := httptest.NewRecorder()
+	s.handleComposeSend(rec, composeUpload(t, "/compose", fields, "fresh.txt", "picked just now"))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("send status = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	queued, err := s.store.DueOutbox(time.Now().Add(time.Hour))
+	if err != nil || len(queued) != 1 {
+		t.Fatalf("outbox = %v, %v, want the queued message", queued, err)
+	}
+	names := []string{}
+	for _, a := range queued[0].Attachments {
+		names = append(names, a.Filename)
+	}
+	if len(names) != 2 || names[0] != "kept.txt" || names[1] != "fresh.txt" {
+		t.Fatalf("attachments sent = %v, want the draft's file then the new one", names)
+	}
+	// Sending drops the draft, and its files go with it.
+	if left, _ := s.store.DraftAttachments(d.ID); len(left) != 0 {
+		t.Errorf("%d attachment(s) outlived the sent draft", len(left))
+	}
+}
+
+// TestDraftAttachmentsRespectTheSendCap: the drafts path answers to the same
+// 25MB total as a send, counting what is already kept.
+func TestDraftAttachmentsRespectTheSendCap(t *testing.T) {
+	s := testServer(t)
+	d := &store.Draft{Account: "Personal", Subject: "big", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.AddDraftAttachment(d.ID, &store.DraftAttachment{
+		Filename: "already.bin", Data: make([]byte, maxAttachTotal-10),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msg := s.keepDraftAttachments(d.ID, []mail.OutAttachment{
+		{Filename: "one-too-many.bin", Data: make([]byte, 11)},
+	})
+	if msg == "" {
+		t.Fatal("a file that busts the cap was kept with the draft")
+	}
+	if got, _ := s.store.DraftAttachments(d.ID); len(got) != 1 {
+		t.Errorf("draft holds %d files, want only the one that fit", len(got))
 	}
 }
 
