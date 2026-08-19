@@ -397,6 +397,7 @@ func (s *Server) startSession(w http.ResponseWriter, r *http.Request, username, 
 		return
 	}
 	auth.SetSessionCookie(w, token, s.secure)
+	// #nosec G710 -- safeNext collapses anything but a plain same-site path to "/"; gosec cannot see through the call.
 	http.Redirect(w, r, safeNext(next), http.StatusSeeOther)
 }
 

@@ -279,6 +279,7 @@ func (s *Server) handleWebhookReplay(w http.ResponseWriter, r *http.Request) {
 	// Only a path on this site, and only under /settings — a redirect target
 	// taken from a form is an open redirect unless something says otherwise.
 	if back := r.PostFormValue("back"); strings.HasPrefix(back, "/settings/") && !strings.Contains(back, "//") {
+		// #nosec G710 -- the /settings/ prefix rules out a scheme or host and the "//" test rules out a protocol-relative URL, so this is a same-site path.
 		http.Redirect(w, r, back, http.StatusSeeOther)
 		return
 	}

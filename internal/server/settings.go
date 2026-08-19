@@ -271,9 +271,12 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	dest := section
-	if dest == "" {
-		dest = defaultSettingsSection
+	// Land back on the section the form came from, named by the registry rather
+	// than by the post: the only strings that can reach the URL are the ids this
+	// package declares.
+	dest := defaultSettingsSection
+	if p := settingsSection(section); p != nil {
+		dest = p.ID
 	}
 	http.Redirect(w, r, "/settings/"+dest, http.StatusSeeOther)
 }

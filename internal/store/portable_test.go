@@ -3,6 +3,7 @@ package store
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -405,7 +406,7 @@ func TestRoundTripFolderSync(t *testing.T) {
 		}
 	}
 	want := []string{"Archive", "Drafts", "INBOX"}
-	if got := syncedNames(t, dst, "work"); !eq(got, want) {
+	if got := syncedNames(t, dst, "work"); !slices.Equal(got, want) {
 		t.Errorf("restored synced set = %v, want %v (Sent stays off, Archive stays on)", got, want)
 	}
 	// Discovery filled the placeholder row in rather than leaving a stub.
@@ -424,7 +425,7 @@ func TestImportV3DumpKeepsDefaults(t *testing.T) {
 	if _, err := s.Import(ConfigExport{Version: 3, Settings: map[string]string{}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := syncedNames(t, s, "work"); !eq(got, []string{"Sent"}) {
+	if got := syncedNames(t, s, "work"); !slices.Equal(got, []string{"Sent"}) {
 		t.Errorf("an old dump changed the synced set to %v", got)
 	}
 }

@@ -25,7 +25,7 @@ func (s *Store) UpsertFolder(account, name, specialUse string, sort int) (int64,
 	// deselected in Settings → Syncing.
 	_, err := s.DB.Exec(`
 		INSERT INTO folders (account, name, special_use, sort, sync)
-		VALUES (?, ?, ?, ?, `+defaultFolderSyncSQL("?")+`)
+		VALUES (?, ?, ?, ?, `+defaultFolderSyncParamSQL+`)
 		ON CONFLICT(account, name) DO UPDATE SET special_use = excluded.special_use, sort = excluded.sort`,
 		account, name, specialUse, sort, specialUse)
 	if err != nil {

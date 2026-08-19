@@ -2,6 +2,7 @@
 package store
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
@@ -198,7 +199,7 @@ func TestMessagePage(t *testing.T) {
 	// straddle a page boundary, which is fine here and the whole point); 5 and 6
 	// share a timestamp, so the id tiebreak decides the boundary between them;
 	// 1 is the old unread row that listPage would drag onto page one.
-	mid := func(uid uint32) string { return "m" + string(rune('a'+uid)) + "@x" }
+	mid := func(uid uint32) string { return fmt.Sprintf("m%d@x", uid) }
 	ids := map[uint32]int64{}
 	for _, uid := range []uint32{1, 2, 3, 4, 5, 7} {
 		ids[uid] = put(uid, mid(uid), "", day(int(uid)), uid != 1)
@@ -272,7 +273,7 @@ func TestMessagePage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(uni) != 2 || uni[0].MessageID != "mj@x" {
+	if len(uni) != 2 || uni[0].MessageID != mid(9) {
 		t.Fatalf("unified page = %+v, want 2 inbox rows newest first", uni)
 	}
 }

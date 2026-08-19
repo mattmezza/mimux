@@ -196,21 +196,23 @@ func (s *Store) Export() (ConfigExport, error) {
 	}, nil
 }
 
-// defaultFolderSyncSQL is the sync flag a folder gets on discovery, as SQL over
-// whatever expression carries the special-use value — a bound parameter in
-// UpsertFolder, the column itself in the export's "did the user change this"
-// filter. One definition, so the two cannot drift apart and start disagreeing
-// about which folders are worth exporting.
-func defaultFolderSyncSQL(specialUse string) string {
-	return `(CASE WHEN ` + specialUse + ` IN ('inbox', 'sent', 'drafts') THEN 1 ELSE 0 END)`
-}
+// The sync flag a folder gets on discovery, as SQL over whatever expression
+// carries the special-use value — a bound parameter in UpsertFolder, the column
+// itself in the export's "did the user change this" filter. One definition of
+// the folder set, so the two cannot drift apart and start disagreeing about
+// which folders are worth exporting. Constants, so both queries stay literals.
+const (
+	syncedSpecialUseSQL       = ` IN ('inbox', 'sent', 'drafts') THEN 1 ELSE 0 END)`
+	defaultFolderSyncParamSQL = `(CASE WHEN ?` + syncedSpecialUseSQL
+	defaultFolderSyncColSQL   = `(CASE WHEN special_use` + syncedSpecialUseSQL
+)
 
 // exportFolderSync dumps only the folders the user actually re-decided: a
 // ticked Archive, an unticked Sent. Everything at its discovery default is
 // re-derived on the restored install and would just be noise here.
 func (s *Store) exportFolderSync() ([]FolderSyncExport, error) {
 	rows, err := s.DB.Query(`SELECT account, name, sync FROM folders
-		WHERE sync != ` + defaultFolderSyncSQL("special_use") + ` ORDER BY account, name`)
+		WHERE sync != ` + defaultFolderSyncColSQL + ` ORDER BY account, name`)
 	if err != nil {
 		return nil, err
 	}

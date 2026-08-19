@@ -2,6 +2,7 @@
 package store
 
 import (
+	"slices"
 	"sort"
 	"testing"
 )
@@ -21,18 +22,6 @@ func syncedNames(t *testing.T, s *Store, account string) []string {
 	return names
 }
 
-func eq(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // TestSyncedFoldersDefault: a freshly discovered account syncs inbox, sent and
 // drafts continuously — the three folders another client writes to — and
 // nothing else.
@@ -47,7 +36,7 @@ func TestSyncedFoldersDefault(t *testing.T) {
 		}
 	}
 	want := []string{"Drafts", "INBOX", "Sent"}
-	if got := syncedNames(t, s, "acct"); !eq(got, want) {
+	if got := syncedNames(t, s, "acct"); !slices.Equal(got, want) {
 		t.Errorf("default synced set = %v, want %v", got, want)
 	}
 }
@@ -82,7 +71,7 @@ func TestDeselectSurvivesReLIST(t *testing.T) {
 		}
 	}
 	want := []string{"Archive", "INBOX"}
-	if got := syncedNames(t, s, "acct"); !eq(got, want) {
+	if got := syncedNames(t, s, "acct"); !slices.Equal(got, want) {
 		t.Errorf("synced set after re-LIST = %v, want %v (id %d should stay off)", got, want, sent)
 	}
 }
@@ -97,7 +86,7 @@ func TestInboxAlwaysSyncs(t *testing.T) {
 	if err := s.SetSyncedFolders("acct", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := syncedNames(t, s, "acct"); !eq(got, []string{"INBOX"}) {
+	if got := syncedNames(t, s, "acct"); !slices.Equal(got, []string{"INBOX"}) {
 		t.Errorf("synced set = %v, want the inbox regardless", got)
 	}
 }
@@ -115,7 +104,7 @@ func TestSetSyncedFoldersIsPerAccount(t *testing.T) {
 	if err := s.SetSyncedFolders("a", nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := syncedNames(t, s, "b"); !eq(got, []string{"Sent"}) {
+	if got := syncedNames(t, s, "b"); !slices.Equal(got, []string{"Sent"}) {
 		t.Errorf("account b's synced set = %v, want [Sent] untouched", got)
 	}
 }
