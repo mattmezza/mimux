@@ -391,7 +391,12 @@ func (a *api) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
 	if ep == nil {
 		return
 	}
-	d := a.hooks.queue(ep, "ping", map[string]any{"message": "This is a mimux webhook test delivery."})
+	data := map[string]any{"message": "This is a mimux webhook test delivery."}
+	// The ping does not go through fire (it targets one endpoint, whatever it is
+	// subscribed to), so the live listeners are told here — a test delivery is
+	// the first thing anyone debugging with `webhooks listen` reaches for.
+	a.hooks.tee("ping", data)
+	d := a.hooks.queue(ep, "ping", data)
 	if d == nil {
 		apiError(w, http.StatusInternalServerError, "internal", "Couldn't queue the test delivery.")
 		return

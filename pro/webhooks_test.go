@@ -726,3 +726,110 @@ func delivered(t *testing.T, st *store.Store, endpointID int64) map[int64]bool {
 	}
 	return got
 }
+
+// A live listener sees an event even with no endpoint configured at all —
+// zero-config is the whole point — and it sees the same bytes an endpoint
+// would have been POSTed.
+func TestWebhookListenerSeesEveryEvent(t *testing.T) {
+	e, _, _ := testEngine(t)
+	l, remove := e.addListener(nil)
+	defer remove()
+
+	e.fire("message.received", map[string]any{"subject": "hello"})
+
+	select {
+	case ev := <-l.ch:
+		if ev.Type != "event" || ev.Event != "message.received" || ev.ID == "" {
+			t.Fatalf("live event = %+v", ev)
+		}
+		var body struct {
+			ID, Event string
+			Data      struct{ Subject string }
+		}
+		if err := json.Unmarshal(ev.Payload, &body); err != nil {
+			t.Fatalf("payload is not the delivery envelope: %v (%s)", err, ev.Payload)
+		}
+		if body.ID != ev.ID || body.Event != "message.received" || body.Data.Subject != "hello" {
+			t.Fatalf("payload = %s", ev.Payload)
+		}
+	default:
+		t.Fatal("no event reached the listener")
+	}
+}
+
+func TestWebhookListenerFilter(t *testing.T) {
+	e, _, _ := testEngine(t)
+	l, remove := e.addListener([]string{"sync.error", ""})
+	defer remove()
+
+	e.fire("message.received", map[string]any{})
+	e.fire("sync.error", map[string]any{"account": "work"})
+
+	select {
+	case ev := <-l.ch:
+		if ev.Event != "sync.error" {
+			t.Fatalf("filter let %q through", ev.Event)
+		}
+	default:
+		t.Fatal("the subscribed event never arrived")
+	}
+	select {
+	case ev := <-l.ch:
+		t.Fatalf("unfiltered event %q reached the listener", ev.Event)
+	default:
+	}
+}
+
+// A listener that has stopped reading must never block the tee: this runs on
+// the hub reader, and a stall there stops mail syncing.
+func TestWebhookListenerDropsInsteadOfBlocking(t *testing.T) {
+	e, _, _ := testEngine(t)
+	l, remove := e.addListener(nil)
+	defer remove()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < listenBuffer+5; i++ {
+			e.fire("message.received", map[string]any{"n": i})
+		}
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fire blocked on a listener that stopped reading")
+	}
+	if got := l.dropped.Load(); got != 5 {
+		t.Errorf("dropped = %d, want 5", got)
+	}
+	if len(l.ch) != listenBuffer {
+		t.Errorf("buffered = %d, want %d", len(l.ch), listenBuffer)
+	}
+	// The drop count rides along on the next event that does get through.
+	<-l.ch
+	e.fire("message.received", map[string]any{})
+	for {
+		ev := <-l.ch
+		if len(l.ch) == 0 {
+			if ev.Dropped != 5 {
+				t.Errorf("dropped count on the wire = %d, want 5", ev.Dropped)
+			}
+			return
+		}
+	}
+}
+
+// Removing a listener stops the tee: a stream that has hung up must not keep a
+// channel alive in the registry.
+func TestWebhookListenerRemoval(t *testing.T) {
+	e, _, _ := testEngine(t)
+	_, remove := e.addListener(nil)
+	remove()
+	e.fire("message.received", map[string]any{})
+	e.mu.Lock()
+	n := len(e.listeners)
+	e.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("listeners = %d after remove", n)
+	}
+}

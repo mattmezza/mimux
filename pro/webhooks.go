@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mattmezza/mimux/internal/config"
@@ -69,6 +71,12 @@ var retryLadder = []time.Duration{
 	0, time.Minute, 5 * time.Minute, 30 * time.Minute, 2 * time.Hour, 8 * time.Hour, 14 * time.Hour,
 }
 
+// listenBuffer is how far behind a live listener may fall before its stream
+// starts dropping. A local receiver is fast and the tee is non-blocking by
+// necessity (see tee), so this is the whole safety margin: a burst that outruns
+// 64 is a receiver that has stopped reading.
+const listenBuffer = 64
+
 type webhooks struct {
 	store   *store.Store
 	mail    *mail.Manager
@@ -77,6 +85,31 @@ type webhooks struct {
 	client  *http.Client
 	tick    time.Duration
 	ladder  []time.Duration
+
+	mu        sync.Mutex
+	listeners map[*listener]struct{}
+}
+
+// listener is one live stream — `mimux mail webhooks listen`, over
+// GET /api/v1/webhooks/listen. It is deliberately nothing like an endpoint: no
+// row, no retry, no subscription list to keep in sync. It sees every event the
+// engine fires, because the point of it is to be zero-config.
+type listener struct {
+	ch      chan liveEvent
+	events  map[string]bool // empty: everything
+	dropped atomic.Int64
+}
+
+// liveEvent is one line of the stream. Payload is the exact bytes a receiver
+// would be POSTed, so whatever forwards them signs the same string production
+// signs.
+type liveEvent struct {
+	Type    string          `json:"type"` // event | ping | error
+	Event   string          `json:"event,omitempty"`
+	ID      string          `json:"id,omitempty"`
+	Payload json.RawMessage `json:"payload,omitempty"`
+	Dropped int64           `json:"dropped,omitempty"`
+	Message string          `json:"message,omitempty"`
 }
 
 // newWebhooks takes the licence gate rather than reaching for one: without a
@@ -97,8 +130,59 @@ func newWebhooks(deps ext.Deps, licence *licenceGate) *webhooks {
 				return nil
 			},
 		},
-		tick:   webhookTick,
-		ladder: retryLadder,
+		tick:      webhookTick,
+		ladder:    retryLadder,
+		listeners: map[*listener]struct{}{},
+	}
+}
+
+// addListener registers a live stream and returns it with the func that
+// unregisters it. events empty means everything.
+func (e *webhooks) addListener(events []string) (*listener, func()) {
+	l := &listener{ch: make(chan liveEvent, listenBuffer), events: map[string]bool{}}
+	for _, ev := range events {
+		if ev = strings.TrimSpace(ev); ev != "" {
+			l.events[ev] = true
+		}
+	}
+	e.mu.Lock()
+	e.listeners[l] = struct{}{}
+	e.mu.Unlock()
+	return l, func() {
+		e.mu.Lock()
+		delete(e.listeners, l)
+		e.mu.Unlock()
+	}
+}
+
+// tee hands one event to every live listener, rendering the envelope only when
+// somebody is actually listening.
+//
+// The send is non-blocking on purpose. This runs on the goroutine that reads
+// the mail hub, and a blocked read there backs up through the hub's mutex into
+// the sync engine itself — one `curl | head` would stall mail for the whole
+// process. So a listener that has stopped reading loses events and is told how
+// many, which is the honest version of what a local debugging stream is.
+func (e *webhooks) tee(event string, data any) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.listeners) == 0 {
+		return
+	}
+	id, body, err := envelope(event, data)
+	if err != nil {
+		return // already logged by the caller's own envelope call, or about to be
+	}
+	for l := range e.listeners {
+		if len(l.events) > 0 && !l.events[event] {
+			continue
+		}
+		ev := liveEvent{Type: "event", Event: event, ID: id, Payload: json.RawMessage(body), Dropped: l.dropped.Load()}
+		select {
+		case l.ch <- ev:
+		default:
+			l.dropped.Add(1)
+		}
 	}
 }
 
@@ -281,8 +365,10 @@ func sentData(m store.Message) map[string]any {
 	}
 }
 
-// fire queues one event for every active endpoint subscribed to it.
+// fire queues one event for every active endpoint subscribed to it, and hands
+// it to every live listener regardless of what any endpoint is subscribed to.
 func (e *webhooks) fire(event string, data any) bool {
+	e.tee(event, data)
 	eps, err := e.store.ListWebhookEndpoints()
 	if err != nil {
 		slog.Error("webhooks: list endpoints", "err", err)
@@ -305,27 +391,36 @@ func (e *webhooks) fire(event string, data any) bool {
 // and sends exactly these bytes, so a receiver can verify a retry the same way
 // it verified the first try.
 func (e *webhooks) queue(ep *store.WebhookEndpoint, event string, data any) *store.WebhookDelivery {
-	buf := make([]byte, 16)
-	_, _ = rand.Read(buf)
-	id := hex.EncodeToString(buf)
-	body, err := json.Marshal(map[string]any{
-		"id":         id,
-		"event":      event,
-		"created_at": time.Now().UTC().Format(time.RFC3339),
-		"data":       data,
-	})
+	id, body, err := envelope(event, data)
 	if err != nil {
 		slog.Error("webhooks: encode payload", "event", event, "err", err) // never the payload
 		return nil
 	}
 	d := &store.WebhookDelivery{
-		EndpointID: ep.ID, EventType: event, DeliveryID: id, Payload: string(body),
+		EndpointID: ep.ID, EventType: event, DeliveryID: id, Payload: body,
 	}
 	if err := e.store.EnqueueWebhookDelivery(d); err != nil {
 		slog.Error("webhooks: enqueue", "endpoint", ep.ID, "event", event, "err", err)
 		return nil
 	}
 	return d
+}
+
+// envelope renders one event as the bytes a receiver gets: a fresh delivery id
+// and the JSON body that gets signed. Shared by queue, which stores it against
+// a delivery row, and tee, which streams it to a live listener — so a local
+// listener sees byte-for-byte what production posts.
+func envelope(event string, data any) (id, body string, err error) {
+	buf := make([]byte, 16)
+	_, _ = rand.Read(buf)
+	id = hex.EncodeToString(buf)
+	b, err := json.Marshal(map[string]any{
+		"id":         id,
+		"event":      event,
+		"created_at": time.Now().UTC().Format(time.RFC3339),
+		"data":       data,
+	})
+	return id, string(b), err
 }
 
 // drain sends every delivery whose next attempt has come.
