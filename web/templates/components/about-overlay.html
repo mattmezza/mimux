@@ -3,12 +3,14 @@
      class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
      onclick="this.hidden = true">
   <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-sm" onclick="event.stopPropagation()">
-    <h2 class="text-zinc-100 font-semibold mb-4">About mimux</h2>
-    <div class="space-y-3 text-xs text-zinc-400">
+    <div class="flex items-center gap-3 mb-4">
+      <img src="/static/icons/icon-192.png" alt="" width="40" height="40" class="w-10 h-10 rounded-lg shrink-0">
       <div>
-        <p class="text-zinc-300 font-semibold mb-1">mimux</p>
-        <p>A self-hosted email client built with Go and htmx.</p>
+        <h2 class="text-zinc-100 font-semibold">mimux</h2>
+        <p class="text-xs text-zinc-500">A self-hosted email client, run yourself.</p>
       </div>
+    </div>
+    <div class="space-y-3 text-xs text-zinc-400">
       <div>
         <p class="text-zinc-300 font-semibold mb-1">Version</p>
         <p><a href="https://github.com/mattmezza/mimux/releases/tag/{{.Version}}" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">{{.Version}}</a></p>
@@ -23,8 +25,19 @@
       </div>
       <div>
         <p class="text-zinc-300 font-semibold mb-1">License</p>
-        <p>MIT</p>
+        <p>The client — everything in this app — is
+          <a href="https://github.com/mattmezza/mimux/blob/main/LICENSE" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">AGPL-3.0</a>,
+          free forever. The REST API, MCP server and webhooks for machine
+          access are a separately licensed
+          <a href="https://mimux.dev/pricing/" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">pro layer</a>;
+          see <a href="https://github.com/mattmezza/mimux/blob/main/LICENSING.md" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">LICENSING.md</a>.</p>
       </div>
+    </div>
+    <div class="mt-4 pt-3 border-t border-zinc-700 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+      <a href="https://mimux.dev" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">mimux.dev</a>
+      <a href="https://docs.mimux.dev" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">Docs</a>
+      <a href="https://mimux.dev/legal/" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">Legal</a>
+      <a href="https://mimux.dev/privacy/" target="_blank" rel="noopener" class="text-blue-400 hover:text-blue-300">Privacy</a>
     </div>
   </div>
 </div>
