@@ -661,37 +661,54 @@ func TestWebhookQueuesWhileDraining(t *testing.T) {
 	defer cancel()
 	go e.run(ctx)
 
-	// One event at a time, waiting for its row: the hub buffer is small and does
-	// not replay, so a burst would be testing the hub's drop policy instead of
-	// this engine's. The first id is re-broadcast until it lands, which is how
-	// the test waits for run() to have subscribed (and is why the log may hold a
-	// few duplicates of it).
+	// The hub does not replay, so nothing lands until run() has subscribed: the
+	// first id is re-broadcast until its row appears, which is how the test waits
+	// for that. It can land more than once — hence every check below is on *which*
+	// messages arrived and never on how many rows there are.
 	deadline := time.Now().Add(10 * time.Second)
-	wait := func(before int) {
-		t.Helper()
-		for countDeliveries(t, st, ep.ID) <= before {
-			if time.Now().After(deadline) {
-				t.Fatalf("only %d of %d events became delivery rows: the engine stopped reading the hub while draining",
-					countDeliveries(t, st, ep.ID), n)
-			}
-			time.Sleep(5 * time.Millisecond)
-		}
-	}
-	for countDeliveries(t, st, ep.ID) == 0 {
+	for len(delivered(t, st, ep.ID)) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("a hub broadcast never became a delivery row")
 		}
 		m.Broadcast("message-new", strconv.FormatInt(ids[0], 10))
 		time.Sleep(5 * time.Millisecond)
 	}
+	// Subscribed, so the rest go out in one burst: a durable subscription is
+	// buffered well past n and makes the broadcaster wait rather than drop, so
+	// every one of these has to come out the other end even though the drain is
+	// stuck on the receiver for the whole test.
 	for _, id := range ids[1:] {
-		before := countDeliveries(t, st, ep.ID)
 		m.Broadcast("message-new", strconv.FormatInt(id, 10))
-		wait(before)
 	}
 
-	// Every message is in the log, not just the right number of rows.
-	log, err := st.ListWebhookDeliveries(ep.ID, 200)
+	// Poll for the messages themselves. Translation happens on its own goroutine,
+	// so the only sound stopping condition is "all n are in the log" — a row
+	// count reaches n while the last events are still queued, because the priming
+	// above put duplicates of the first id in there.
+	var missing []int64
+	for {
+		got := delivered(t, st, ep.ID)
+		missing = missing[:0]
+		for _, id := range ids {
+			if !got[id] {
+				missing = append(missing, id)
+			}
+		}
+		if len(missing) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("messages %v never made it into a delivery row: the engine stopped reading the hub while draining", missing)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// delivered is the set of message ids that have a delivery row on an endpoint,
+// read back out of the stored payloads.
+func delivered(t *testing.T, st *store.Store, endpointID int64) map[int64]bool {
+	t.Helper()
+	log, err := st.ListWebhookDeliveries(endpointID, 200)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -707,18 +724,5 @@ func TestWebhookQueuesWhileDraining(t *testing.T) {
 		}
 		got[p.Data.ID] = true
 	}
-	for _, id := range ids {
-		if !got[id] {
-			t.Fatalf("message %d never made it into a delivery row", id)
-		}
-	}
-}
-
-func countDeliveries(t *testing.T, st *store.Store, endpointID int64) int {
-	t.Helper()
-	log, err := st.ListWebhookDeliveries(endpointID, 200)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return len(log)
+	return got
 }
