@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Command line — mimux docs</title>
-    <meta name="description" content="Every subcommand the mimux binary has — running the server, the -version flag, mimux mail (the terminal client for the pro API), the stdio MCP bridge, and mimux licence status." />
+    <meta name="description" content="Every subcommand the mimux binary has — running the server, the -version flag, mimux upgrade, mimux mail (the terminal client for the pro API), the stdio MCP bridge, and mimux licence status." />
     <link rel="stylesheet" href="../style.css" />
     <link
       rel="icon"
@@ -57,7 +57,7 @@
 <h1>Command line</h1>
 <p class="lede">
   The mimux binary has a deliberately small command line. Running it with no
-  arguments starts the server; there are three subcommands, and all three come
+  arguments starts the server; there are four subcommands, three of which come
   from the pro layer.
 </p>
 
@@ -69,6 +69,7 @@
   <tbody>
     <tr><td><code>mimux</code></td><td>any</td><td>Start the server. Opens the database, runs migrations, starts a sync worker per account, listens on <code>MIMUX_HOST:MIMUX_PORT</code>.</td></tr>
     <tr><td><code>mimux -version</code></td><td>any</td><td>Print the version and exit.</td></tr>
+    <tr><td><code>mimux upgrade</code></td><td>any</td><td>Replace this binary with the newest release of the same build. <code>--check</code> reports without installing; <code>--version vX.Y.Z</code> pins. See <a href="../install/#upgrading">Upgrading</a>.</td></tr>
     <tr><td><code>mimux mail …</code></td><td>pro</td><td>The terminal client: read, search, triage, draft and send against a <em>running</em> mimux.</td></tr>
     <tr><td><code>mimux mcp</code></td><td>pro</td><td>Run the stdio MCP bridge against a <em>running</em> mimux.</td></tr>
     <tr><td><code>mimux licence status</code></td><td>pro</td><td>Report this install's licence and whether the API is answering.</td></tr>
@@ -77,10 +78,9 @@
 </div>
 
 <p>
-  That is the complete list. The free build's subcommand table is
-  <strong>empty</strong> — the pro verbs are registered from files carrying the
-  <code>pro</code> build tag, so a free binary neither has them nor mentions
-  them.
+  That is the complete list. <code>upgrade</code> is the only one a free binary
+  has — the other three are registered from files carrying the <code>pro</code>
+  build tag, so a free binary neither has them nor mentions them.
 </p>
 
 <p>

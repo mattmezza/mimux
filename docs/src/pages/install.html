@@ -1,12 +1,54 @@
 <!--
 title: Installation
-description: Install mimux with Docker Compose or a prebuilt binary — environment variables, first run, OAuth for Gmail and Zoho, HTTPS, the free and pro images, upgrading and backup.
+description: Install mimux with Docker Compose or the one-line binary installer — environment variables, first run, OAuth for Gmail and Zoho, HTTPS, the free and pro images, upgrading and backup.
 -->
 <h1>Installation</h1>
 <p class="lede">
-  Docker Compose is the intended path. A prebuilt binary works just as well if
-  you would rather not run a container.
+  Two ways in, both first-class: a container, or a single binary dropped on your
+  PATH by one command. Pick whichever you would rather operate.
 </p>
+
+<h2>One command</h2>
+
+<pre><code>curl -fsSL https://mimux.dev/install.sh | bash</code></pre>
+
+<p>
+  That installs the free client. For the pro build — the REST API, MCP,
+  webhooks and the <code>mimux mail</code> terminal client, with the 14-day
+  trial built in:
+</p>
+
+<pre><code>curl -fsSL https://mimux.dev/install.sh | bash -s -- pro</code></pre>
+
+<p>
+  The script picks the right binary for your machine, checks its SHA-256
+  against the <code>checksums.txt</code> published with the release, and refuses
+  to install on a mismatch. It writes to <code>/usr/local/bin</code> when that is
+  yours to write to and <code>~/.local/bin</code> otherwise; it never calls
+  <code>sudo</code> by itself. Builds cover Linux amd64 and arm64, and macOS on
+  both Intel and Apple Silicon.
+</p>
+
+<p>
+  Run it in a terminal (rather than through a pipe) and it asks which build you
+  want first. Useful flags:
+  <code>--version v0.21.0</code> to pin,
+  <code>--bin-dir DIR</code> to choose where it lands,
+  <code>--non-interactive</code> to silence every prompt.
+  Read it before you run it — it is served as plain text at
+  <a href="https://mimux.dev/install.sh">mimux.dev/install.sh</a>.
+</p>
+
+<div class="note">
+  <p>
+    <strong>The split worth knowing about.</strong> Run the <em>server</em> in
+    docker, where it restarts with the host and upgrades with a
+    <code>pull</code>. Install the <em>pro binary locally</em> and use it purely
+    as a client — <code>mimux mail login https://mail.example.com</code> — so
+    your terminal talks to the instance you already run. One deployment, one
+    command line, no second server.
+  </p>
+</div>
 
 <h2>Docker Compose</h2>
 
@@ -69,26 +111,30 @@ description: Install mimux with Docker Compose or a prebuilt binary — environm
   <a href="../architecture/">Architecture</a> for how the split is enforced.
 </p>
 
-<h2>Prebuilt binaries</h2>
+<h2>Prebuilt binaries, by hand</h2>
 
 <p>
-  Every release attaches static binaries for <code>linux/amd64</code>,
-  <code>linux/arm64</code> and <code>darwin/arm64</code>:
+  The installer above is a wrapper around this. Every release attaches static
+  binaries for <code>linux/amd64</code>, <code>linux/arm64</code>,
+  <code>darwin/amd64</code> and <code>darwin/arm64</code>, plus a
+  <code>checksums.txt</code> covering all of them:
 </p>
 
 <div class="table-wrap">
 <table>
   <thead><tr><th>File</th><th>Build</th></tr></thead>
   <tbody>
-    <tr><td><code>mimux-linux-amd64</code>, <code>mimux-linux-arm64</code>, <code>mimux-darwin-arm64</code></td><td>Free client</td></tr>
-    <tr><td><code>mimux-pro-linux-amd64</code>, <code>mimux-pro-linux-arm64</code>, <code>mimux-pro-darwin-arm64</code></td><td>Client + automation layer</td></tr>
+    <tr><td><code>mimux-linux-amd64</code>, <code>mimux-linux-arm64</code>, <code>mimux-darwin-amd64</code>, <code>mimux-darwin-arm64</code></td><td>Free client</td></tr>
+    <tr><td><code>mimux-pro-linux-amd64</code>, <code>mimux-pro-linux-arm64</code>, <code>mimux-pro-darwin-amd64</code>, <code>mimux-pro-darwin-arm64</code></td><td>Client + automation layer</td></tr>
+    <tr><td><code>checksums.txt</code></td><td>SHA-256 of every file above, in <code>sha256sum</code> format</td></tr>
   </tbody>
 </table>
 </div>
 
-<pre><code>curl -fsSLo mimux https://github.com/mattmezza/mimux/releases/latest/download/mimux-linux-amd64
-chmod +x mimux
-./mimux</code></pre>
+<pre><code>curl -fsSLO https://github.com/mattmezza/mimux/releases/latest/download/mimux-linux-amd64
+curl -fsSLO https://github.com/mattmezza/mimux/releases/latest/download/checksums.txt
+sha256sum --ignore-missing -c checksums.txt
+chmod +x mimux-linux-amd64 &amp;&amp; ./mimux-linux-amd64</code></pre>
 
 <p>
   With no environment set it creates <code>./data/mimux.db</code> and listens on
@@ -220,7 +266,25 @@ chmod +x mimux
 
 <h2>Upgrading</h2>
 
+<p>In a container, pull a new image:</p>
+
 <pre><code>docker compose pull &amp;&amp; docker compose up -d</code></pre>
+
+<p>As a binary, it upgrades itself:</p>
+
+<pre><code>mimux upgrade          # replace this binary with the newest release
+mimux upgrade --check  # just say what is current; exit 1 if outdated
+mimux upgrade --version v0.21.3</code></pre>
+
+<p>
+  It fetches the same build it already is — a pro binary stays pro — verifies it
+  against the release's <code>checksums.txt</code>, and swaps it into place with
+  a rename, so an interrupted download never leaves half a binary on your PATH.
+  If the file belongs to root it says so and prints the <code>sudo</code>
+  command rather than escalating on its own. Run inside a container it refuses
+  outright and points at <code>docker pull</code>, because patching a container
+  layer is undone by the next restart.
+</p>
 
 <p>
   Schema migrations run at boot. There is no separate migration command and no

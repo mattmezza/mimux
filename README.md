@@ -58,7 +58,15 @@ compose here before publishing)_
 docker compose up
 ```
 
-mimux needs **zero configuration** to boot. Open http://localhost:8083 — the first
+Or install the binary — one command, checksum-verified, Linux and macOS on both
+architectures:
+
+```sh
+curl -fsSL https://mimux.dev/install.sh | bash            # the free client
+curl -fsSL https://mimux.dev/install.sh | bash -s -- pro  # + the automation layer
+```
+
+Either way it needs **zero configuration** to boot. Open http://localhost:8083 — the first
 visit walks you through creating your admin account, then add your email
 accounts and API keys from **Settings → Accounts / Integrations**. Everything is
 stored in the SQLite DB; the only knobs outside it are the bootstrap env vars
