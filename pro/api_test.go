@@ -171,6 +171,68 @@ func TestFoldersTree(t *testing.T) {
 	}
 }
 
+// TestListMessagesPagesByMessage: the API's limit counts MESSAGES, not
+// conversations — `mimux mail list -unread -limit 1` handing back a whole
+// five-message thread was the bug — while the cursor still enumerates the scope
+// exactly once and thread_size still reports the whole conversation.
+func TestListMessagesPagesByMessage(t *testing.T) {
+	ta := newTestAPI(t)
+	inbox := seedFolder(t, ta.st, "a1", "INBOX", "inbox")
+	base := time.Now().UTC().Add(-24 * time.Hour)
+	// The newest five messages are one conversation; three singles sit below it.
+	for i := range 5 {
+		seedMsg(t, ta.st, store.Message{
+			Account: "a1", FolderID: inbox, UID: uint32(i + 1),
+			MessageID: fmt.Sprintf("t%d@x", i), Refs: "t0@x", Subject: "thread",
+			Date: base.Add(time.Duration(10+i) * time.Minute),
+		})
+	}
+	for i := range 3 {
+		seedMsg(t, ta.st, store.Message{
+			Account: "a1", FolderID: inbox, UID: uint32(100 + i),
+			MessageID: fmt.Sprintf("s%d@x", i), Subject: "single",
+			Date: base.Add(time.Duration(i) * time.Minute),
+		})
+	}
+
+	var out struct {
+		Data       []messageJSON `json:"data"`
+		NextCursor string        `json:"next_cursor"`
+	}
+	seen := map[int64]bool{}
+	cursor, pages := "", 0
+	for ; pages < 20; pages++ {
+		url := "/v1/messages?unread=true&limit=1&folder=" + fmt.Sprint(inbox)
+		if cursor != "" {
+			url += "&cursor=" + cursor
+		}
+		rec := ta.req(t, http.MethodGet, url, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list = %d: %s", rec.Code, rec.Body.String())
+		}
+		decodeBody(t, rec, &out)
+		if len(out.Data) > 1 {
+			t.Fatalf("limit=1 returned %d messages: %s", len(out.Data), rec.Body.String())
+		}
+		for _, m := range out.Data {
+			if seen[m.ID] {
+				t.Fatalf("message %d returned twice across pages", m.ID)
+			}
+			seen[m.ID] = true
+			if m.Subject == "thread" && m.ThreadSize != 5 {
+				t.Errorf("thread_size = %d on a one-message page, want the whole conversation's 5", m.ThreadSize)
+			}
+		}
+		cursor = out.NextCursor
+		if cursor == "" {
+			break
+		}
+	}
+	if len(seen) != 8 {
+		t.Fatalf("walking limit=1 pages found %d of 8 messages (%d pages)", len(seen), pages)
+	}
+}
+
 func TestListMessagesFiltersAndPagination(t *testing.T) {
 	ta := newTestAPI(t)
 	inbox := seedFolder(t, ta.st, "a1", "INBOX", "inbox")

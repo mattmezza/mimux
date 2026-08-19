@@ -133,10 +133,13 @@ const maxPageLimit = 500
 
 // handleListMessages lists messages newest-first with cursor pagination.
 // Scope: ?folder=<id>, else ?account=<name>'s inbox, else the unified inbox.
-// Filters (unread, starred, since, from, to, subject) are applied to each
-// underlying page, so a filtered response may hold fewer than limit items —
-// keep following next_cursor until it comes back empty. For arbitrary queries
-// use POST /messages/search, which speaks the full query language.
+// It pages by MESSAGE (store.messagePage), not by conversation the way the web
+// UI's list does: limit here is a promise about the size of the response, so a
+// page holds at most limit rows. Filters (unread, starred, since, from, to,
+// subject) are applied to each underlying page, so a filtered response may hold
+// fewer than limit items — keep following next_cursor until it comes back
+// empty. For arbitrary queries use POST /messages/search, which speaks the full
+// query language.
 func (a *api) handleListMessages(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit := defaultPageLimit
@@ -164,16 +167,16 @@ func (a *api) handleListMessages(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusNotFound, "not_found", "No folder with id "+q.Get("folder")+".")
 			return
 		}
-		msgs, next, err = a.store.ListMessagesPage(fid, cursor, limit)
+		msgs, next, err = a.store.ListMessagesPageByMessage(fid, cursor, limit)
 	case q.Get("account") != "":
 		f, ferr := a.store.FolderBySpecial(q.Get("account"), "inbox")
 		if ferr != nil || f == nil {
 			apiError(w, http.StatusNotFound, "not_found", "No inbox folder for account "+q.Get("account")+".")
 			return
 		}
-		msgs, next, err = a.store.ListMessagesPage(f.ID, cursor, limit)
+		msgs, next, err = a.store.ListMessagesPageByMessage(f.ID, cursor, limit)
 	default:
-		msgs, next, err = a.store.ListUnifiedInboxPage(cursor, limit)
+		msgs, next, err = a.store.ListUnifiedInboxPageByMessage(cursor, limit)
 	}
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, "internal", "Couldn't list messages.")
@@ -182,6 +185,12 @@ func (a *api) handleListMessages(w http.ResponseWriter, r *http.Request) {
 
 	// Thread annotation, the same cheap way the HTML list does it: thread the
 	// page, stamp each member with its thread's key and whole-conversation size.
+	// thread_size stays whole-conversation because ConversationSizes is scored
+	// over the whole store, not over the page. thread_id is only page-local: a
+	// conversation straddling a page boundary can be rooted differently on each
+	// side, so group by it within a page, not across pages. Message paging makes
+	// that more likely than conversation paging did, not new — a conversation
+	// with an unread member already spanned pages before.
 	threadOf := map[int64]int64{}
 	threadSize := map[int64]int{}
 	sizes, _ := a.store.ConversationSizes()

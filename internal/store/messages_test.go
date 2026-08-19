@@ -175,6 +175,108 @@ func TestListMessagesPage(t *testing.T) {
 	}
 }
 
+// TestMessagePage: the machine API's pager counts MESSAGES — a page is exactly
+// limit rows however the conversations fall, an old unread row gets no free
+// ride onto page one, and the cursor still walks the whole scope exactly once
+// while rows are inserted at the top and deleted in the middle mid-walk.
+func TestMessagePage(t *testing.T) {
+	s := open(t)
+	inbox, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	day := func(d int) time.Time { return time.Date(2026, 7, d, 0, 0, 0, 0, time.UTC) }
+	put := func(uid uint32, msgID, refs string, at time.Time, read bool) int64 {
+		if err := s.UpsertMessage(&Message{Account: "A", FolderID: inbox, UID: uid, MessageID: msgID,
+			Refs: refs, Subject: "Switching your API", Date: at, IsRead: read}); err != nil {
+			t.Fatal(err)
+		}
+		m, err := s.MessageByFolderUID(inbox, uid)
+		if err != nil || m == nil {
+			t.Fatalf("message %d missing: %v", uid, err)
+		}
+		return m.ID
+	}
+	// Eight messages, newest first by uid. 3 and 8 are one conversation (it will
+	// straddle a page boundary, which is fine here and the whole point); 5 and 6
+	// share a timestamp, so the id tiebreak decides the boundary between them;
+	// 1 is the old unread row that listPage would drag onto page one.
+	mid := func(uid uint32) string { return "m" + string(rune('a'+uid)) + "@x" }
+	ids := map[uint32]int64{}
+	for _, uid := range []uint32{1, 2, 3, 4, 5, 7} {
+		ids[uid] = put(uid, mid(uid), "", day(int(uid)), uid != 1)
+	}
+	ids[6] = put(6, mid(6), "", day(5), true)     // same instant as uid 5
+	ids[8] = put(8, mid(8), mid(3), day(8), true) // replies to uid 3, two pages away
+
+	page := func(before string, limit int) ([]int64, string) {
+		t.Helper()
+		msgs, next, err := s.ListMessagesPageByMessage(inbox, before, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := make([]int64, 0, len(msgs))
+		for _, m := range msgs {
+			out = append(out, m.ID)
+		}
+		return out, next
+	}
+
+	p1, cur1 := page("", 3)
+	if len(p1) != 3 {
+		t.Fatalf("page 1 = %v, want exactly 3 rows (limit counts messages, and the old unread row is not exempt)", p1)
+	}
+	if p1[0] != ids[8] || p1[2] != ids[6] {
+		t.Fatalf("page 1 = %v, want the three newest rows %d,%d,%d", p1, ids[8], ids[7], ids[6])
+	}
+	if cur1 == "" {
+		t.Fatal("page 1 handed out no cursor with five rows still below it")
+	}
+
+	// Churn between the fetches: a sync inserts at the top, an archive removes
+	// from the middle. Neither may skip or duplicate a row further down.
+	put(9, mid(9), "", day(20), true)
+	if _, err := s.DB.Exec(`DELETE FROM messages WHERE id = ?`, ids[4]); err != nil {
+		t.Fatal(err)
+	}
+
+	p2, cur2 := page(cur1, 3)
+	if len(p2) != 3 || p2[0] != ids[5] || p2[1] != ids[3] || p2[2] != ids[2] {
+		t.Fatalf("page 2 = %v, want %d,%d,%d — the deleted row skipped, nothing else shifted",
+			p2, ids[5], ids[3], ids[2])
+	}
+	p3, cur3 := page(cur2, 3)
+	if len(p3) != 1 || p3[0] != ids[1] {
+		t.Fatalf("page 3 = %v, want just %d", p3, ids[1])
+	}
+	if cur3 != "" {
+		t.Errorf("last page still offers a cursor (%q): the caller would loop forever", cur3)
+	}
+	seen := map[int64]bool{}
+	for _, ids := range [][]int64{p1, p2, p3} {
+		for _, id := range ids {
+			if seen[id] {
+				t.Errorf("message %d returned on two pages", id)
+			}
+			seen[id] = true
+		}
+	}
+	if len(seen) != 7 { // the 8 rows the walk started on, minus the deleted one
+		t.Errorf("the walk covered %d of the 7 surviving rows: %v", len(seen), seen)
+	}
+
+	// The unified scope pages by message the same way, and stays folder-joined.
+	other, _ := s.UpsertFolder("B", "Archive", "archive", 0)
+	put2 := &Message{Account: "B", FolderID: other, UID: 1, MessageID: "arch@x", Date: day(19), IsRead: true}
+	if err := s.UpsertMessage(put2); err != nil {
+		t.Fatal(err)
+	}
+	uni, _, err := s.ListUnifiedInboxPageByMessage("", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(uni) != 2 || uni[0].MessageID != "mj@x" {
+		t.Fatalf("unified page = %+v, want 2 inbox rows newest first", uni)
+	}
+}
+
 // TestConversationSizes: a list row must show the WHOLE conversation's size the
 // way gmail.com does — the Sent reply counts, Gmail's All Mail/Important copies
 // of one message do not — even though the list itself only ever sees the inbox

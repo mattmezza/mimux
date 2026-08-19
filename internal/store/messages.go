@@ -124,6 +124,81 @@ func (s *Store) ListUnifiedInboxPage(before string, limit int) ([]Message, strin
 	return s.listPage(`f.special_use = 'inbox'`, nil, before, limit)
 }
 
+// ListMessagesPageByMessage is ListMessagesPage paged by message — see messagePage.
+func (s *Store) ListMessagesPageByMessage(folderID int64, before string, limit int) ([]Message, string, error) {
+	return s.messagePage(`folder_id = ?`, []any{folderID}, before, limit)
+}
+
+// ListUnifiedInboxPageByMessage is ListUnifiedInboxPage paged by message — see messagePage.
+func (s *Store) ListUnifiedInboxPageByMessage(before string, limit int) ([]Message, string, error) {
+	return s.messagePage(`folder_id IN (SELECT id FROM folders WHERE special_use = 'inbox')`, nil, before, limit)
+}
+
+// messagePage returns one page of a list scope, newest first, paged by MESSAGE:
+// at most limit rows, whatever conversations they happen to belong to. The
+// machine API pages with this, where limit is a promise about how big the
+// response is; the web UI keeps listPage, whose conversation-shaped pages are
+// what stop a thread rendering as two half-rows across a boundary.
+//
+// The cursor is listPage's, format and rationale both (read it there): a (date,
+// id) position rather than an offset, because the scope churns under the pager
+// — a sync inserts at the top, an archive removes from the middle — and an
+// offset skips and duplicates rows across exactly that. Rows newer than the
+// cursor are simply not on later pages, which is the same promise listPage
+// makes. The folders subquery does what listPage's join does: a row orphaned by
+// a deleted folder is invisible to the reading pane, so it stays invisible here.
+func (s *Store) messagePage(where string, args []any, before string, limit int) ([]Message, string, error) {
+	if date, id, ok := splitCursor(before); ok {
+		where += ` AND (date < ? OR (date = ? AND id < ?))`
+		args = append(args, date, date, id)
+	}
+	// One row past the page: that is what makes "is there more" exact instead of
+	// one empty page late.
+	// #nosec G202 -- where is a fixed fragment from this package; every value is bound.
+	rows, err := s.DB.Query(`SELECT `+messageCols+` FROM messages WHERE `+where+
+		` ORDER BY date DESC, id DESC LIMIT ?`, append(args, limit+1)...)
+	if err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []Message
+	for rows.Next() {
+		m, err := scanMessage(rows)
+		if err != nil {
+			return nil, "", err
+		}
+		out = append(out, *m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, "", err
+	}
+	if len(out) <= limit { // nothing left below: the sentinel must go away
+		return out, "", nil
+	}
+	out = out[:limit]
+	last := out[limit-1]
+	return out, cursorKey(last.Date.UTC().Format(time.RFC3339), last.ID), nil
+}
+
+// cursorKey builds the opaque list cursor both pagers hand out: the stored UTC
+// RFC3339 date (fixed width, so it compares as a plain string, in Go and in a
+// URL alike) with the row id merely breaking ties.
+func cursorKey(date string, id int64) string { return date + "_" + strconv.FormatInt(id, 10) }
+
+// splitCursor reverses cursorKey. !ok means "start at the top": an empty cursor
+// is page one, and a malformed one can only come from a caller that invented it.
+func splitCursor(c string) (date string, id int64, ok bool) {
+	i := strings.LastIndex(c, "_") // dates hold no underscore
+	if i < 0 {
+		return "", 0, false
+	}
+	id, err := strconv.ParseInt(c[i+1:], 10, 64)
+	if err != nil {
+		return "", 0, false
+	}
+	return c[:i], id, true
+}
+
 // listPage returns one page of a list scope, newest first, paged by
 // CONVERSATION rather than by row: a page holds every message of the
 // conversations whose newest message falls in its band, so a page boundary can
@@ -168,10 +243,9 @@ func (s *Store) listPage(where string, args []any, before string, limit int) ([]
 		}
 		c.ids = append(c.ids, r.ID)
 		c.unread = c.unread || !r.Read
-		// Dates are stored as UTC RFC3339 (fixed width), so they sort
-		// lexicographically and the id merely breaks ties: the whole cursor is a
-		// plain string compare, in Go and in the URL alike.
-		if k := r.Date + "_" + strconv.FormatInt(r.ID, 10); k > c.key {
+		// cursorKey compares as a plain string, so the newest member is just the
+		// biggest one.
+		if k := cursorKey(r.Date, r.ID); k > c.key {
 			c.key = k
 		}
 	}

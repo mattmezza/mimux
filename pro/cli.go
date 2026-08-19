@@ -419,7 +419,7 @@ func cliList(c *cliClient, args []string) error {
 	fs := c.flags("list")
 	account := fs.String("account", "", "that account's inbox instead of the unified one")
 	folder := fs.Int64("folder", 0, "a folder id (from `mimux mail folders`)")
-	limit := fs.Int("limit", 50, "conversations per page, 1-500 (a page holds every message in them)")
+	limit := fs.Int("limit", 50, "messages per page, 1-500")
 	unread := fs.Bool("unread", false, "only unread")
 	starred := fs.Bool("starred", false, "only starred")
 	cursor := fs.String("cursor", "", "next_cursor from a previous page")
