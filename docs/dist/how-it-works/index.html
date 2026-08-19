@@ -174,11 +174,33 @@
   runtime; see <a href="../architecture/">Architecture</a>.
 </p>
 
+<h2>Drafts follow you to your other clients</h2>
+
+<p>
+  Saved drafts — and autosaved ones, if you turn autosave on — are written to
+  SQLite first and then appended to your account's IMAP Drafts folder, so the
+  half-written reply you left here is waiting on your phone. The local write is
+  what makes that safe: publishing happens in the background, and a mail server
+  that is slow, unreachable or mid-reauth costs a retry on the next sync cycle,
+  never the draft.
+</p>
+
+<p>
+  IMAP has no "edit this message", so every save appends a fresh copy and then
+  removes the one it replaces, keyed by a Message-ID that stays the same for the
+  life of the draft. Interrupted halfway, you get a duplicate revision rather
+  than a hole where the draft used to be. An account whose server has no Drafts
+  mailbox gets one created; a server that refuses is not an error, the draft
+  simply stays local until it can be published.
+</p>
+
 <div class="note">
   <p>
-    <strong>Known limitations as of v0.20.</strong> Drafts are local-only —
-    autosaved to SQLite, not appended to the IMAP Drafts folder, so they do not
-    follow you to another client. Offline mode is read-only: the service worker
+    <strong>Known limitations as of v0.20.</strong> Attachments are not kept
+    with a draft yet — they only ride along when you send, and compose says so
+    when you save one with files attached. A draft written in another client
+    shows up in the drafts list but opens read-only for now.
+    Offline mode is read-only: the service worker
     falls back to your last-synced inbox, and any action needs the server.
     Gmail label display and the <code>label:</code> filter action are dormant,
     because the upstream go-imap v2 library cannot fetch
