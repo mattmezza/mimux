@@ -27,7 +27,8 @@ func mcpSession(t *testing.T, scopes string) (*mcp.ClientSession, *api, *store.S
 	st := openStore(t)
 	cfg := &config.Config{Accounts: []config.Account{{Name: "a1", Email: "me@example.test"}}}
 	m := mail.NewManager(cfg, st)
-	a := newAPI(ext.Deps{Mail: m, Store: st, Cfg: cfg}, newWebhooks(ext.Deps{Mail: m, Store: st, Cfg: cfg}))
+	deps := ext.Deps{Mail: m, Store: st, Cfg: cfg}
+	a := newAPI(deps, newWebhooks(deps, newLicenceGate(deps)))
 	tok := &store.APIToken{Label: "t", Scopes: scopes, Hash: "x"}
 	if err := st.CreateAPIToken(tok); err != nil {
 		t.Fatal(err)

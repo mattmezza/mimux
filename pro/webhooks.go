@@ -70,19 +70,24 @@ var retryLadder = []time.Duration{
 }
 
 type webhooks struct {
-	store  *store.Store
-	mail   *mail.Manager
-	cfg    *config.Config
-	client *http.Client
-	tick   time.Duration
-	ladder []time.Duration
+	store   *store.Store
+	mail    *mail.Manager
+	cfg     *config.Config
+	licence *licenceGate
+	client  *http.Client
+	tick    time.Duration
+	ladder  []time.Duration
 }
 
-func newWebhooks(deps ext.Deps) *webhooks {
+// newWebhooks takes the licence gate rather than reaching for one: without a
+// valid licence this engine stops posting (see drain), and a required argument
+// is the only way to make that impossible to forget at a call site.
+func newWebhooks(deps ext.Deps, licence *licenceGate) *webhooks {
 	return &webhooks{
-		store: deps.Store,
-		mail:  deps.Mail,
-		cfg:   deps.Cfg,
+		store:   deps.Store,
+		mail:    deps.Mail,
+		cfg:     deps.Cfg,
+		licence: licence,
 		client: &http.Client{
 			Timeout: webhookTimeout,
 			CheckRedirect: func(_ *http.Request, via []*http.Request) error {
@@ -324,7 +329,18 @@ func (e *webhooks) queue(ep *store.WebhookEndpoint, event string, data any) *sto
 }
 
 // drain sends every delivery whose next attempt has come.
+//
+// An unlicensed install drains nothing. The lapse acts exactly like the pause
+// switch an endpoint already has, but global: events keep translating into
+// delivery rows, the rows stay pending, and the first drain after a valid key
+// lands sends them. Checked here and not in translate/queue — the alternative,
+// dropping events on the floor, loses what no receiver can ask for again — and
+// deliberately not counted as a failed attempt, because a lapsed licence must
+// not walk the retry ladder and auto-disable every endpoint the operator owns.
 func (e *webhooks) drain(ctx context.Context) {
+	if s := e.licence.current(time.Now()); !s.Allowed {
+		return
+	}
 	due, err := e.store.DueWebhookDeliveries(time.Now(), webhookBatch)
 	if err != nil {
 		slog.Error("webhooks: due", "err", err)

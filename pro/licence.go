@@ -23,10 +23,11 @@ import (
 
 // Licence enforcement covers this package and nothing else. Mail never stops:
 // sync, send, search, the whole HTML client are AGPL code that has no idea this
-// file exists. Without a valid licence or a live trial, exactly two things stop
-// answering — /api/v1/* and /api/mcp — and they say so in a way that names the
-// fix. /api/health and /api/v1/openapi.json stay open unconditionally: a probe
-// and the documentation are not the product.
+// file exists. Without a valid licence or a live trial, exactly three things
+// stop — /api/v1/* and /api/mcp answer 402, and the webhook engine holds its
+// queue instead of posting (pro/webhooks.go) — and they say so in a way that
+// names the fix. /api/health and /api/v1/openapi.json stay open
+// unconditionally: a probe and the documentation are not the product.
 //
 // Verification is offline and signature-only. There is no phone-home, no
 // activation call, no machine fingerprint: a signed key is presented, ed25519
@@ -183,9 +184,10 @@ func checkLicence(p licencePayload, buildVersion, source string, now time.Time) 
 			s.Allowed = false
 			s.Code = "licence_version"
 			s.Message = fmt.Sprintf("This perpetual licence covers mimux up to %s; this build is %s. "+
-				"Renew at %s to cover %s, or run %s. Mail itself keeps working either way.",
+				"Renew at %s to cover %s, or run %s. Webhook deliveries queue up until then, "+
+				"and mail itself keeps working either way.",
 				p.Watermark, buildVersion, accountURL, buildVersion, p.Watermark)
-			s.Line = fmt.Sprintf("Perpetual licence covers up to %s, this build is %s — API and MCP are paused (%s, from %s).",
+			s.Line = fmt.Sprintf("Perpetual licence covers up to %s, this build is %s — API, MCP and webhook deliveries are paused (%s, from %s).",
 				p.Watermark, buildVersion, who, source)
 			return s
 		}
@@ -200,15 +202,17 @@ func checkLicence(p licencePayload, buildVersion, source string, now time.Time) 
 		s.Line = fmt.Sprintf("Annual licence, expires %s (%s, from %s).", day(exp), who, source)
 	case now.Before(graceEnd):
 		s.Warning = fmt.Sprintf("licence expired %s; API stops %s", day(exp), day(graceEnd))
-		s.Line = fmt.Sprintf("Annual licence expired %s — grace period, API and MCP stop %s (%s, from %s).",
+		s.Line = fmt.Sprintf("Annual licence expired %s — grace period, API, MCP and webhook deliveries stop %s (%s, from %s).",
 			day(exp), day(graceEnd), who, source)
 	default:
 		s.Allowed = false
 		s.Code = "licence_required"
 		s.Message = fmt.Sprintf("This licence expired on %s and its %d-day grace period ended on %s, "+
-			"so the API and MCP endpoints are paused. Renew at %s. Your mail keeps syncing and sending as normal.",
+			"so the API and MCP endpoints are paused and webhook deliveries are held in the queue "+
+			"instead of being sent. Renew at %s and everything held goes out. "+
+			"Your mail keeps syncing and sending as normal.",
 			day(exp), graceDays, day(graceEnd), accountURL)
-		s.Line = fmt.Sprintf("Annual licence expired %s, grace ended %s — API and MCP are paused (%s, from %s).",
+		s.Line = fmt.Sprintf("Annual licence expired %s, grace ended %s — API, MCP and webhook deliveries are paused (%s, from %s).",
 			day(exp), day(graceEnd), who, source)
 	}
 	return s
@@ -238,9 +242,10 @@ func trialState(st *store.Store, now time.Time, source, invalid string) licenceS
 		s.Allowed = false
 		s.Code = "licence_required"
 		s.Message = fmt.Sprintf("The %d-day trial of the mimux pro layer ended on %s, so the API and MCP "+
-			"endpoints are paused. Get a licence at %s and paste it into Settings → Licence. "+
+			"endpoints are paused and webhook deliveries are held in the queue instead of being sent. "+
+			"Get a licence at %s and paste it into Settings → Licence; anything held then goes out. "+
 			"Your mail keeps syncing and sending as normal.", trialDays, day(end), accountURL)
-		s.Line = fmt.Sprintf("Trial ended %s — API and MCP are paused.", day(end))
+		s.Line = fmt.Sprintf("Trial ended %s — API, MCP and webhook deliveries are paused.", day(end))
 	}
 	if invalid != "" {
 		s.Line = "Licence key is not valid (" + invalid + "). " + s.Line
@@ -353,7 +358,7 @@ func newLicenceGate(deps ext.Deps) *licenceGate {
 	if s.Allowed {
 		slog.Info("licence", "status", s.Line)
 	} else {
-		slog.Warn("licence: the API and MCP endpoints are paused (mail is unaffected)",
+		slog.Warn("licence: the API and MCP endpoints are paused and webhook deliveries are held (mail is unaffected)",
 			"code", s.Code, "status", s.Line, "get one", accountURL)
 	}
 	return g

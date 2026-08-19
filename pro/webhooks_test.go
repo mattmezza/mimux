@@ -41,7 +41,8 @@ func testEngine(t *testing.T, ladder ...time.Duration) (*webhooks, *store.Store,
 	st := openStore(t)
 	cfg := &config.Config{}
 	m := mail.NewManager(cfg, st)
-	e := newWebhooks(ext.Deps{Mail: m, Store: st, Cfg: cfg})
+	deps := ext.Deps{Mail: m, Store: st, Cfg: cfg}
+	e := newWebhooks(deps, newLicenceGate(deps))
 	e.tick = 10 * time.Millisecond
 	if len(ladder) > 0 {
 		e.ladder = ladder
@@ -173,6 +174,48 @@ func TestWebhookDeliverySucceeds(t *testing.T) {
 	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
 	if len(log) != 1 || log[0].Status != store.WebhookOK || log[0].Attempts != 1 || log[0].DeliveredAt.IsZero() {
 		t.Fatalf("delivery not marked ok: %+v", log)
+	}
+}
+
+// TestWebhookLicenceLapseHoldsTheQueue: a lapsed licence is a global pause. The
+// event still becomes a delivery row, nothing goes out, no attempt is spent
+// (so the ladder cannot auto-disable an endpoint over an unpaid invoice), and
+// the first drain after a valid key lands sends the backlog.
+func TestWebhookLicenceLapseHoldsTheQueue(t *testing.T) {
+	rc := newRecorder(http.StatusOK)
+	srv := httptest.NewServer(rc)
+	defer srv.Close()
+
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, srv.URL, "message.received")
+	// Expired, and well past the grace period.
+	e.cfg.LicenceKey = annualKey(t, time.Now().AddDate(0, 0, -(graceDays + 30)))
+	e.licence.forceRecheck()
+
+	if !e.fire("message.received", map[string]any{"subject": "hi"}) {
+		t.Fatal("an unlicensed engine stopped queueing events")
+	}
+	e.drain(context.Background())
+	if rc.count() != 0 {
+		t.Fatalf("an expired licence delivered %d webhooks", rc.count())
+	}
+	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 || log[0].Status != store.WebhookPending || log[0].Attempts != 0 {
+		t.Fatalf("the held delivery is not untouched: %+v", log)
+	}
+	if back, _ := st.WebhookEndpointByID(ep.ID); back == nil || !back.Active {
+		t.Fatal("a licence lapse disabled the endpoint")
+	}
+
+	e.cfg.LicenceKey = annualKey(t, time.Now().AddDate(0, 6, 0))
+	e.licence.forceRecheck()
+	e.drain(context.Background())
+	if rc.count() != 1 {
+		t.Fatalf("a renewed licence drained %d webhooks, want 1", rc.count())
+	}
+	log, _ = st.ListWebhookDeliveries(ep.ID, 10)
+	if len(log) != 1 || log[0].Status != store.WebhookOK {
+		t.Fatalf("the held delivery did not go out: %+v", log)
 	}
 }
 

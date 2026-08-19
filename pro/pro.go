@@ -47,8 +47,10 @@ func routes(deps ext.Deps) ext.Extension {
 	// The webhook delivery engine: subscribes to the mail hub and drains the
 	// delivery queue for as long as the process lives. Started here because
 	// this is the pro layer's only entry point — the free build has the
-	// endpoints table and the Settings UI, and nothing that posts.
-	hooks := newWebhooks(deps)
+	// endpoints table and the Settings UI, and nothing that posts. Licensed
+	// like the rest of this package: an expired licence holds deliveries in the
+	// queue instead of posting them.
+	hooks := newWebhooks(deps, licence)
 	go hooks.run(context.Background())
 	a := newAPI(deps, hooks)
 	// The MCP endpoint: same tokens, same scopes, agent-shaped. Stateless
