@@ -65,6 +65,18 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
 </p>
 
 <p>
+  A sync cycle walks a <strong>set of folders</strong>, not just the inbox: the
+  inbox, Sent and Drafts to begin with, plus whatever else you tick per account
+  in <em>Settings &rarr; Syncing</em>. That is what makes mail you sent from
+  your phone turn up here within the cycle rather than on the next reconnect.
+  Each extra folder costs a round of IMAP traffic every cycle, so the list is a
+  choice rather than "everything"; folders outside it are re-read whenever the
+  connection is re-established. The inbox comes last in the cycle and is the
+  mailbox IDLE waits on, and it always syncs &mdash; it is the one folder the
+  unread badge and notifications assume is current.
+</p>
+
+<p>
   Sync is one-directional-with-writeback rather than a full two-way mirror:
   messages and flags come down, and your actions (read, star, move, delete) are
   applied locally first and pushed to the server behind the request, so the

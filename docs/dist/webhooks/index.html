@@ -128,9 +128,11 @@
   <li><strong>CONDSTORE servers only.</strong> The diff rides the same
     <code>CHANGEDSINCE</code> fetch the flag sync uses. A server without
     CONDSTORE gets no external-change events at all.</li>
-  <li><strong>The inbox, in the steady state.</strong> Other folders are only
-    re-read when the connection is re-established, so a star applied in Archive
-    is noticed on the next reconnect, not within the minute.</li>
+  <li><strong>The folders that account syncs continuously.</strong> The inbox,
+    Sent and Drafts by default; add more per account in <em>Settings →
+    Syncing</em>. Anything outside that set is only re-read when the connection
+    is re-established, so a star applied in Archive is noticed on the next
+    reconnect, not within the minute.</li>
   <li><strong>Bursts are dropped.</strong> The first sync after an outage can
     carry hundreds of changes at once. That is a catch-up, not live activity, so
     past <em>Settings → Webhooks → External change burst limit</em> (200 by
