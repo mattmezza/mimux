@@ -616,6 +616,19 @@ func (s *Store) MaxUID(folderID int64) (uint32, error) {
 	return uint32(u.Int64), nil // #nosec G115 -- UID fits uint32 by protocol
 }
 
+// MessageUIDByMessageID resolves a folder's UID for a Message-ID (highest wins
+// if a server kept more than one copy), 0 when the folder holds none. It is how
+// a draft revision APPENDed to a server that reported no APPENDUID gets located
+// after the folder syncs.
+func (s *Store) MessageUIDByMessageID(folderID int64, messageID string) (uint32, error) {
+	var u sql.NullInt64
+	if err := s.DB.QueryRow(`SELECT MAX(uid) FROM messages WHERE folder_id = ? AND message_id = ?`,
+		folderID, messageID).Scan(&u); err != nil {
+		return 0, err
+	}
+	return uint32(u.Int64), nil // #nosec G115 -- UID fits uint32 by protocol
+}
+
 // SetRead records a LOCAL read/unread decision: it flips is_read and marks the
 // \Seen push as still owed (seen_dirty). Every local entry point goes through
 // here — the read handler, mark-read-at-open, filter rules — so the intent
