@@ -5,6 +5,7 @@
 package pro
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -487,5 +488,83 @@ func waitFor(t *testing.T, rc *recorder, n int) {
 			t.Fatalf("receiver got %d deliveries, want %d", rc.count(), n)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// listen opens the NDJSON stream against a real server (a ResponseRecorder
+// cannot be read while it is being written) and returns a decoder over it.
+func listen(t *testing.T, ta *testAPI, query string) *json.Decoder {
+	t.Helper()
+	srv := httptest.NewServer(ta.h)
+	t.Cleanup(srv.Close)
+	req, err := http.NewRequest(http.MethodGet, srv.URL+"/v1/webhooks/listen"+query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+ta.secret)
+	res, err := srv.Client().Do(req) //nolint:bodyclose // closed by the cleanup below
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = res.Body.Close() })
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("listen = %d", res.StatusCode)
+	}
+	if ct := res.Header.Get("Content-Type"); ct != "application/x-ndjson" {
+		t.Errorf("content-type = %q", ct)
+	}
+	if res.Header.Get("X-Accel-Buffering") != "no" {
+		t.Error("nginx will buffer this stream")
+	}
+	return json.NewDecoder(res.Body)
+}
+
+// A test delivery reaches a live listener, with the same payload — and the same
+// signature over it — a real receiver would get.
+func TestWebhookListenStreamsEvents(t *testing.T) {
+	ta := newTestAPI(t)
+	id, _ := createWebhook(t, ta, "https://example.test/hook", "message.received")
+	dec := listen(t, ta, "")
+
+	rec := ta.req(t, http.MethodPost, "/v1/webhooks/"+strconv.FormatInt(id, 10)+"/test", nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("test = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var ev liveEvent
+	if err := dec.Decode(&ev); err != nil {
+		t.Fatalf("decoding the stream: %v", err)
+	}
+	if ev.Type != "event" || ev.Event != "ping" || ev.ID == "" {
+		t.Fatalf("streamed line = %+v", ev)
+	}
+	var body struct{ ID, Event string }
+	if err := json.Unmarshal(ev.Payload, &body); err != nil || body.ID != ev.ID || body.Event != "ping" {
+		t.Fatalf("payload is not the delivery envelope: %s", ev.Payload)
+	}
+}
+
+func TestWebhookListenEventsFilter(t *testing.T) {
+	ta := newTestAPI(t)
+	id, _ := createWebhook(t, ta, "https://example.test/hook")
+	dec := listen(t, ta, "?events=message.received,sync.error")
+
+	// A ping is not in the filter, so it must not appear; the keepalive is 30s
+	// away, so the only way to prove a negative here is a short read deadline.
+	rec := ta.req(t, http.MethodPost, "/v1/webhooks/"+strconv.FormatInt(id, 10)+"/test", nil)
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("test = %d", rec.Code)
+	}
+	got := make(chan liveEvent, 1)
+	go func() {
+		var ev liveEvent
+		if err := dec.Decode(&ev); err == nil {
+			got <- ev
+		}
+	}()
+	select {
+	case ev := <-got:
+		t.Fatalf("the filter let %q through", ev.Event)
+	case <-time.After(300 * time.Millisecond):
 	}
 }

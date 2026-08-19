@@ -67,6 +67,7 @@ func (a *api) mount(r chi.Router) {
 		r.Use(requireScope("webhooks:manage"))
 		r.Get("/webhooks", a.handleListWebhooks)
 		r.Post("/webhooks", a.handleCreateWebhook)
+		r.Get("/webhooks/listen", a.handleListenWebhooks)
 		r.Patch("/webhooks/{id}", a.handlePatchWebhook)
 		r.Delete("/webhooks/{id}", a.handleDeleteWebhook)
 		r.Post("/webhooks/{id}/pause", a.handlePauseWebhook)

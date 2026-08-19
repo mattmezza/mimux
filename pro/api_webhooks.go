@@ -6,8 +6,10 @@ package pro
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -403,6 +405,68 @@ func (a *api) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	a.sendSoon()
 	writeJSONStatus(w, http.StatusAccepted, toDeliveryJSON(*d))
+}
+
+// listenKeepalive is how often an idle stream emits a `ping` line. It stops a
+// quiet connection being closed by a proxy or a NAT table, and it is where the
+// licence is re-checked.
+const listenKeepalive = 30 * time.Second
+
+// handleListenWebhooks streams events as NDJSON for as long as the caller keeps
+// reading — the local-development half of webhooks, driven by
+// `mimux mail webhooks listen`.
+//
+// It is not an endpoint and has no delivery log: a listener sees everything
+// that fires regardless of what any endpoint is subscribed to, and events that
+// happen while nothing is connected are simply not seen. That is the trade for
+// needing no configuration at all, and it is what the docs say plainly.
+//
+// Safe to hold open: the server sets no write timeout (see cmd/mimux/main.go),
+// because /events is already a long-lived SSE stream.
+func (a *api) handleListenWebhooks(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		apiError(w, http.StatusInternalServerError, "internal", "This server can't stream.")
+		return
+	}
+	var events []string
+	if v := r.URL.Query().Get("events"); v != "" {
+		events = strings.Split(v, ",")
+	}
+	l, remove := a.hooks.addListener(events)
+	defer remove()
+
+	w.Header().Set("Content-Type", "application/x-ndjson")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no") // nginx buffers a response body by default
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush() // the client should know it is connected before the first event
+
+	enc := json.NewEncoder(w)
+	tick := time.NewTicker(listenKeepalive)
+	defer tick.Stop()
+	for {
+		var line liveEvent
+		select {
+		case <-r.Context().Done():
+			return
+		case line = <-l.ch:
+		case <-tick.C:
+			// The licence gate is middleware: it ran once, at request entry, and
+			// this response can outlive a key by hours. Re-check on the keepalive
+			// rather than leave a lapsed install streaming indefinitely.
+			if s := a.hooks.licence.current(time.Now()); !s.Allowed {
+				_ = enc.Encode(liveEvent{Type: "error", Message: s.Message})
+				flusher.Flush()
+				return
+			}
+			line = liveEvent{Type: "ping"}
+		}
+		if err := enc.Encode(line); err != nil {
+			return // the client hung up mid-write
+		}
+		flusher.Flush()
+	}
 }
 
 // deliveryOr404 loads the {did} delivery and checks it belongs to ep.
