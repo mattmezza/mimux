@@ -2,6 +2,7 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-imap/v2/imapserver/imapmemserver"
 
 	"github.com/mattmezza/mimux/internal/config"
 	"github.com/mattmezza/mimux/internal/store"
@@ -174,6 +176,99 @@ func TestPushDraftCarriesAttachmentsAndBcc(t *testing.T) {
 	}
 	if got.Bcc != "quiet@example.com" {
 		t.Errorf("Bcc in the published copy = %q, want it kept — a draft is stored, not sent", got.Bcc)
+	}
+}
+
+// foreignDraft leaves a draft in the Drafts folder the way another client
+// would, syncs it in, and returns the stored message row for it.
+func foreignDraft(t *testing.T, a *account, c *imapclient.Client, user *imapmemserver.User, in ComposeInput) *store.Message {
+	t.Helper()
+	raw, _, err := BuildMessage(config.Account{Name: "phone", Email: "me@example.com"}, in, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := user.Append("Drafts", literal{bytes.NewReader(raw)},
+		&imap.AppendOptions{Flags: []imap.Flag{imap.FlagDraft, imap.FlagSeen}}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := a.m.st.FolderBySpecial("acct", "drafts")
+	if err != nil || f == nil {
+		t.Fatalf("no Drafts folder: %v", err)
+	}
+	if _, err := a.syncFolder(context.Background(), c, f, c.Caps()); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := a.m.st.ListMessages(f.ID, 10)
+	if err != nil || len(msgs) != 1 {
+		t.Fatalf("ListMessages = %v, %v, want the appended draft", msgs, err)
+	}
+	return &msgs[0]
+}
+
+// TestAdoptDraftFromAnotherClient: a draft written on the phone opens here for
+// editing, files and Bcc and all, and the first save replaces that very copy
+// rather than leaving a second one beside it.
+func TestAdoptDraftFromAnotherClient(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+	msg := foreignDraft(t, a, c, user, ComposeInput{
+		To: []string{"Ada <ada@example.com>"}, Cc: []string{"bob@example.com"},
+		Bcc: []string{"quiet@example.com"}, Subject: "from the phone",
+		Body: "half a thought", KeepBcc: true, MessageID: "phone-1@example.com",
+		Attachments: []OutAttachment{{Filename: "photo.jpg", ContentType: "image/jpeg", Data: []byte("jpegbytes")}},
+	})
+
+	d, err := a.m.adoptDraft(context.Background(), c, msg)
+	if err != nil {
+		t.Fatalf("adopt: %v", err)
+	}
+	// The display name comes back RFC-quoted; a bare address stays bare.
+	if d.To != `"Ada" <ada@example.com>` || d.Cc != "bob@example.com" || d.Bcc != "quiet@example.com" {
+		t.Errorf("recipients = %q / %q / %q", d.To, d.Cc, d.Bcc)
+	}
+	if d.Subject != "from the phone" || !strings.Contains(d.Body, "half a thought") {
+		t.Errorf("adopted draft = %+v", d)
+	}
+	if d.MessageID != msg.MessageID || d.FolderID != msg.FolderID || d.UID != msg.UID {
+		t.Fatalf("adopted row = %+v, want it seeded from the mailbox copy %+v", d, msg)
+	}
+	if d.IMAPDirty {
+		t.Error("adoption owes a push, but nothing has been edited yet")
+	}
+	atts, err := st.DraftAttachments(d.ID)
+	if err != nil || len(atts) != 1 || atts[0].Filename != "photo.jpg" || string(atts[0].Data) != "jpegbytes" {
+		t.Fatalf("adopted attachments = %+v, %v", atts, err)
+	}
+
+	// Opening it a second time is the same draft, not a second one.
+	again, err := a.m.adoptDraft(context.Background(), c, msg)
+	if err != nil || again.ID != d.ID {
+		t.Fatalf("second open = %+v, %v, want the row the first one created (%d)", again, err, d.ID)
+	}
+	if all, _ := st.ListDrafts(); len(all) != 1 {
+		t.Fatalf("%d local drafts after adopting one twice", len(all))
+	}
+
+	// Editing and saving replaces the copy it came from.
+	d.Body = "a whole thought"
+	saved := saveAndPush(t, a, c, d)
+	copies := draftCopies(t, c, "Drafts")
+	if len(copies) != 1 {
+		t.Fatalf("Drafts holds %d copies (%v) after the first save, want 1", len(copies), copies)
+	}
+	if copies[0].MessageID != saved.MessageID {
+		t.Errorf("surviving copy is %+v, want the adopted draft's own", copies[0])
+	}
+	got, _, err := parseDraftMessage(draftRaw(t, c, "Drafts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got.Body, "a whole thought") || got.Bcc != "quiet@example.com" {
+		t.Errorf("republished draft = %+v, want the edit and the Bcc kept", got)
 	}
 }
 

@@ -119,6 +119,20 @@ func (s *Store) DraftByID(id int64) (*Draft, error) {
 	return d, err
 }
 
+// DraftByServerCopy finds the local draft that owns a particular copy sitting
+// in a mailbox: by Message-ID, which survives every revision, or — for a draft
+// written elsewhere that carries none — by where the copy actually is. Nil
+// means no local row owns it: a draft from another client, not yet adopted.
+func (s *Store) DraftByServerCopy(account, messageID string, folderID int64, uid uint32) (*Draft, error) {
+	d, err := scanDraft(s.DB.QueryRow(`SELECT `+draftCols+` FROM drafts
+		WHERE account = ? AND ((message_id <> '' AND message_id = ?) OR (uid <> 0 AND folder_id = ? AND uid = ?))
+		LIMIT 1`, account, messageID, folderID, uid))
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	return d, err
+}
+
 // ListDrafts returns every local draft, most recently updated first.
 func (s *Store) ListDrafts() ([]Draft, error) {
 	rows, err := s.DB.Query(`SELECT ` + draftCols + ` FROM drafts ORDER BY updated_at DESC`)

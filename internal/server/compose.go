@@ -143,33 +143,15 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	// no new row, no reply prefill.
 	if draftID, err := strconv.ParseInt(r.URL.Query().Get("draft"), 10, 64); err == nil && draftID > 0 {
 		if d, err := s.store.DraftByID(draftID); err == nil && d != nil {
-			refs := ""
-			if d.InReplyTo != "" {
-				// NOTE: a reopened draft only remembers its immediate
-				// parent, not the full References chain — still threads
-				// correctly via In-Reply-To in every mail client that matters.
-				refs = "<" + d.InReplyTo + ">"
-			}
-			from := ""
-			if ac, ok := s.accountByName(d.Account); ok {
-				from = ac.Email
-			}
-			mode := d.Mode
-			if mode == "" {
-				mode = view.Mode
-			}
-			atts, err := s.store.DraftAttachments(d.ID)
-			if err != nil {
-				slog.Error("compose: draft attachments", "draft", d.ID, "err", err)
-			}
-			s.renderCompose(w, composeView{
-				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
-				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
-				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
-				Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave, Attachments: atts,
-			})
+			s.renderDraft(w, view, prefs, d)
 			return
 		}
+	}
+	// Editing a draft written in another client: adopt it first (see
+	// mail.Manager.AdoptDraft), then it is a local draft like any other.
+	if msgID, err := strconv.ParseInt(r.URL.Query().Get("adopt"), 10, 64); err == nil && msgID > 0 {
+		s.adoptAndOpen(w, r, view, prefs, msgID)
+		return
 	}
 	if replyID, err := strconv.ParseInt(r.URL.Query().Get("reply"), 10, 64); err == nil && replyID > 0 {
 		if orig, err := s.store.MessageByID(replyID); err == nil && orig != nil {
@@ -181,6 +163,59 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	// Fresh open (new/reply/forward): the client auto-inserts the linked signature.
 	view.AutoSignature = true
 	s.renderCompose(w, view)
+}
+
+// renderDraft opens a stored draft in compose: its fields, its kept files, and
+// the layout its kind asks for. view supplies what the request knows (CSRF,
+// accounts, prefs) and the draft supplies the rest.
+func (s *Server) renderDraft(w http.ResponseWriter, view composeView, prefs store.Prefs, d *store.Draft) {
+	refs := ""
+	if d.InReplyTo != "" {
+		// NOTE: a reopened draft only remembers its immediate parent, not the
+		// full References chain — still threads correctly via In-Reply-To in
+		// every mail client that matters.
+		refs = "<" + d.InReplyTo + ">"
+	}
+	from := ""
+	if ac, ok := s.accountByName(d.Account); ok {
+		from = ac.Email
+	}
+	mode := d.Mode
+	if mode == "" {
+		mode = view.Mode
+	}
+	atts, err := s.store.DraftAttachments(d.ID)
+	if err != nil {
+		slog.Error("compose: draft attachments", "draft", d.ID, "err", err)
+	}
+	s.renderCompose(w, composeView{
+		CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
+		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
+		Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
+		Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave, Attachments: atts,
+	})
+}
+
+// adoptAndOpen opens a draft that lives only in the mailbox — written on the
+// phone, or in whatever client was to hand — by adopting it into a local draft
+// and rendering that. A draft mimux cannot reproduce faithfully (encrypted,
+// signed, inline images) is not adopted at all: the window stays shut, a toast
+// says why, and the row's own link still opens it read-only, which is the same
+// place this landed before drafts from elsewhere were editable.
+func (s *Server) adoptAndOpen(w http.ResponseWriter, r *http.Request, view composeView, prefs store.Prefs, msgID int64) {
+	msg, err := s.store.MessageByID(msgID)
+	if err != nil || msg == nil {
+		http.NotFound(w, r)
+		return
+	}
+	d, err := s.mail.AdoptDraft(r.Context(), msg)
+	if err != nil {
+		slog.Warn("drafts: not adoptable", "message", msgID, "err", err)
+		s.mail.Toast("This draft can't be edited here — open it to read it.")
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	s.renderDraft(w, view, prefs, d)
 }
 
 // prefillReply fills the To/Cc/Subject/Body/threading fields of view for a
@@ -750,8 +785,8 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 // --- the drafts page: every unfinished message, wherever it was written ---
 
 // draftRow is one line of that page. A draft written here has an Edit id and
-// opens in compose; one written in another client has only a mailbox copy and
-// opens read-only in the reading pane for now.
+// opens in compose straight away; one written in another client has only a
+// mailbox copy, and its Edit link adopts it (see adoptAndOpen) first.
 type draftRow struct {
 	Edit     int64 // local draft id, 0 for a draft that only exists on the server
 	Message  int64 // store message id of the mailbox copy, 0 if not published yet
@@ -760,6 +795,12 @@ type draftRow struct {
 	Subject  string
 	To       string
 	Updated  time.Time
+}
+
+// draftCopyKey identifies one copy in a mailbox by where it sits, for the
+// dedup above.
+func draftCopyKey(folderID int64, uid uint32) string {
+	return strconv.FormatInt(folderID, 10) + "\x00" + strconv.FormatUint(uint64(uid), 10)
 }
 
 // draftsPerFolder caps how much of a Drafts folder the page reads. Nobody has
@@ -781,6 +822,12 @@ func (s *Server) draftRows() ([]draftRow, error) {
 		if d.MessageID != "" {
 			mine[d.Account+"\x00"+d.MessageID] = true
 		}
+		// A draft adopted from another client may have arrived without a
+		// Message-ID; where its copy sits identifies it until the first save
+		// stamps one on.
+		if d.UID != 0 {
+			mine[draftCopyKey(d.FolderID, d.UID)] = true
+		}
 		rows = append(rows, draftRow{
 			Edit: d.ID, Message: 0, FolderID: d.FolderID, Account: d.Account,
 			Subject: d.Subject, To: d.To, Updated: d.UpdatedAt,
@@ -798,6 +845,9 @@ func (s *Server) draftRows() ([]draftRow, error) {
 		}
 		for _, m := range msgs {
 			if m.MessageID != "" && mine[m.Account+"\x00"+m.MessageID] {
+				continue
+			}
+			if mine[draftCopyKey(m.FolderID, m.UID)] {
 				continue
 			}
 			rows = append(rows, draftRow{

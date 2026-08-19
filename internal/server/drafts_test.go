@@ -206,6 +206,85 @@ func TestDraftAttachmentsRespectTheSendCap(t *testing.T) {
 	}
 }
 
+// seedForeignDraft puts a draft from "another client" in the Drafts folder.
+func seedForeignDraft(t *testing.T, s *Server, uid uint32, msgID, subject string) *store.Message {
+	t.Helper()
+	folderID, err := s.store.UpsertFolder("Personal", "Drafts", "drafts", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.UpsertMessage(&store.Message{
+		Account: "Personal", FolderID: folderID, UID: uid, MessageID: msgID,
+		Subject: subject, Date: time.Now(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.store.ListMessages(folderID, 10)
+	if err != nil || len(msgs) == 0 {
+		t.Fatalf("ListMessages = %v, %v", msgs, err)
+	}
+	return &msgs[0]
+}
+
+// TestDraftsPageOffersToEditForeignDrafts: a draft from another client is no
+// longer a dead end — it keeps its tag and gains an Edit link that adopts it.
+func TestDraftsPageOffersToEditForeignDrafts(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 2, "theirs@example.com", "written on the phone")
+
+	rec := httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "/compose?adopt="+strconv.FormatInt(msg.ID, 10)) {
+		t.Errorf("no Edit link for the draft from another client")
+	}
+	if !strings.Contains(body, "from another client") {
+		t.Errorf("the tag is gone before the draft was adopted")
+	}
+}
+
+// TestForeignDraftFallsBackWhenItCannotBeAdopted: a draft that cannot be
+// brought over (unreachable server here, but the same path a signed or
+// encrypted one takes) leaves no half-made local row and opens no compose —
+// the row's own link still reads it.
+func TestForeignDraftFallsBackWhenItCannotBeAdopted(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 3, "nope@example.com", "unreachable")
+
+	rec := httptest.NewRecorder()
+	s.handleComposeNew(rec, httptest.NewRequest("GET",
+		"/compose?adopt="+strconv.FormatInt(msg.ID, 10), nil))
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want 204 and no compose window: %s", rec.Code, rec.Body.String())
+	}
+	if drafts, _ := s.store.ListDrafts(); len(drafts) != 0 {
+		t.Errorf("a draft that could not be read was adopted anyway: %+v", drafts)
+	}
+}
+
+// TestAdoptedDraftLeavesOneRow: once adopted, the mailbox copy and the local
+// row are one line on the page — including for a draft that arrived without a
+// Message-ID, which is deduped by where its copy sits.
+func TestAdoptedDraftLeavesOneRow(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 4, "", "no message id")
+
+	d := &store.Draft{Account: "Personal", Subject: "no message id", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.store.ClearDraftDirty(d.ID, "", msg.FolderID, msg.UID, d.UpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.draftRows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Edit != d.ID {
+		t.Fatalf("draftRows = %+v, want the one adopted draft, editable", rows)
+	}
+}
+
 // TestDropDraftIgnoresNothing: send with no draft open, and a delete of a row
 // that is already gone, must both be no-ops rather than errors.
 func TestDropDraftIgnoresNothing(t *testing.T) {

@@ -22,8 +22,9 @@
         {{/* One list, whether the draft was written here or on another client:
              a local row and its own copy in the IMAP Drafts folder are deduped
              by Message-ID server side (draftRows). A draft with no local row
-             (.Edit == 0) came from elsewhere and opens read-only in the reading
-             pane — editing those is the next phase. */}}
+             (.Edit == 0) came from elsewhere: its title opens it read-only,
+             and Edit adopts it into a local draft first — after which it is
+             just a draft, tag and all gone. */}}
         <div class="space-y-2">
           {{range .Drafts}}
           <div class="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2">
@@ -39,6 +40,12 @@
                 {{if not .Edit}}<span class="ml-1 text-zinc-600">· from another client</span>{{end}}
               </div>
             </a>
+            {{if not .Edit}}
+            {{/* Adopts the mailbox copy into a local draft, then opens it. The
+                 window stays shut if it cannot be brought over faithfully. */}}
+            <a href="#" hx-get="/compose?adopt={{.Message}}" hx-target="#compose-root" hx-swap="innerHTML"
+              class="shrink-0 rounded-md px-2 py-1 text-xs text-indigo-400 hover:bg-zinc-800 hover:text-indigo-300 transition-colors duration-150">Edit</a>
+            {{end}}
             {{if .Edit}}
             <form method="post" action="/drafts/{{.Edit}}/delete">
               <input type="hidden" name="csrf_token" value="{{$.CSRF}}">

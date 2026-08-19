@@ -126,6 +126,59 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 	})
 }
 
+// AdoptDraft makes a draft written in another client editable here, by giving
+// it the local row it never had: the message is fetched, parsed back into
+// compose fields and attachments, and stored seeded with the Message-ID, folder
+// and UID of the copy it came from. That seeding is the whole trick — the first
+// save then goes down pushDraft's replace path and expunges the copy it came
+// from, instead of appending a second draft beside it.
+//
+// Idempotent: opening the same foreign draft twice returns the row the first
+// open created, so nobody ends up with two copies of one unfinished message.
+// An error means the draft could not be brought over faithfully (see
+// parseDraftMessage) and the caller should leave it read-only.
+func (m *Manager) AdoptDraft(ctx context.Context, msg *store.Message) (*store.Draft, error) {
+	return m.adoptDraft(ctx, nil, msg)
+}
+
+// adoptDraft is AdoptDraft on the caller's own connection (see fetchRawOn).
+func (m *Manager) adoptDraft(ctx context.Context, c *imapclient.Client, msg *store.Message) (*store.Draft, error) {
+	existing, err := m.st.DraftByServerCopy(msg.Account, msg.MessageID, msg.FolderID, msg.UID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+	raw, err := m.fetchRawOn(ctx, c, msg)
+	if err != nil {
+		return nil, err
+	}
+	d, atts, err := parseDraftMessage(raw)
+	if err != nil {
+		return nil, err
+	}
+	d.Account = msg.Account
+	if err := m.st.UpsertDraft(d); err != nil {
+		return nil, err
+	}
+	for i := range atts {
+		if err := m.st.AddDraftAttachment(d.ID, &atts[i]); err != nil {
+			slog.Warn("drafts: attachment not kept while adopting",
+				"account", msg.Account, "draft", d.ID, "err", err)
+		}
+	}
+	// ClearDraftDirty says exactly what is true here: this content is on the
+	// server, at this location. It also clears the push debt UpsertDraft just
+	// took on — nothing has been edited yet, so republishing an identical copy
+	// would only churn the UID.
+	if err := m.st.ClearDraftDirty(d.ID, msg.MessageID, msg.FolderID, msg.UID, d.UpdatedAt); err != nil {
+		return nil, err
+	}
+	d.MessageID, d.FolderID, d.UID, d.IMAPDirty = msg.MessageID, msg.FolderID, msg.UID, false
+	return d, nil
+}
+
 // parseDraftMessage turns a raw draft message into the compose fields a local
 // draft row holds, plus its attachments: the inverse of pushDraft, used to read
 // back a draft written by another client (and, in the tests, our own).

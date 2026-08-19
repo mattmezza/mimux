@@ -56,6 +56,13 @@ func (m *Manager) parsedBody(ctx context.Context, msg *store.Message, force bool
 }
 
 func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, error) {
+	return m.fetchRawOn(ctx, nil, msg)
+}
+
+// fetchRawOn is fetchRaw on a connection the caller already holds (see
+// account.exec); nil c queues it as a read-only command for the worker, which
+// is what an HTTP handler wants.
+func (m *Manager) fetchRawOn(ctx context.Context, conn *imapclient.Client, msg *store.Message) ([]byte, error) {
 	a := m.accounts[msg.Account]
 	if a == nil {
 		return nil, fmt.Errorf("unknown account %q", msg.Account)
@@ -65,7 +72,7 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 		return nil, fmt.Errorf("folder not found")
 	}
 	var raw []byte
-	err = a.submitRO(ctx, func(c *imapclient.Client) error {
+	fetch := func(c *imapclient.Client) error {
 		if _, err := c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 			return err
 		}
@@ -82,7 +89,12 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 		}
 		raw = data[0].BodySection[0].Bytes
 		return nil
-	})
+	}
+	if conn != nil {
+		err = fetch(conn)
+	} else {
+		err = a.submitRO(ctx, fetch)
+	}
 	return raw, err
 }
 
