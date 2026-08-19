@@ -72,6 +72,7 @@ type composeView struct {
 	References    string // full References header value to reuse
 	ThreadContext string // for the embedded ai_reply partial
 	UndoSendDelay int    // seconds the split-button "Send" waits (undo window)
+	Autosave      bool   // opt-in: client debounce-saves the draft while typing
 	Error         string
 	// Signatures maps lowercased identity address -> its linked signature
 	// variants, embedded so the client inserts the right one per From identity.
@@ -126,6 +127,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 		Kind:          "new",
 		Mode:          prefs.ComposeMode,
 		UndoSendDelay: prefs.UndoSendDelay,
+		Autosave:      prefs.ComposeAutosave,
 	}
 	if len(s.cfg.Accounts) > 0 {
 		view.Account = s.cfg.Accounts[0].Name
@@ -154,7 +156,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 				CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 				To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 				Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
-				Layout: layoutForKind(prefs, d.Kind),
+				Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave,
 			})
 			return
 		}
@@ -424,7 +426,9 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
 	}
 	// Keep the window in whatever layout it was opened in across an error re-render.
-	view.Layout = validLayout(r.PostFormValue("layout"), layoutForKind(s.store.GetPrefs(), view.Kind))
+	prefs := s.store.GetPrefs()
+	view.Layout = validLayout(r.PostFormValue("layout"), layoutForKind(prefs, view.Kind))
+	view.Autosave = prefs.ComposeAutosave
 	if len(s.cfg.Accounts) == 0 {
 		view.Error = "No accounts configured. Add one in Settings → Accounts."
 		s.renderCompose(w, view)
@@ -566,7 +570,7 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 		CSRF: auth.EnsureCSRF(w, r, s.secure), Accounts: s.cfg.Accounts, DraftID: d.ID,
 		Account: o.Account, From: from, To: o.To, Cc: o.Cc, Bcc: o.Bcc, Subject: o.Subject,
 		Body: o.Body, Mode: o.Mode, Kind: "new", InReplyTo: o.InReplyTo, References: refs,
-		UndoSendDelay: prefs.UndoSendDelay, Layout: layoutForKind(prefs, "new"),
+		UndoSendDelay: prefs.UndoSendDelay, Layout: layoutForKind(prefs, "new"), Autosave: prefs.ComposeAutosave,
 	})
 }
 

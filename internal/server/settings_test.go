@@ -141,6 +141,38 @@ func TestSectionSaveLeavesOtherSectionsAlone(t *testing.T) {
 	}
 }
 
+// TestComposeAutosaveRoundTrip: opt-in default is off, the composing section
+// save turns it on, and an absent checkbox (an unchecked box submits nothing)
+// turns it back off — the same on/off-by-absence contract every other
+// checkbox on this page follows.
+func TestComposeAutosaveRoundTrip(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+
+	if s.store.GetPrefs().ComposeAutosave {
+		t.Fatalf("ComposeAutosave default = true, want false")
+	}
+
+	if rec := postSettings(t, r, url.Values{
+		"section":          {"composing"},
+		"compose_autosave": {"1"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("composing save (on) = %d: %s", rec.Code, rec.Body.String())
+	}
+	if !s.store.GetPrefs().ComposeAutosave {
+		t.Fatalf("ComposeAutosave did not round-trip on")
+	}
+
+	if rec := postSettings(t, r, url.Values{
+		"section": {"composing"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("composing save (off) = %d: %s", rec.Code, rec.Body.String())
+	}
+	if s.store.GetPrefs().ComposeAutosave {
+		t.Fatalf("ComposeAutosave did not round-trip off")
+	}
+}
+
 // TestUnknownSettingsSection: a made-up section is a 404, not a page that
 // renders nothing, and a made-up section on the save path is refused rather
 // than silently applying every section.

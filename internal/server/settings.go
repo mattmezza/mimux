@@ -326,6 +326,7 @@ func applyComposing(p *store.Prefs, r *http.Request) {
 	p.ComposeMode = oneOf(r.PostFormValue("compose_mode"), "html", "plain", "markdown")
 	p.ComposeLayout = oneOf(r.PostFormValue("compose_layout"), "fullscreen", "popup", "modal")
 	p.ReplyLayout = oneOf(r.PostFormValue("reply_layout"), "popup", "fullscreen", "modal")
+	p.ComposeAutosave = r.PostFormValue("compose_autosave") != ""
 	switch p.UndoSendDelay = atoiDefault(r.PostFormValue("undo_send_delay"), 5); p.UndoSendDelay {
 	case 3, 5, 10:
 	default:

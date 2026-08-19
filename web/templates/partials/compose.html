@@ -42,7 +42,7 @@
          handlers only claim drops that carry Files, so a text drag inside the
          body editor still does the native thing. */}}
     <form id="compose-form" hx-post="/compose" hx-target="#compose-root" hx-swap="innerHTML"
-      enctype="multipart/form-data" data-undo-delay="{{.UndoSendDelay}}"
+      enctype="multipart/form-data" data-undo-delay="{{.UndoSendDelay}}"{{if .Autosave}} data-autosave="1"{{end}}
       class="flex-1 min-h-0 flex flex-col"
       x-data="attachBox()" :class="over && 'ring-2 ring-inset ring-indigo-500'"
       @dragover="onDragOver($event)" @dragleave="onDragLeave($event)" @drop="onDrop($event)"

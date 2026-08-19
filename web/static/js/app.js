@@ -1214,6 +1214,8 @@ function forceCloseCompose() {
   preComposeFocus = null;
   composeBaseline = null;
   composeCloseAfterSave = false;
+  clearComposeAutosaveTimer();
+  composeSending = false;
   updateViewTitle();
 }
 window.forceCloseCompose = forceCloseCompose;
@@ -1293,6 +1295,46 @@ function onDraftSaved(event) {
   if (composeCloseAfterSave) forceCloseCompose();
 }
 window.onDraftSaved = onDraftSaved;
+
+// --- draft autosave (opt-in, Settings → Composing) -------------------------
+// Debounce-saves the draft ~3s after the last keystroke by clicking the same
+// "Save draft" button the user would — reuses its htmx wiring (request, the
+// OOB draft-id swap, onDraftSaved) instead of duplicating it. Gated per-form
+// by data-autosave, rendered from the ComposeAutosave pref.
+let composeAutosaveTimer = null;
+let composeSending = false; // true while POST /compose (send) is in flight
+
+function clearComposeAutosaveTimer() {
+  if (composeAutosaveTimer) clearTimeout(composeAutosaveTimer);
+  composeAutosaveTimer = null;
+}
+
+// composeIsEmpty: no recipients, no subject, no body — nothing worth saving.
+function composeIsEmpty() {
+  const form = document.getElementById("compose-form");
+  if (!form) return true;
+  const g = (n) => (form.querySelector(`[name="${n}"]`)?.value ?? "").trim();
+  const editor = document.getElementById("compose-wysiwyg");
+  const body = editor ? editor.innerText.trim() : g("body");
+  return !g("to") && !g("cc") && !g("bcc") && !g("subject") && !body;
+}
+
+function scheduleComposeAutosave() {
+  const form = document.getElementById("compose-form");
+  if (!form || form.dataset.autosave !== "1") return;
+  clearComposeAutosaveTimer();
+  composeAutosaveTimer = setTimeout(() => {
+    composeAutosaveTimer = null;
+    if (composeSending || composeIsEmpty() || !isComposeDirty()) return;
+    document.getElementById("compose-save-draft")?.click();
+  }, 3000);
+}
+// Delegated so it survives every compose-root swap without re-wiring: covers
+// to/cc/bcc/subject (plain inputs), the plain/markdown textarea, and the
+// WYSIWYG contenteditable (input bubbles from all of them).
+document.addEventListener("input", (e) => {
+  if (e.target.closest?.("#compose-form")) scheduleComposeAutosave();
+});
 
 // --- compose address typeahead -------------------------------------------
 // The dropdown itself is server-rendered by htmx (partials/address_suggest.html)
@@ -1401,6 +1443,8 @@ function submitCompose(skipGate) {
     const modal = document.getElementById("attach-reminder-modal");
     if (modal) { modal.hidden = false; return true; }
   }
+  composeSending = true;
+  clearComposeAutosaveTimer();
   form.requestSubmit();
   return true;
 }
@@ -1421,6 +1465,7 @@ function needsAttachmentReminder(form) {
 // (Undo for delayed send, a confirmation for scheduled send). Non-204 responses
 // re-render the form inline with an error, so we leave those alone.
 function onComposeResponse(event) {
+  composeSending = false;
   const xhr = event.detail.xhr;
   if (!xhr || xhr.status !== 204) return;
   const outboxId = xhr.getResponseHeader("Mimux-Outbox-Id");
@@ -1536,6 +1581,13 @@ function focusComposeBody(root) {
 // Focus management: compose opens onto the message body; a message opening
 // moves focus into the reading pane so keyboard/AT users land somewhere sane.
 document.addEventListener("htmx:afterSwap", (e) => {
+  if (e.target && e.target.id === "compose-root") {
+    // Every swap into compose-root (fresh open, reopened draft, undo-send
+    // restore, or a send-error re-render) means the old form is gone —
+    // a stray autosave timer must not fire into a dead/replaced form.
+    clearComposeAutosaveTimer();
+    composeSending = false;
+  }
   if (e.target && e.target.id === "compose-root" && e.target.firstElementChild) {
     initComposeEditor();
     // Snapshot the initial state (after prefill + WYSIWYG normalization) so the

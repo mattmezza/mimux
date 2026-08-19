@@ -36,6 +36,7 @@ type Prefs struct {
 	ComposeMode      string            // compose editor mode: "plain", "html", or "markdown" (default "html")
 	ComposeLayout    string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
 	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
+	ComposeAutosave  bool              // opt-in: debounce-save the draft a few seconds after typing stops (default false)
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
 	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
@@ -215,6 +216,7 @@ func defaultPrefs() Prefs {
 		ComposeMode:        "html",
 		ComposeLayout:      "fullscreen",
 		ReplyLayout:        "popup",
+		ComposeAutosave:    false,
 		UndoSendDelay:      5,
 		ThreadOrder:        "oldest",
 		RowDoubleAction:    "unread",
@@ -349,6 +351,9 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("reply_layout"); ok && (v == "fullscreen" || v == "popup" || v == "modal") {
 		p.ReplyLayout = v
 	}
+	if v, ok := s.getSetting("compose_autosave"); ok {
+		p.ComposeAutosave = v == "1"
+	}
 	if v, ok := s.getSetting("thread_order"); ok && (v == "oldest" || v == "newest") {
 		p.ThreadOrder = v
 	}
@@ -416,6 +421,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"compose_mode":         p.ComposeMode,
 		"compose_layout":       p.ComposeLayout,
 		"reply_layout":         p.ReplyLayout,
+		"compose_autosave":     boolStr(p.ComposeAutosave),
 		"undo_send_delay":      strconv.Itoa(p.UndoSendDelay),
 		"thread_order":         p.ThreadOrder,
 		"row_double_action":    p.RowDoubleAction,
