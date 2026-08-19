@@ -861,7 +861,7 @@
         "tags": ["Filters"],
         "operationId": "createFilter",
         "summary": "Create a filter rule",
-        "description": "Validates and stores a rule. Any `id` in the body is ignored and overwritten by the assigned one.\n\nValidation is strict and happens before the write: a name is required, at least one condition and at least one action are required, condition fields and operators must be known, values must be non-empty, and a `regex` condition must actually compile. Failures come back as `400 invalid_request` with the validator's own message.\n\nRules apply to incoming mail during sync. Creating one does not re-run it over existing mail.\n\nHonest caveat: there is no update or delete endpoint for filters yet — creating and listing is the whole surface.\n\n**Scope: `mail:modify`.**",
+        "description": "Validates and stores a rule. Any `id` in the body is ignored and overwritten by the assigned one.\n\nValidation is strict and happens before the write: a name is required, at least one condition and at least one action are required, condition fields and operators must be known, values must be non-empty, and a `regex` condition must actually compile. Failures come back as `400 invalid_request` with the validator's own message.\n\nRules apply to new mail arriving in an inbox during sync \u2014 not to the Sent, Drafts or Archive copies a sync also stores, and not to mail already synced. Creating one does not re-run it over existing mail.\n\nHonest caveat: there is no update or delete endpoint for filters yet — creating and listing is the whole surface.\n\n**Scope: `mail:modify`.**",
         "x-required-scope": "mail:modify",
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": {
