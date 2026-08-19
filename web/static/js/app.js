@@ -1293,15 +1293,25 @@ window.composeGuardSave = composeGuardSave;
 let composeAttachSent = 0;
 document.body.addEventListener("htmx:beforeRequest", (e) => {
   if (e.detail.elt?.id !== "compose-save-draft") return;
+  // Autosave presses the same button, so this is where the two part ways: the
+  // timer raises the flag immediately before its synthetic click, and htmx
+  // issues the request from inside that click. Consumed here rather than in
+  // the response handler so a manual save queued behind an autosave still
+  // confirms.
+  composeSaveSilent = composeAutosaveClick;
+  composeAutosaveClick = false;
   composeAttachSent = document.querySelector('#compose-form input[type=file][name="attachments"]')?.files.length || 0;
 });
 
 // onDraftSaved runs after the "Save draft" hx-post returns: confirm, mark the
 // session clean, hand the uploaded files over to the draft, and finish a
-// save-and-close if the guard requested one.
+// save-and-close if the guard requested one. An autosave is silent — a toast
+// every few seconds while you type is noise, not confirmation.
 function onDraftSaved(event) {
+  const silent = composeSaveSilent;
+  composeSaveSilent = false;
   if (!event.detail.successful) return;
-  toast("Draft saved");
+  if (!silent) toast("Draft saved");
   markComposeClean();
   if (composeAttachSent) {
     window.dispatchEvent(new CustomEvent("compose-saved", { detail: { n: composeAttachSent } }));
@@ -1315,8 +1325,12 @@ window.onDraftSaved = onDraftSaved;
 // Debounce-saves the draft ~3s after the last keystroke by clicking the same
 // "Save draft" button the user would — reuses its htmx wiring (request, the
 // OOB draft-id swap, onDraftSaved) instead of duplicating it. Gated per-form
-// by data-autosave, rendered from the ComposeAutosave pref.
+// by data-autosave, rendered from the ComposeAutosave pref. The one thing it
+// does NOT inherit is the confirmation toast: see the beforeRequest listener
+// above for how the two saves are told apart.
 let composeAutosaveTimer = null;
+let composeAutosaveClick = false; // raised for the timer's synthetic click only
+let composeSaveSilent = false; // the save in flight came from the timer
 let composeSending = false; // true while POST /compose (send) is in flight
 
 function clearComposeAutosaveTimer() {
@@ -1341,7 +1355,9 @@ function scheduleComposeAutosave() {
   composeAutosaveTimer = setTimeout(() => {
     composeAutosaveTimer = null;
     if (composeSending || composeIsEmpty() || !isComposeDirty()) return;
+    composeAutosaveClick = true;
     document.getElementById("compose-save-draft")?.click();
+    composeAutosaveClick = false;
   }, 3000);
 }
 // Delegated so it survives every compose-root swap without re-wiring: covers
@@ -1595,8 +1611,20 @@ function focusComposeBody(root) {
 
 // Focus management: compose opens onto the message body; a message opening
 // moves focus into the reading pane so keyboard/AT users land somewhere sane.
+// composeFormEl is the form node this listener last set up. hx-target is an
+// INHERITED attribute, so every hx-swap="none" request fired from inside the
+// compose form — save draft, remove a kept attachment — inherits the form's
+// hx-target="#compose-root" and htmx still runs a (no-op) swap against it,
+// firing htmx:afterSwap with compose-root as the target. Acting on that reset
+// the caret to position 0 and yanked focus out of whatever field was being
+// typed in, on every single save; with autosave on, every three seconds.
+// Comparing the form node is what tells a real swap from that phantom one.
+let composeFormEl = null;
 document.addEventListener("htmx:afterSwap", (e) => {
   if (e.target && e.target.id === "compose-root") {
+    const form = e.target.querySelector("#compose-form");
+    if (form === composeFormEl) return; // nothing was replaced: a save, not a swap
+    composeFormEl = form;
     // Every swap into compose-root (fresh open, reopened draft, undo-send
     // restore, or a send-error re-render) means the old form is gone —
     // a stray autosave timer must not fire into a dead/replaced form.
