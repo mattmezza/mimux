@@ -404,8 +404,10 @@ func (s *Server) handleAddressSuggest(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "address_suggest", map[string]any{"Suggestions": sug})
 }
 
-// maxAttachTotal caps the combined size of all attachments on one message.
-const maxAttachTotal = 25 << 20 // 25MB
+// maxAttachTotal caps the combined size of all attachments on one message —
+// uploads, what a draft may keep, and what is read back off a foreign draft all
+// answer to the same number.
+const maxAttachTotal = mail.MaxAttachTotal
 
 // readAttachments pulls the uploaded "attachments" files off a parsed multipart
 // form, enforcing the total size cap. The second return is a user-facing error

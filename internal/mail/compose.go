@@ -32,6 +32,14 @@ type ComposeInput struct {
 	// drafts use it: every save re-APPENDs the draft, and keeping one id across
 	// those revisions is what makes them the same message rather than a pile.
 	MessageID string
+	// KeepBcc writes Bcc into the header. Only drafts set it. A sent message
+	// must never carry one (that is what leaks the blind list to every
+	// recipient) — the envelope carries it instead, see Manager.Send — but a
+	// draft is not sent to anyone: it is stored, and the Bcc line typed into
+	// compose is part of the unfinished message. Without this the field is lost
+	// the moment the draft is read back off the server, here or in any other
+	// client.
+	KeepBcc bool
 }
 
 // bodyParts derives the (plainText, htmlBody) pair to send for this input's
@@ -48,6 +56,11 @@ func (in ComposeInput) bodyParts() (plain, htmlBody string) {
 		return in.Body, ""
 	}
 }
+
+// MaxAttachTotal caps the combined size of all attachments on one message. The
+// send path enforces it on upload, the drafts path on what it stores and on
+// what it reads back out of a draft written elsewhere — one message, one limit.
+const MaxAttachTotal = 25 << 20 // 25MB
 
 // OutAttachment is one file to attach to an outgoing message. Data is the raw
 // (already decoded) file bytes; the writer base64-encodes it.
@@ -269,8 +282,15 @@ func BuildMessage(cfg config.Account, in ComposeInput, now time.Time) (raw []byt
 	if cc := parseAddrs(in.Cc); len(cc) > 0 {
 		h.SetAddressList("Cc", cc)
 	}
-	// Bcc is intentionally never written to the header: the SMTP envelope
-	// (RCPT TO) carries it instead, see Manager.Send.
+	// Bcc is never written to the header for a send: the SMTP envelope (RCPT TO)
+	// carries it instead, see Manager.Send. A draft is the one exception — it
+	// goes to a mailbox, not to recipients, and losing the Bcc line on the round
+	// trip through the Drafts folder would be a quiet edit of the user's mail.
+	if in.KeepBcc {
+		if bcc := parseAddrs(in.Bcc); len(bcc) > 0 {
+			h.SetAddressList("Bcc", bcc)
+		}
+	}
 	h.SetSubject(in.Subject)
 	h.SetDate(now)
 	if in.MessageID != "" {

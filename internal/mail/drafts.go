@@ -2,12 +2,17 @@
 package mail
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
+	"strings"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message"
+	emmail "github.com/emersion/go-message/mail"
 
 	"github.com/mattmezza/mimux/internal/store"
 )
@@ -42,10 +47,21 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 	in := ComposeInput{
 		To: SplitAddrList(d.To), Cc: SplitAddrList(d.Cc), Bcc: SplitAddrList(d.Bcc),
 		Subject: d.Subject, Body: d.Body, Mode: d.Mode, InReplyTo: d.InReplyTo,
-		MessageID: d.MessageID,
+		MessageID: d.MessageID, KeepBcc: true,
 	}
 	if d.InReplyTo != "" {
 		in.References = "<" + d.InReplyTo + ">"
+	}
+	// The draft's files go up with it, so the copy on the phone is the whole
+	// unfinished message. BuildMessage already multiparts for the send path.
+	atts, err := m.st.DraftAttachments(d.ID)
+	if err != nil {
+		return fmt.Errorf("draft attachments: %w", err)
+	}
+	for _, at := range atts {
+		in.Attachments = append(in.Attachments, OutAttachment{
+			Filename: at.Filename, ContentType: at.ContentType, Data: at.Data,
+		})
 	}
 	raw, msgID, err := BuildMessage(a.cfg, in, d.UpdatedAt)
 	if err != nil {
@@ -108,6 +124,160 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 		}
 		return m.st.ClearDraftDirty(d.ID, msgID, f.ID, uint32(newUID), d.UpdatedAt) // #nosec G115 -- UID fits uint32 by protocol
 	})
+}
+
+// parseDraftMessage turns a raw draft message into the compose fields a local
+// draft row holds, plus its attachments: the inverse of pushDraft, used to read
+// back a draft written by another client (and, in the tests, our own).
+//
+// The body mapping is deliberate. A text/html draft becomes Mode "html" with
+// the fragment run through SanitizeComposeHTML — the very same allowlist the
+// WYSIWYG editor's output goes through on the way out, never the reading-pane
+// sanitizer, whose cid: rewriting and external-image blocking are for display
+// and would be saved back as the user's own markup. What comes out is therefore
+// what the editor would have produced, and saving it re-sanitizes to the same
+// thing. Everything else is Mode "plain": markdown leaves no trace in a sent
+// message, so a draft is never guessed to be markdown — its source would be
+// unrecoverable and the guess would rewrite the user's text.
+//
+// An error means "this cannot be edited without damaging it": the caller falls
+// back to the read-only view rather than adopting something lossy.
+func parseDraftMessage(raw []byte) (*store.Draft, []store.DraftAttachment, error) {
+	mr, err := emmail.CreateReader(bytes.NewReader(raw))
+	if mr == nil {
+		return nil, nil, fmt.Errorf("parse draft: %w", err)
+	}
+	defer func() { _ = mr.Close() }()
+	if ct, _, _ := mr.Header.ContentType(); !editableDraftType(ct) {
+		return nil, nil, fmt.Errorf("draft is %s: editing it here would break it", ct)
+	}
+
+	d := &store.Draft{Subject: headerSubject(mr.Header), Kind: "new", Mode: "plain"}
+	d.To = joinAddresses(mr.Header, "To")
+	d.Cc = joinAddresses(mr.Header, "Cc")
+	d.Bcc = joinAddresses(mr.Header, "Bcc")
+	if irt, err := mr.Header.MsgIDList("In-Reply-To"); err == nil && len(irt) > 0 {
+		d.InReplyTo, d.Kind = irt[0], "reply"
+	}
+
+	var text, htmlBody string
+	var atts []store.DraftAttachment
+	budget := int64(MaxAttachTotal)
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil && !message.IsUnknownCharset(err) {
+			return nil, nil, fmt.Errorf("parse draft part: %w", err)
+		}
+		// A cid: part is an inline image the compose editor cannot author or
+		// re-attach, and the body references it by id. Editing would leave a
+		// dangling image, so this draft stays read-only.
+		if p.Header.Get("Content-ID") != "" {
+			return nil, nil, fmt.Errorf("draft has inline images that compose cannot reproduce")
+		}
+		// mail.PartHeader is a four-method interface; the two concrete headers
+		// behind it both embed message.Header, which is where the parsed
+		// Content-* accessors live.
+		mh, ok := p.Header.(interface {
+			ContentType() (string, map[string]string, error)
+			ContentDisposition() (string, map[string]string, error)
+		})
+		if !ok {
+			return nil, nil, fmt.Errorf("draft part has no readable content type")
+		}
+		mt, _, _ := mh.ContentType()
+		mt = strings.ToLower(mt)
+		_, dparams, _ := mh.ContentDisposition()
+		body, err := io.ReadAll(io.LimitReader(p.Body, budget+1))
+		if err != nil {
+			return nil, nil, fmt.Errorf("read draft part: %w", err)
+		}
+		inline := false
+		if _, ok := p.Header.(*emmail.InlineHeader); ok {
+			inline = dparams["filename"] == ""
+		}
+		switch {
+		case inline && mt == "text/html" && htmlBody == "":
+			htmlBody = string(body)
+		case inline && (mt == "text/plain" || mt == "") && text == "":
+			text = string(body)
+		case inline && strings.HasPrefix(mt, "text/"):
+			// A second text part of a kind compose has no editor for (a duplicate
+			// alternative, text/enriched): ignore it rather than attach it.
+		default:
+			budget -= int64(len(body))
+			if budget < 0 {
+				return nil, nil, fmt.Errorf("draft attachments exceed the %dMB limit", MaxAttachTotal>>20)
+			}
+			atts = append(atts, store.DraftAttachment{
+				Filename: partFilename(p.Header, dparams), ContentType: mt, Data: body,
+			})
+		}
+	}
+
+	if strings.TrimSpace(htmlBody) != "" {
+		d.Mode, d.Body = "html", SanitizeComposeHTML(htmlBody)
+	} else {
+		d.Body = text
+	}
+	if d.Subject == "" && strings.TrimSpace(d.Body) == "" && len(atts) == 0 {
+		return nil, nil, fmt.Errorf("nothing readable in this draft")
+	}
+	return d, atts, nil
+}
+
+// editableDraftType rejects the message shapes whose whole point is the
+// envelope mimux would throw away by re-composing them.
+func editableDraftType(contentType string) bool {
+	switch strings.ToLower(contentType) {
+	case "multipart/encrypted", "multipart/signed",
+		"application/pkcs7-mime", "application/pgp-encrypted":
+		return false
+	}
+	return true
+}
+
+func headerSubject(h emmail.Header) string {
+	s, err := h.Subject()
+	if err != nil {
+		return h.Get("Subject")
+	}
+	return s
+}
+
+// joinAddresses renders one address header the way compose stores and shows a
+// recipient list: "Name <addr>" entries joined by ", ". An unparseable header is
+// kept verbatim rather than dropped — losing recipients is the worse failure.
+func joinAddresses(h emmail.Header, key string) string {
+	list, err := h.AddressList(key)
+	if err != nil || len(list) == 0 {
+		return strings.TrimSpace(h.Get(key))
+	}
+	out := make([]string, 0, len(list))
+	for _, a := range list {
+		// Bare address when there is no display name: that is how compose holds
+		// what the user typed, and "<a@b>" in the To field is noise.
+		if a.Name == "" {
+			out = append(out, a.Address)
+			continue
+		}
+		out = append(out, a.String())
+	}
+	return strings.Join(out, ", ")
+}
+
+func partFilename(h emmail.PartHeader, dparams map[string]string) string {
+	if ah, ok := h.(*emmail.AttachmentHeader); ok {
+		if fn, err := ah.Filename(); err == nil && fn != "" {
+			return fn
+		}
+	}
+	if fn := dparams["filename"]; fn != "" {
+		return fn
+	}
+	return "attachment"
 }
 
 // DropDraft removes a draft's published revision from the Drafts folder: the

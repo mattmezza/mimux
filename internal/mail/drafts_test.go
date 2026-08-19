@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -107,6 +108,127 @@ func TestPushDraftReplacesTheRevision(t *testing.T) {
 	}
 	if copies[0].MessageID != second.MessageID || copies[0].Deleted {
 		t.Errorf("the surviving copy is %+v, want the draft's own Message-ID, not deleted", copies[0])
+	}
+}
+
+// draftRaw returns the raw bytes of the one surviving copy in a folder.
+func draftRaw(t *testing.T, c *imapclient.Client, folder string) []byte {
+	t.Helper()
+	if _, err := c.Select(folder, nil).Wait(); err != nil {
+		t.Fatalf("select %s: %v", folder, err)
+	}
+	data, err := c.Fetch(imap.UIDSet{{Start: 1, Stop: 0}}, &imap.FetchOptions{
+		Flags:       true,
+		BodySection: []*imap.FetchItemBodySection{{Peek: true}},
+	}).Collect()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, msg := range data {
+		if hasFlag(msg.Flags, imap.FlagDeleted) || len(msg.BodySection) == 0 {
+			continue
+		}
+		return msg.BodySection[0].Bytes
+	}
+	t.Fatalf("%s holds no live copy", folder)
+	return nil
+}
+
+// TestPushDraftCarriesAttachmentsAndBcc: what lands in the Drafts folder is the
+// whole unfinished message — the files stored with it, and the Bcc line, which
+// a send deliberately keeps out of the header and a draft must not lose.
+func TestPushDraftCarriesAttachmentsAndBcc(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+
+	d := &store.Draft{
+		Account: "acct", To: "ada@example.com", Bcc: "quiet@example.com",
+		Subject: "the numbers", Body: "see attached", Kind: "new",
+	}
+	if err := st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddDraftAttachment(d.ID, &store.DraftAttachment{
+		Filename: "numbers.txt", ContentType: "text/plain", Data: []byte("41,42,43"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.m.pushDraft(context.Background(), c, d); err != nil {
+		t.Fatal(err)
+	}
+
+	_, atts, err := parseDraftMessage(draftRaw(t, c, "Drafts"))
+	if err != nil {
+		t.Fatalf("the published draft does not parse back: %v", err)
+	}
+	if len(atts) != 1 || atts[0].Filename != "numbers.txt" || string(atts[0].Data) != "41,42,43" {
+		t.Fatalf("attachments in the published copy = %+v, want the stored file", atts)
+	}
+	got, _, err := parseDraftMessage(draftRaw(t, c, "Drafts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Bcc != "quiet@example.com" {
+		t.Errorf("Bcc in the published copy = %q, want it kept — a draft is stored, not sent", got.Bcc)
+	}
+}
+
+// TestParseDraftMessageMapsHTMLToTheEditor: a rich-text draft read back off the
+// server comes home as editor markup — Mode "html" and the body fragment,
+// without the wrapper document's stylesheet leaking in as text.
+func TestParseDraftMessageMapsHTMLToTheEditor(t *testing.T) {
+	raw, _, err := BuildMessage(config.Account{Name: "W", Email: "me@example.com"}, ComposeInput{
+		To: []string{"ada@example.com"}, Subject: "rich", Mode: "html",
+		Body: "<p>Hello <b>you</b></p>", KeepBcc: true,
+	}, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, atts, err := parseDraftMessage(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Mode != "html" {
+		t.Errorf("Mode = %q, want html", d.Mode)
+	}
+	if !strings.Contains(d.Body, "<b>you</b>") {
+		t.Errorf("Body = %q, want the editor fragment", d.Body)
+	}
+	if strings.Contains(d.Body, "mimux-body h1") || strings.Contains(d.Body, "<style") {
+		t.Errorf("the wrapper stylesheet came back as body text: %q", d.Body)
+	}
+	if len(atts) != 0 {
+		t.Errorf("attachments = %+v, want none", atts)
+	}
+	if d.To != "ada@example.com" {
+		t.Errorf("To = %q", d.To)
+	}
+}
+
+// TestParseDraftMessageRefusesWhatItCannotEdit: a draft mimux cannot reproduce
+// must fail loudly so the caller leaves it read-only, never adopt a version of
+// it that quietly drops half the message.
+func TestParseDraftMessageRefusesWhatItCannotEdit(t *testing.T) {
+	cases := map[string]string{
+		"encrypted": "From: a@b\r\nTo: c@d\r\nSubject: secret\r\n" +
+			"Content-Type: multipart/encrypted; protocol=\"application/pgp-encrypted\"; boundary=x\r\n\r\n" +
+			"--x\r\nContent-Type: application/pgp-encrypted\r\n\r\nVersion: 1\r\n--x--\r\n",
+		"inline image": "From: a@b\r\nTo: c@d\r\nSubject: hi\r\n" +
+			"Content-Type: multipart/related; boundary=y\r\n\r\n" +
+			"--y\r\nContent-Type: text/html\r\n\r\n<p>look <img src=\"cid:pic\"></p>\r\n" +
+			"--y\r\nContent-Type: image/png\r\nContent-ID: <pic>\r\n\r\nnotapng\r\n--y--\r\n",
+		"not a message": "this is not a mail message at all",
+	}
+	for name, raw := range cases {
+		t.Run(name, func(t *testing.T) {
+			if d, _, err := parseDraftMessage([]byte(raw)); err == nil {
+				t.Errorf("adopted an uneditable draft as %+v, want a refusal", d)
+			}
+		})
 	}
 }
 
