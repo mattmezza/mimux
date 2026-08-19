@@ -215,3 +215,35 @@ func TestPushDraftKeepsTheLocalRowWhenIMAPFails(t *testing.T) {
 		t.Error("the failed push cleared the retry marker")
 	}
 }
+
+// TestSteadyPushesOwedDrafts: a draft saved while the server was unreachable —
+// or written before drafts were an IMAP thing at all, which is every row
+// migration 0230 touches — is published by the next sync cycle, with nobody
+// reopening compose.
+func TestSteadyPushesOwedDrafts(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	// Saved with no connection in sight: local row, push owed.
+	d := &store.Draft{Account: "acct", To: "ada@example.com", Subject: "owed", Body: "x", Kind: "new"}
+	if err := st.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+
+	a := newTestAccount(NewManager(&config.Config{}, st), "acct", "syncing")
+	a.cfg.Email = "me@example.com"
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- a.session(ctx, c) }()
+
+	eventually(t, "the owed draft to be published", func() bool {
+		got, err := st.DraftByID(d.ID)
+		return err == nil && got != nil && !got.IMAPDirty && got.UID != 0
+	})
+
+	cancel()
+	<-done
+}

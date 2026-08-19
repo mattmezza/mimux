@@ -190,3 +190,21 @@ func (a *account) draftsFolder(c *imapclient.Client) (*store.Folder, error) {
 	}
 	return a.m.st.FolderBySpecial(a.cfg.Name, "drafts")
 }
+// pushDirtyDrafts republishes every draft this account saved locally but never
+// got onto the server: a push that errored, one that hit submit's budget while
+// the worker was reconnecting, one still owed when the process restarted, or —
+// on the first cycle after migration 0230 — every draft written before drafts
+// were an IMAP thing at all. Runs on the worker's own connection at the top of
+// each sync cycle, beside pushSeenDirty.
+func (a *account) pushDirtyDrafts(ctx context.Context, c *imapclient.Client) {
+	drafts, err := a.m.st.DirtyDrafts(a.cfg.Name, 50)
+	if err != nil {
+		return
+	}
+	for i := range drafts {
+		if err := a.m.pushDraft(ctx, c, &drafts[i]); err != nil {
+			slog.Warn("drafts: push still owed", "account", a.cfg.Name, "draft", drafts[i].ID, "err", err)
+			return // connection is unhappy: leave the rest owed, next cycle retries
+		}
+	}
+}

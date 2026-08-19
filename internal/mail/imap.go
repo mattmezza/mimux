@@ -471,6 +471,11 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 			// flags back from it — otherwise the sync reads a stale "unread" and
 			// the local mark-read is lost.
 			a.pushSeenDirty(c)
+			// Same debt, different table: a draft saved while the server was
+			// unreachable (or before it was an IMAP thing at all — migration
+			// 0230) is published here, so it reaches the user's other clients
+			// without them having to open compose again.
+			a.pushDirtyDrafts(ctx, c)
 			// Re-read the set every cycle, like the poll interval below: ticking a
 			// folder in Settings → Syncing takes effect on the next cycle, without
 			// a reconnect.
