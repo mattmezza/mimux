@@ -2,8 +2,10 @@
 
 Every generated image on mimux.dev came from the `pi` CLI driving the Runware
 MCP tool (`runware:100@1`, FLUX.1-schnell, 4 steps), then post-processed with
-ImageMagick. Commands below reproduce each one. Raw generator output lives in
-`www/src/assets/` (not shipped to `dist/`).
+ImageMagick. Commands below reproduce each one. Source material lives in
+`www/src/assets/` (not shipped to `dist/`) and is kept to what a page still
+derives from, plus `og-previous.png` for comparing a new card against the one
+it replaces — the rest of the iteration history is in git.
 
 ## OG / social card — `src/img/og.png` (exactly 1200×630)
 
@@ -32,8 +34,7 @@ measured off the PNG). All other raster icons derive from the 512:
 ```bash
 cp web/static/icons/icon-512.png www/src/img/icon-512.png
 magick www/src/img/icon-512.png -resize 192x192 www/src/img/icon-192.png
-magick www/src/img/icon-512.png -resize 180x180 www/src/img/icon-180.png
-cp www/src/img/icon-180.png www/src/img/apple-touch-icon.png
+magick www/src/img/icon-512.png -resize 180x180 www/src/img/apple-touch-icon.png
 magick www/src/img/icon-512.png -define icon:auto-resize=48,32,16 www/src/img/favicon.ico
 ```
 
