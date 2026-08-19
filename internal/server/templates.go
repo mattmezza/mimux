@@ -26,10 +26,6 @@ func (s *Server) renderTemplatesManager(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (s *Server) handleTemplatesManager(w http.ResponseWriter, r *http.Request) {
-	s.renderTemplatesManager(w, r)
-}
-
 // handleTemplateSave creates or updates a template, then re-renders the manager.
 // Posts via htmx like signatures do (the settings page is one big form, so this
 // can't be a nested <form>).

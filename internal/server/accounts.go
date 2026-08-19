@@ -183,12 +183,6 @@ func (s *Server) renderAccountsManager(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleAccountsManager renders the account manager partial (used after edits or
-// to refresh the list).
-func (s *Server) handleAccountsManager(w http.ResponseWriter, r *http.Request) {
-	s.renderAccountsManager(w, r)
-}
-
 // --- portable export / import ---
 
 func (s *Server) handleConfigExport(w http.ResponseWriter, r *http.Request) {

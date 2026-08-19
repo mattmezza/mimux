@@ -32,10 +32,6 @@ func (s *Server) renderAPITokens(w http.ResponseWriter, r *http.Request, secret 
 	})
 }
 
-func (s *Server) handleAPITokensManager(w http.ResponseWriter, r *http.Request) {
-	s.renderAPITokens(w, r, "")
-}
-
 // handleAPITokenCreate mints a token and renders it back once. Posts via htmx
 // like the other sub-managers (the settings page is one big form).
 func (s *Server) handleAPITokenCreate(w http.ResponseWriter, r *http.Request) {

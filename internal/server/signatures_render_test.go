@@ -65,7 +65,7 @@ func TestSignaturesManagerRenders(t *testing.T) {
 		_ = st.SetIdentitySignature("me@work.com", sig.ID)
 	})
 	r := chi.NewRouter()
-	r.Get("/settings/signatures", s.handleSignaturesManager)
+	r.Get("/settings/signatures", s.renderSignaturesManager)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/settings/signatures", nil))
 	if rec.Code != http.StatusOK {

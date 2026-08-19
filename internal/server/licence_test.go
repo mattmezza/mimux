@@ -15,7 +15,7 @@ import (
 
 func licenceRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
-	r.Get("/settings/licence", s.handleLicenceManager)
+	r.Get("/settings/licence", s.renderLicence)
 	r.Post("/settings/licence", s.handleLicenceSave)
 	r.Post("/settings/licence/remove", s.handleLicenceRemove)
 	return r

@@ -97,10 +97,6 @@ func (s *Server) renderSignaturesManager(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func (s *Server) handleSignaturesManager(w http.ResponseWriter, r *http.Request) {
-	s.renderSignaturesManager(w, r)
-}
-
 // handleSignatureSave creates or updates a signature, then re-renders the
 // manager. Part of the same one-big-form settings page, so it posts via htmx
 // like accounts do (not a nested <form>).

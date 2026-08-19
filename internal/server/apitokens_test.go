@@ -17,7 +17,7 @@ import (
 
 func apiTokenRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
-	r.Get("/settings/api", s.handleAPITokensManager)
+	r.Get("/settings/api", func(w http.ResponseWriter, r *http.Request) { s.renderAPITokens(w, r, "") })
 	r.Post("/settings/api", s.handleAPITokenCreate)
 	r.Post("/settings/api/{id}/revoke", s.handleAPITokenRevoke)
 	return r

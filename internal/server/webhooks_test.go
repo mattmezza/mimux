@@ -16,7 +16,7 @@ import (
 
 func webhookRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
-	r.Get("/settings/webhooks", s.handleWebhooksManager)
+	r.Get("/settings/webhooks", func(w http.ResponseWriter, r *http.Request) { s.renderWebhooks(w, r, "") })
 	r.Post("/settings/webhooks", s.handleWebhookCreate)
 	r.Post("/settings/webhooks/{id}/pause", s.handleWebhookPause)
 	r.Post("/settings/webhooks/{id}/enable", s.handleWebhookEnable)

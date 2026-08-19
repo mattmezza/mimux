@@ -48,10 +48,6 @@ func (s *Server) renderLicence(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleLicenceManager(w http.ResponseWriter, r *http.Request) {
-	s.renderLicence(w, r)
-}
-
 // handleLicenceSave stores a pasted key. It is not validated here — only pro/
 // holds the public key, and a free build rejecting a perfectly good key would
 // be worse than storing one that a pro build will then explain.

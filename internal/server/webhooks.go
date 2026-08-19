@@ -70,10 +70,6 @@ func (s *Server) webhookViews() ([]webhookView, error) {
 	return views, nil
 }
 
-func (s *Server) handleWebhooksManager(w http.ResponseWriter, r *http.Request) {
-	s.renderWebhooks(w, r, "")
-}
-
 // handleWebhookCreate registers an endpoint and shows its signing secret once.
 func (s *Server) handleWebhookCreate(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
