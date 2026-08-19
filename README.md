@@ -241,12 +241,12 @@ sender and subject in the clear unless you run it yourself.
   yet; threading falls back to the standard JWZ algorithm, which works well.
 - **Drafts follow you.** A saved draft (and an autosaved one, if you turn
   autosave on) is written to the SQLite DB first and then appended to the
-  account's IMAP Drafts folder, so it turns up on your phone. Attachments are
-  the exception — they still only ride along when you send.
-- **Known limitations (v0.20):** a draft written in another client is
-  read-only here for now; offline mode is read-only (the service worker falls
-  back to the last-synced inbox, and actions need the server); Gmail labels are
-  dormant (see the Gmail note above).
+  account's IMAP Drafts folder, so it turns up on your phone — attachments
+  included. A draft written in another client is editable here too: Edit adopts
+  it, and your first save replaces the copy it came from.
+- **Known limitations (v0.20):** offline mode is read-only (the service worker
+  falls back to the last-synced inbox, and actions need the server); Gmail
+  labels are dormant (see the Gmail note above).
 - **Translate / AI are off until you add keys** (Settings → Integrations:
   Google Translate, OpenRouter). Both fail gracefully when unset.
 

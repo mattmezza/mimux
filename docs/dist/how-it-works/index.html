@@ -194,12 +194,32 @@
   simply stays local until it can be published.
 </p>
 
+<p>
+  Attachments are part of the draft. A file picked in compose is stored with it
+  and goes up in the published copy, so the draft on your phone is the whole
+  unfinished message; reopening lists the files with a way to remove them, and
+  sending attaches them exactly as if you had just picked them. The same 25MB
+  total a send allows applies to what a draft may keep. Undoing a delayed send
+  puts the files back too.
+</p>
+
+<p>
+  Drafts written elsewhere are editable. The drafts page is one list — yours and
+  whatever is sitting in the account's Drafts folder — and a draft from another
+  client opens in compose the first time you hit Edit: it is fetched, read back
+  into compose fields and attachments, and adopted as a local draft that
+  remembers the copy it came from, so your first save replaces that copy rather
+  than leaving a second one beside it. A rich-text draft comes back into the
+  rich-text editor; anything else opens as plain text, because a message carries
+  no trace of having been written in markdown and guessing would rewrite your
+  words. A draft mimux cannot reproduce faithfully — signed, encrypted, or built
+  around inline images the editor cannot author — is left alone and stays
+  readable rather than being adopted damaged.
+</p>
+
 <div class="note">
   <p>
-    <strong>Known limitations as of v0.20.</strong> Attachments are not kept
-    with a draft yet — they only ride along when you send, and compose says so
-    when you save one with files attached. A draft written in another client
-    shows up in the drafts list but opens read-only for now.
+    <strong>Known limitations as of v0.20.</strong>
     Offline mode is read-only: the service worker
     falls back to your last-synced inbox, and any action needs the server.
     Gmail label display and the <code>label:</code> filter action are dormant,

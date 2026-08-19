@@ -304,8 +304,9 @@ PATCH /v1/drafts/{id}</code></pre>
 
 <p>
   Note the asymmetry with send: draft recipients are comma-separated
-  <em>strings</em>, where <code>SendRequest</code> takes arrays. Drafts are
-  local to mimux — they are not appended to the IMAP Drafts folder.
+  <em>strings</em>, where <code>SendRequest</code> takes arrays. A draft created
+  through the API is a draft like any other: written to SQLite and published to
+  the account's IMAP Drafts folder in the background, attachments and all.
 </p>
 
 <p>
