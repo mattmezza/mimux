@@ -50,24 +50,25 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "ver=${tag#v}" >> "$GITHUB_OUTPUT"
 
+      # Six binaries: three targets by two flavours. The pro one is the same
+      # client plus the ELv2 automation layer, with the production licence key
+      # linked in, and is suffixed -pro in both the filename and main.version so
+      # `mimux -version` and the licence watermark agree.
       - name: Build release binaries
         run: |
-          for target in linux/amd64 linux/arm64 darwin/arm64; do
-            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
-              go build -ldflags="-s -w -X main.version=${{ github.event.release.tag_name }}" \
-              -o dist/mimux-${target%/*}-${target#*/} ./cmd/mimux
-          done
-
-      # The pro binaries: same client, plus the ELv2 automation layer, with the
-      # production licence key linked in. Suffixed -pro in both the filename and
-      # main.version, so `mimux -version` and the licence watermark agree.
-      - name: Build pro release binaries
-        run: |
-          for target in linux/amd64 linux/arm64 darwin/arm64; do
-            GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
-              go build -tags pro \
-              -ldflags="-s -w -X main.version=${{ github.event.release.tag_name }}-pro -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}" \
-              -o dist/mimux-pro-${target%/*}-${target#*/} ./cmd/mimux
+          tag="${{ github.event.release.tag_name }}"
+          for flavour in free pro; do
+            tags=""; name=mimux; version="$tag"; pubkey=""
+            if [ "$flavour" = pro ]; then
+              tags=pro; name=mimux-pro; version="$tag-pro"
+              pubkey=" -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}"
+            fi
+            for target in linux/amd64 linux/arm64 darwin/arm64; do
+              GOOS=${target%/*} GOARCH=${target#*/} CGO_ENABLED=0 \
+                go build -tags "$tags" \
+                -ldflags="-s -w -X main.version=${version}${pubkey}" \
+                -o dist/$name-${target%/*}-${target#*/} ./cmd/mimux
+            done
           done
           # A release that links the dev key would verify nothing anyone paid
           # for, and would do it silently. Fail loudly instead.
