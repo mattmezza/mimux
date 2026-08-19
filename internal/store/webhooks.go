@@ -258,8 +258,11 @@ type WebhookDelivery struct {
 	DeliveredAt    time.Time // zero until a 2xx
 }
 
-// Succeeded reports whether this delivery is done and went through.
-func (d WebhookDelivery) Succeeded() bool { return d.Status == WebhookOK }
+// Awaiting reports whether another attempt is still coming — the only case
+// where next_attempt_at means anything.
+func (d WebhookDelivery) Awaiting() bool {
+	return d.Status == WebhookPending || d.Status == WebhookFailed
+}
 
 const webhookDeliveryCols = `id, endpoint_id, event_type, delivery_id, payload, status, attempts,
 	next_attempt_at, last_status_code, last_error, response_body, duration_ms, created_at, delivered_at`

@@ -78,7 +78,7 @@
               <div class="px-3 pb-3 space-y-3 text-xs">
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-zinc-500">
                   <span>Delivery id <code class="text-zinc-300">{{.DeliveryID}}</code></span>
-                  {{if not .Succeeded}}<span>Next attempt {{absTime .NextAttemptAt}}</span>{{end}}
+                  {{if .Awaiting}}<span>Next attempt {{absTime .NextAttemptAt}}</span>{{end}}
                 </div>
                 {{if .LastError}}<p class="text-red-400/90 break-words">{{.LastError}}</p>{{end}}
 
