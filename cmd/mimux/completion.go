@@ -27,6 +27,24 @@ func init() {
 // describes for subcommands itself — cmd/mimux must not import pro/ directly.
 var mailVerbs []string
 
+// mailSubverbs is the third level: a `mimux mail` verb that nests, mapped to
+// its own subcommands. Same registration hook as mailVerbs, and empty in the
+// free build for the same reason. `mimux mail webhooks <TAB>` is the only one
+// today.
+var mailSubverbs map[string][]string
+
+// sortedSubverbs keeps the generated script stable across runs — a map range
+// would reorder it, and a completion script that changes for no reason is a
+// diff nobody can review.
+func sortedSubverbs() []string {
+	verbs := make([]string, 0, len(mailSubverbs))
+	for v := range mailSubverbs {
+		verbs = append(verbs, v)
+	}
+	sort.Strings(verbs)
+	return verbs
+}
+
 func runCompletion(args []string) int {
 	if len(args) == 1 {
 		switch args[0] {
@@ -84,6 +102,10 @@ func bashCompletion() string {
 	if len(mailVerbs) > 0 {
 		fmt.Fprintf(&b, "  if [ \"${COMP_WORDS[1]}\" = mail ] && [ \"$COMP_CWORD\" -eq 2 ]; then\n    COMPREPLY=( $(compgen -W %q -- \"$cur\") )\n  fi\n",
 			strings.Join(mailVerbs, " "))
+		for _, verb := range sortedSubverbs() {
+			fmt.Fprintf(&b, "  if [ \"${COMP_WORDS[1]}\" = mail ] && [ \"${COMP_WORDS[2]}\" = %s ] && [ \"$COMP_CWORD\" -eq 3 ]; then\n    COMPREPLY=( $(compgen -W %q -- \"$cur\") )\n  fi\n",
+				verb, strings.Join(mailSubverbs[verb], " "))
+		}
 	}
 	b.WriteString("}\ncomplete -F _mimux mimux\n")
 	return b.String()
@@ -97,6 +119,11 @@ func zshCompletion() string {
 	if len(mailVerbs) > 0 {
 		fmt.Fprintf(&b, "  local -a mail_verbs; mail_verbs=(%s)\n", strings.Join(mailVerbs, " "))
 		b.WriteString("  if [[ \"${words[2]}\" == mail && \"$CURRENT\" == 3 ]]; then\n    _describe 'mail command' mail_verbs\n    return\n  fi\n")
+		for _, verb := range sortedSubverbs() {
+			fmt.Fprintf(&b, "  local -a %s_subverbs; %s_subverbs=(%s)\n", verb, verb, strings.Join(mailSubverbs[verb], " "))
+			fmt.Fprintf(&b, "  if [[ \"${words[2]}\" == mail && \"${words[3]}\" == %s && \"$CURRENT\" == 4 ]]; then\n    _describe '%s command' %s_subverbs\n    return\n  fi\n",
+				verb, verb, verb)
+		}
 	}
 	b.WriteString("}\n\n_mimux \"$@\"\n")
 	return b.String()

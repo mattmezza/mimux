@@ -11,4 +11,5 @@ import "github.com/mattmezza/mimux/pro"
 func init() {
 	subcommands["mail"] = pro.RunCLI
 	mailVerbs = pro.CLIVerbs()
+	mailSubverbs = pro.CLISubverbs()
 }
