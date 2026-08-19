@@ -404,7 +404,7 @@ func (a *api) applyRead(msg *store.Message, read bool) {
 }
 
 func (a *api) applyStarred(msg *store.Message, starred bool) {
-	_ = a.store.SetStarred(msg.ID, starred)
+	_, _ = a.store.SetStarred(msg.ID, starred)
 	msg.IsStarred = starred
 	msgCopy := *msg
 	a.background("set starred", func(ctx context.Context) error { return a.mail.SetStarred(ctx, &msgCopy, starred) })

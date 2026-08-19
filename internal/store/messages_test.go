@@ -243,7 +243,7 @@ func TestLabelsSurviveResync(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored, _ := s.MessageByFolderUID(f, 1)
-	if err := s.SetLabels(stored.ID, "Work Project_X"); err != nil {
+	if _, err := s.SetLabels(stored.ID, "Work Project_X"); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.UpsertMessage(m); err != nil { // same UID re-synced, Labels still ""
@@ -267,5 +267,35 @@ func TestLabelsSurviveResync(t *testing.T) {
 	raws, err := s.DistinctLabels()
 	if err != nil || len(raws) != 1 || raws[0] != `\Inbox Work` {
 		t.Fatalf("DistinctLabels = %v, %v", raws, err)
+	}
+}
+
+// TestSettersReportNoOp: the sync path tells "the server changed something"
+// from "the server is echoing back what mimux just wrote" by whether the write
+// moved a row. A setter called with the value already stored must say so.
+func TestSettersReportNoOp(t *testing.T) {
+	s := open(t)
+	f, _ := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	if err := s.UpsertMessage(&Message{Account: "A", FolderID: f, UID: 1, Subject: "hi", Date: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.MessageByFolderUID(f, 1)
+
+	for _, tc := range []struct {
+		name string
+		set  func() (bool, error)
+	}{
+		{"SetReadFromServer", func() (bool, error) { return s.SetReadFromServer(m.ID, true) }},
+		{"SetStarred", func() (bool, error) { return s.SetStarred(m.ID, true) }},
+		{"SetLabels", func() (bool, error) { return s.SetLabels(m.ID, "Work") }},
+	} {
+		got, err := tc.set()
+		if err != nil || !got {
+			t.Fatalf("%s first write = %v, %v; want true", tc.name, got, err)
+		}
+		got, err = tc.set()
+		if err != nil || got {
+			t.Errorf("%s re-write of the same value = %v, %v; want false", tc.name, got, err)
+		}
 	}
 }

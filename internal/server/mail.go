@@ -770,7 +770,7 @@ func (s *Server) handleStar(star bool) http.HandlerFunc {
 		if msg == nil {
 			return
 		}
-		_ = s.store.SetStarred(msg.ID, star)
+		_, _ = s.store.SetStarred(msg.ID, star)
 		msg.IsStarred = star
 		s.background(func(ctx context.Context) error { return s.mail.SetStarred(ctx, msg, star) })
 		s.renderPartial(w, rowTemplate(r), msg)

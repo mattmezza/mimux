@@ -64,7 +64,7 @@ func TestMarkReadSurvivesSyncWhenIMAPPushFails(t *testing.T) {
 
 	// Sync pulls the server's flags, which still say unread because the \Seen
 	// push never landed. Both write paths must leave the pending row alone.
-	_ = s.store.SetReadFromServer(id, false)
+	_, _ = s.store.SetReadFromServer(id, false)
 	if m, _ := s.store.MessageByID(id); m == nil || !m.IsRead {
 		t.Errorf("flag sync reverted a mark-read whose \\Seen push is still owed")
 	}
@@ -80,7 +80,7 @@ func TestMarkReadSurvivesSyncWhenIMAPPushFails(t *testing.T) {
 	// Once the retry lands the flag, the server is authoritative again — so a
 	// genuine "marked unread elsewhere" still propagates.
 	_ = s.store.ClearSeenDirty(id, true)
-	_ = s.store.SetReadFromServer(id, false)
+	_, _ = s.store.SetReadFromServer(id, false)
 	if m, _ := s.store.MessageByID(id); m == nil || m.IsRead {
 		t.Errorf("after the push landed, the server's unread must win")
 	}

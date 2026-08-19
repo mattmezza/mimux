@@ -238,7 +238,7 @@ func (m *Manager) SetLabel(msg *store.Message, label string, add bool) error {
 		return nil
 	}
 	msg.Labels = labels
-	if err := m.st.SetLabels(msg.ID, labels); err != nil {
+	if _, err := m.st.SetLabels(msg.ID, labels); err != nil {
 		return err
 	}
 	m.changed(msg)

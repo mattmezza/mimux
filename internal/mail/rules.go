@@ -68,7 +68,7 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 		_ = m.st.SetRead(msg.ID, true)
 		return m.setRead(ctx, c, msg, true)
 	case filter.ActionStar:
-		_ = m.st.SetStarred(msg.ID, true)
+		_, _ = m.st.SetStarred(msg.ID, true)
 		return m.setStarred(ctx, c, msg, true)
 	case filter.ActionMove:
 		_ = m.st.DeleteMessage(msg.ID)

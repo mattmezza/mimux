@@ -358,10 +358,10 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 		// SetReadFromServer, not SetRead: a local mark-read whose \Seen push hasn't
 		// landed yet must not be reverted to the server's stale "unread" here —
 		// pushSeenDirty is still retrying it.
-		_ = a.m.st.SetReadFromServer(m.ID, hasFlag(buf.Flags, imap.FlagSeen))
-		_ = a.m.st.SetStarred(m.ID, hasFlag(buf.Flags, imap.FlagFlagged))
+		_, _ = a.m.st.SetReadFromServer(m.ID, hasFlag(buf.Flags, imap.FlagSeen))
+		_, _ = a.m.st.SetStarred(m.ID, hasFlag(buf.Flags, imap.FlagFlagged))
 		if merged := MergeLabels(m.Labels, flagStrings(buf.Flags)); merged != m.Labels {
-			_ = a.m.st.SetLabels(m.ID, merged)
+			_, _ = a.m.st.SetLabels(m.ID, merged)
 		}
 	}
 	return len(msgs) > 0, nil

@@ -449,10 +449,22 @@ func splitIDs(s string) []string {
 	return out
 }
 
-// SetLabels stores the space-joined label set for a message.
-func (s *Store) SetLabels(id int64, labels string) error {
-	_, err := s.DB.Exec(`UPDATE messages SET labels = ? WHERE id = ?`, labels, id)
-	return err
+// SetLabels stores the space-joined label set for a message, reporting whether
+// the row actually moved. See changed().
+func (s *Store) SetLabels(id int64, labels string) (bool, error) {
+	return changed(s.DB.Exec(`UPDATE messages SET labels = ? WHERE id = ? AND labels != ?`, labels, id, labels))
+}
+
+// changed turns an UPDATE result into "did this write anything". The sync path
+// uses it to tell a real change on the server from an echo of one mimux made
+// itself: the setters below only touch a row whose value differs, so a write
+// that affected nothing is a no-op the caller must stay quiet about.
+func changed(res sql.Result, err error) (bool, error) {
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // DistinctLabels returns every distinct non-empty labels column value — the
@@ -538,12 +550,13 @@ func (s *Store) SetRead(id int64, read bool) error {
 	return err
 }
 
-// SetReadFromServer applies the server's \Seen truth during sync. It skips rows
-// whose own \Seen push is still owed — those are ahead of the server, not behind
-// it, and overwriting them is exactly how a mark-read "came back unread".
-func (s *Store) SetReadFromServer(id int64, read bool) error {
-	_, err := s.DB.Exec(`UPDATE messages SET is_read = ? WHERE id = ? AND seen_dirty = 0`, b2i(read), id)
-	return err
+// SetReadFromServer applies the server's \Seen truth during sync, reporting
+// whether the row actually moved (see changed()). It skips rows whose own \Seen
+// push is still owed — those are ahead of the server, not behind it, and
+// overwriting them is exactly how a mark-read "came back unread".
+func (s *Store) SetReadFromServer(id int64, read bool) (bool, error) {
+	return changed(s.DB.Exec(`UPDATE messages SET is_read = ? WHERE id = ? AND seen_dirty = 0 AND is_read != ?`,
+		b2i(read), id, b2i(read)))
 }
 
 // ClearSeenDirty marks a message's \Seen state as confirmed on the server. The
@@ -574,9 +587,11 @@ func (s *Store) DirtySeen(account string, limit int) ([]Message, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) SetStarred(id int64, starred bool) error {
-	_, err := s.DB.Exec(`UPDATE messages SET is_starred = ? WHERE id = ?`, b2i(starred), id)
-	return err
+// SetStarred stores the \Flagged state, reporting whether the row actually
+// moved (see changed()).
+func (s *Store) SetStarred(id int64, starred bool) (bool, error) {
+	return changed(s.DB.Exec(`UPDATE messages SET is_starred = ? WHERE id = ? AND is_starred != ?`,
+		b2i(starred), id, b2i(starred)))
 }
 
 // DeleteMessageByUID removes a single message row (used when the server
