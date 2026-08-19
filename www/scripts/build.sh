@@ -7,11 +7,17 @@ set -eu
 cd "$(dirname "$0")/../.."
 
 mkdir -p www/dist/css
-rsync -a --delete --exclude='app.css' --exclude='assets/' www/src/ www/dist/
+# js/site.*.js is excluded, which in rsync also protects it from --delete: the
+# previous build's bundle has to survive this one. HTML already sitting in a
+# browser or edge cache is pinned to that exact filename, and deleting it turns
+# every one of those pages into a 404 for the only script it has. They are
+# pruned by age further down instead.
+rsync -a --delete --exclude='app.css' --exclude='assets/' --exclude='js/site.*.js' \
+	www/src/ www/dist/
 npx @tailwindcss/cli -i www/src/app.css -o www/dist/css/app.css --minify
 
 python3 - <<'EOF'
-import base64, glob, hashlib, json, re
+import base64, glob, hashlib, json, os, re, time
 
 css = open("www/dist/css/app.css").read()
 # The inlined stylesheet lives at the root, so ../ paths must become absolute.
@@ -31,6 +37,18 @@ js_tag = '<script defer src="/js/%s"></script>' % js_name
 # www/dist/js/site.js stays, byte-identical. HTML already sitting in browser
 # and edge caches still asks for it; delete it and those visitors get a 404
 # until their copy expires. Not leftovers — do not tidy it away.
+
+# Same reasoning for the older *hashed* bundles the rsync above preserved, with
+# an expiry: HTML is served must-revalidate (see _headers), so nothing can be
+# pinned to a month-old bundle unless the visitor has been offline that long.
+# Age rather than a count because this must be idempotent — building twice in a
+# row, which is exactly what a release does after a local build, must not throw
+# away the bundle the live site is still pointing at.
+KEEP = 30 * 86400
+for old in glob.glob("www/dist/js/site.*.js"):
+    if os.path.basename(old) != js_name and time.time() - os.path.getmtime(old) > KEEP:
+        os.remove(old)
+        print("pruned " + old + " — older than 30 days, nothing can still ask for it")
 
 pages = glob.glob("www/dist/**/*.html", recursive=True)
 assert pages, "no pages found in www/dist"

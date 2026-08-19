@@ -30,6 +30,31 @@
   Cache-Control: public, max-age=3600
 
 # Filenames are content-hashed at build time (site.<hash>.js), so a new build
-# is a new URL and this can never serve stale code.
-/js/*
+# is a new URL and this can never serve stale code. build.sh keeps the previous
+# build's bundle on disk for a month so the HTML below, which may be a few
+# minutes stale, never asks for a file that is no longer there.
+# Deliberately not /js/* : the unhashed /js/site.js is still emitted as a
+# fallback and its contents change from build to build, so a year of immutable
+# on that one URL is the exact stale-code trap the hashing exists to close.
+/js/site.*.js
   Cache-Control: public, max-age=31536000, immutable
+
+# HTML is the one thing that must not be cached hard: it carries the pinned
+# /js/<hash>.js filename and the inlined stylesheet, so a stale copy is a page
+# driven by last month's build. must-revalidate rather than no-store — the
+# conditional request still ends in a 304 the overwhelming majority of the time.
+#
+# Spelled out per shape instead of on /* above, because Cloudflare Pages joins
+# duplicate headers with a comma rather than letting the more specific rule win:
+# a Cache-Control here plus the immutable ones above would arrive at the browser
+# as one nonsense value and take the year-long asset caching down with it.
+# Pages are directory-index style, so the request path is / or /pricing/ and
+# never ends in .html — except 404.html, which Cloudflare serves by name.
+/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/:page/
+  Cache-Control: public, max-age=0, must-revalidate
+
+/*.html
+  Cache-Control: public, max-age=0, must-revalidate
