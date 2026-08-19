@@ -1299,7 +1299,7 @@
         "tags": ["Webhooks"],
         "operationId": "onMessageUpdated",
         "summary": "Message updated",
-        "description": "A message mimux already had was changed **by mimux**: read or unread, starred or unstarred, labelled or unlabelled, or moved to another folder. `change` says which, and the rest of the payload is the message as it is now — so a `moved` carries the destination folder.\n\nIt covers your own clicks, the JSON API and the MCP tools, and the filter rules that run on new mail. It does **not** cover a flag another IMAP client flipped: mimux learns those by reading the server's truth back during sync, and does not diff them. Like the other message events it is silent until the account has completed one sync in this process, so a first sync never replays as a burst of changes.",
+        "description": "A message mimux already had was changed: read or unread, starred or unstarred, labelled or unlabelled, or moved to another folder. `change` says which, `origin` says who (`mimux` or `external`), and the rest of the payload is the message as it is now — so a `moved` carries the destination folder.\n\n`origin: mimux` covers your own clicks, the JSON API and the MCP tools, and the filter rules that run on new mail. `origin: external` is a change another mail client made, found by diffing the server's flags against what is stored — read/unread and star/unstar only (labels are add-only, so a label removed elsewhere is invisible), CONDSTORE servers only, and in the steady state only for the inbox; other folders are re-read on reconnect. A batch larger than the *External change burst limit* setting (200 by default, 0 to turn the cap off) is treated as a catch-up and stored without being delivered. Like the other message events it is silent until the account has completed one sync in this process, so a first sync never replays as a burst of changes.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1318,6 +1318,7 @@
                   "id": 41207,
                   "account": "work",
                   "change": "moved",
+                  "origin": "mimux",
                   "folder": "Archive",
                   "folder_id": 5,
                   "from": { "name": "Ada Lovelace", "address": "ada@example.com" },
@@ -2208,12 +2209,17 @@
           { "$ref": "#/components/schemas/MessageReceivedData" },
           {
             "type": "object",
-            "required": ["change"],
+            "required": ["change", "origin"],
             "properties": {
               "change": {
                 "type": "string",
                 "description": "What changed, and its new value. The message fields around it are the state after the change.",
                 "enum": ["read", "unread", "starred", "unstarred", "labeled", "unlabeled", "moved"]
+              },
+              "origin": {
+                "type": "string",
+                "description": "Who made the change: mimux itself (a click, the API, a filter rule) or another mail client touching the same mailbox.",
+                "enum": ["mimux", "external"]
               }
             }
           }

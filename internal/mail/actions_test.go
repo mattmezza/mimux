@@ -124,12 +124,12 @@ func TestMutationsPublishMessageUpdated(t *testing.T) {
 		do   func() error
 		want string
 	}{
-		{"star", func() error { return m.setStarred(ctx, c, msg, true) }, id + " starred"},
-		{"unstar", func() error { return m.setStarred(ctx, c, msg, false) }, id + " unstarred"},
-		{"read", func() error { return m.setRead(ctx, c, msg, true) }, id + " read"},
-		{"label", func() error { return m.SetLabel(msg, "work", true) }, id + " labeled"},
-		{"unlabel", func() error { return m.SetLabel(msg, "work", false) }, id + " unlabeled"},
-		{"move", func() error { return m.moveToFolder(ctx, c, msg, "Archive") }, id + " moved"},
+		{"star", func() error { return m.setStarred(ctx, c, msg, true) }, id + " starred mimux"},
+		{"unstar", func() error { return m.setStarred(ctx, c, msg, false) }, id + " unstarred mimux"},
+		{"read", func() error { return m.setRead(ctx, c, msg, true) }, id + " read mimux"},
+		{"label", func() error { return m.SetLabel(msg, "work", true) }, id + " labeled mimux"},
+		{"unlabel", func() error { return m.SetLabel(msg, "work", false) }, id + " unlabeled mimux"},
+		{"move", func() error { return m.moveToFolder(ctx, c, msg, "Archive") }, id + " moved mimux"},
 	} {
 		if err := step.do(); err != nil {
 			t.Fatalf("%s: %v", step.name, err)

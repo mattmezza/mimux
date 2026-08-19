@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -338,6 +339,18 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 // modseq and reports whether the server returned any changed messages (a
 // proxy for "the list's read/star/label state changed", used to trigger a
 // browser refresh).
+//
+// It is also where an EXTERNAL change is detected: each setter only touches a
+// row whose value differs, so a write that moved a row is a change mimux did
+// not make itself — every mimux mutation writes the store before pushing IMAP
+// (see the invariant in actions.go), which makes the echo a no-op here. Each
+// real one is announced as message-updated with origin "external".
+//
+// Limits, all structural to this function and documented for users on the
+// webhooks docs page: CONDSTORE only (no CONDSTORE, no ChangedSince, no diff),
+// and only for the folders a cycle actually syncs — the inbox in the steady
+// state, everything else on reconnect. Labels are add-only, because MergeLabels
+// is additive: a label another client removed cannot be seen from here.
 func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool, error) {
 	set := imap.UIDSet{{Start: 1, Stop: 0}}
 	msgs, err := c.Fetch(set, &imap.FetchOptions{
@@ -347,6 +360,16 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 	}).Collect()
 	if err != nil {
 		return false, err
+	}
+	// One prefs read per folder per cycle, not per message. A reconnect after a
+	// long outage answers with the whole backlog at once: that is a catch-up,
+	// not live activity, so past the limit the store still takes every write and
+	// nothing is announced.
+	announce := true
+	if limit := a.m.st.GetPrefs().ExternalBurstLimit; limit > 0 && len(msgs) > limit {
+		announce = false
+		slog.Info("sync: flag-change burst over the external-change limit, not announcing",
+			"account", a.cfg.Name, "folder", f.Name, "changes", len(msgs), "limit", limit)
 	}
 	for _, buf := range msgs {
 		// MessageByFolderUID rather than the bare id lookup: merging keyword
@@ -358,10 +381,18 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 		// SetReadFromServer, not SetRead: a local mark-read whose \Seen push hasn't
 		// landed yet must not be reverted to the server's stale "unread" here —
 		// pushSeenDirty is still retrying it.
-		_, _ = a.m.st.SetReadFromServer(m.ID, hasFlag(buf.Flags, imap.FlagSeen))
-		_, _ = a.m.st.SetStarred(m.ID, hasFlag(buf.Flags, imap.FlagFlagged))
+		read := hasFlag(buf.Flags, imap.FlagSeen)
+		if moved, _ := a.m.st.SetReadFromServer(m.ID, read); moved && announce {
+			a.m.updated(m, changeWord(read, "read", "unread"), originExternal)
+		}
+		starred := hasFlag(buf.Flags, imap.FlagFlagged)
+		if moved, _ := a.m.st.SetStarred(m.ID, starred); moved && announce {
+			a.m.updated(m, changeWord(starred, "starred", "unstarred"), originExternal)
+		}
 		if merged := MergeLabels(m.Labels, flagStrings(buf.Flags)); merged != m.Labels {
-			_, _ = a.m.st.SetLabels(m.ID, merged)
+			if moved, _ := a.m.st.SetLabels(m.ID, merged); moved && announce {
+				a.m.updated(m, "labeled", originExternal)
+			}
 		}
 	}
 	return len(msgs) > 0, nil

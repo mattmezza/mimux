@@ -86,31 +86,36 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 	return raw, err
 }
 
-// updated announces a change this process just made to a stored message: the
-// store id plus one word for what changed ("123 starred"). Published by the
-// four mutation helpers below; the browser ignores it (it refreshes off
-// new-mail) and pro/webhooks.go turns it into a message.updated delivery.
+// Who made a change, for the message.updated payload's "origin" field. It is
+// there for troubleshooting: "my rule fired twice" and "another client is
+// fighting me over this flag" look identical without it.
+const (
+	originMimux    = "mimux"
+	originExternal = "external"
+)
+
+// updated announces a change to a stored message: the store id, one word for
+// what changed, and who changed it ("123 starred mimux"). Published by the four
+// mutation helpers below and by the flag sync (fetchFlagChanges) for a change
+// another IMAP client made; the browser ignores it (it refreshes off new-mail)
+// and pro/webhooks.go turns it into a message.updated delivery.
 //
-// Scope, deliberately: only changes mimux itself made. A flag a different IMAP
-// client flipped never comes through here — the sync loop writes the server's
-// truth straight to the store (see fetchFlagChanges), so it would need its own
-// event and its own diffing. "mimux changed this" is what this event means.
-//
-// The guard is signalNewMessage's, for the same reason: these helpers are not
-// only user/API-driven, filter rules run them from inside the sync loop for
-// every newly-stored message (see applyAction), which on a first sync is the
-// whole mailbox. LastSync stays zero for that entire first cycle, so backfill
-// is silent and steady-state rule hits are not.
+// The guard is signalNewMessage's: these helpers are not only user/API-driven,
+// filter rules run them from inside the sync loop for every newly-stored
+// message (see applyAction), which on a first sync is the whole mailbox.
+// LastSync stays zero for that entire first cycle, so backfill is silent and
+// steady-state rule hits are not.
 //
 // ponytail: a mid-session UIDVALIDITY re-fetch re-runs the rules over old mail
 // with LastSync already set, so that one path can still burst. Thread a "this
 // is the sync worker" flag through applyAction if it ever bites.
-func (m *Manager) updated(msg *store.Message, change string) {
-	a := m.accounts[msg.Account]
+func (m *Manager) updated(msg *store.Message, change, origin string) {
+	a := m.account(msg.Account)
 	if a == nil || a.getStatus().LastSync.IsZero() {
 		return
 	}
-	m.hub.broadcast(Event{Type: "message-updated", Data: strconv.FormatInt(msg.ID, 10) + " " + change})
+	m.hub.broadcast(Event{Type: "message-updated",
+		Data: strconv.FormatInt(msg.ID, 10) + " " + change + " " + origin})
 }
 
 // changeWord names a boolean change for the message-updated event.
@@ -120,6 +125,14 @@ func changeWord(on bool, yes, no string) string {
 	}
 	return no
 }
+
+// INVARIANT for every mutation below: the store is written FIRST (by the
+// handler, the API or the filter rule), and the IMAP push happens afterwards,
+// in the background. That ordering is what makes the sync loop's external-change
+// detection safe — when the server echoes our own flag back, fetchFlagChanges
+// writes a value the row already has, the setter reports "nothing moved", and no
+// event fires. A caller that pushed to IMAP before writing the store would
+// manufacture a self-inflicted "external" change on the very next sync.
 
 // SetRead adds or removes the \Seen flag on the server and, once it lands,
 // clears the store's "push still owed" marker that store.SetRead set. If the
@@ -138,7 +151,7 @@ func (m *Manager) setRead(ctx context.Context, c *imapclient.Client, msg *store.
 		return err
 	}
 	defer m.changed(msg)
-	m.updated(msg, changeWord(read, "read", "unread"))
+	m.updated(msg, changeWord(read, "read", "unread"), originMimux)
 	return m.st.ClearSeenDirty(msg.ID, read)
 }
 
@@ -189,7 +202,7 @@ func (m *Manager) setStarred(ctx context.Context, c *imapclient.Client, msg *sto
 		return err
 	}
 	m.changed(msg)
-	m.updated(msg, changeWord(starred, "starred", "unstarred"))
+	m.updated(msg, changeWord(starred, "starred", "unstarred"), originMimux)
 	return nil
 }
 
@@ -242,7 +255,7 @@ func (m *Manager) SetLabel(msg *store.Message, label string, add bool) error {
 		return err
 	}
 	m.changed(msg)
-	m.updated(msg, changeWord(add, "labeled", "unlabeled"))
+	m.updated(msg, changeWord(add, "labeled", "unlabeled"), originMimux)
 	return nil
 }
 
@@ -320,7 +333,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 	}); err != nil {
 		return err
 	}
-	m.updated(msg, "moved")
+	m.updated(msg, "moved", originMimux)
 	return nil
 }
 

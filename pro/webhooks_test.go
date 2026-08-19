@@ -333,8 +333,9 @@ func TestWebhookTranslatesHubEvents(t *testing.T) {
 	}
 }
 
-// TestWebhookTranslatesMessageUpdated: the hub's "<id> <change>" becomes a
-// message.updated carrying the message as it is now, for subscribers only.
+// TestWebhookTranslatesMessageUpdated: the hub's "<id> <change> <origin>"
+// becomes a message.updated carrying the message as it is now, for subscribers
+// only.
 func TestWebhookTranslatesMessageUpdated(t *testing.T) {
 	e, st, _ := testEngine(t)
 	ep := seedEndpoint(t, st, "https://example.test/hook", "message.updated")
@@ -346,12 +347,12 @@ func TestWebhookTranslatesMessageUpdated(t *testing.T) {
 		FromName: "Ada", FromAddress: "ada@example.test", MessageID: "<1@x>"})
 
 	seen := map[string]string{}
+	e.translate(mail.Event{Type: "message-updated", Data: strconv.FormatInt(id, 10) + " moved mimux"}, seen)
+	// Malformed data, and a message that is gone by the time we look, queue
+	// nothing.
 	e.translate(mail.Event{Type: "message-updated", Data: strconv.FormatInt(id, 10) + " moved"}, seen)
-	// Malformed data, and a message that is gone by the time we look (a rule's
-	// move deletes the local row), queue nothing.
-	e.translate(mail.Event{Type: "message-updated", Data: strconv.FormatInt(id, 10)}, seen)
-	e.translate(mail.Event{Type: "message-updated", Data: "not-a-number read"}, seen)
-	e.translate(mail.Event{Type: "message-updated", Data: "999999 moved"}, seen)
+	e.translate(mail.Event{Type: "message-updated", Data: "not-a-number read mimux"}, seen)
+	e.translate(mail.Event{Type: "message-updated", Data: "999999 moved external"}, seen)
 
 	log, _ := st.ListWebhookDeliveries(ep.ID, 10)
 	if len(log) != 1 {
@@ -366,7 +367,7 @@ func TestWebhookTranslatesMessageUpdated(t *testing.T) {
 	if err := json.Unmarshal([]byte(log[0].Payload), &p); err != nil {
 		t.Fatal(err)
 	}
-	if p.Data["change"] != "moved" || p.Data["folder"] != "Archive" || p.Data["subject"] != "Hello" {
+	if p.Data["change"] != "moved" || p.Data["origin"] != "mimux" || p.Data["folder"] != "Archive" || p.Data["subject"] != "Hello" {
 		t.Errorf("message.updated payload = %v", p.Data)
 	}
 	if _, ok := p.Data["body"]; ok {

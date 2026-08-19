@@ -43,7 +43,7 @@ description: mimux webhooks — signed HMAC-SHA256 deliveries, the seven-step re
   <tbody>
     <tr><td><code>message.received</code></td><td>A new message lands in an account's <strong>inbox</strong>.</td><td>id, account, folder, folder_id, from, subject, date, snippet, message_id</td></tr>
     <tr><td><code>message.sent</code></td><td>A message lands in an account's <strong>Sent</strong> folder.</td><td>id, account, to, subject, date, message_id</td></tr>
-    <tr><td><code>message.updated</code></td><td>mimux read, starred, labelled or moved a message it already had — your click, the API, or a filter rule. A flag another IMAP client flipped does <strong>not</strong> fire it.</td><td>the <code>message.received</code> fields, as they are after the change, plus <code>change</code> (<code>read</code>, <code>unread</code>, <code>starred</code>, <code>unstarred</code>, <code>labeled</code>, <code>unlabeled</code>, <code>moved</code>)</td></tr>
+    <tr><td><code>message.updated</code></td><td>A message mimux already had was read, starred, labelled or moved — by you, by the API, by a filter rule, or by another mail client touching the same mailbox.</td><td>the <code>message.received</code> fields, as they are after the change, plus <code>change</code> (<code>read</code>, <code>unread</code>, <code>starred</code>, <code>unstarred</code>, <code>labeled</code>, <code>unlabeled</code>, <code>moved</code>) and <code>origin</code> (<code>mimux</code> or <code>external</code>)</td></tr>
     <tr><td><code>sync.error</code></td><td>An account goes into the error state, or changes its reason for being there.</td><td>account, error</td></tr>
     <tr><td><code>search.completed</code></td><td>A deep search job finishes — the one API call whose answer arrives long after its response was written.</td><td>job_id, query, results (a count; fetch the messages with <code>GET /v1/search/jobs/{id}</code>)</td></tr>
     <tr><td><code>ping</code></td><td>Only from the test endpoint. <strong>Not subscribable</strong>, which is why it is not in <code>events</code>.</td><td>&mdash;</td></tr>
@@ -55,6 +55,44 @@ description: mimux webhooks — signed HMAC-SHA256 deliveries, the seven-step re
   <code>sync.error</code> fires on the <em>edge</em> into the error state, not on
   every sync-status broadcast while it stays broken — a provider that is down
   for an hour is one event, not seven hundred.
+</p>
+
+<h3>What <code>message.updated</code> can and cannot see</h3>
+
+<p>
+  <code>origin: "mimux"</code> is exact: every change mimux makes fires one,
+  because mimux is the one making it. <code>origin: "external"</code> — a flag
+  another mail client flipped — is found by diffing what the server reports
+  against what is already stored, and that diff has limits worth knowing before
+  you build on it:
+</p>
+
+<ul>
+  <li><strong>Read/unread and star/unstar only</strong>, whoever made the
+    change. Labels are add-only: mimux merges the keywords the server reports
+    into what it already has, so a label another client <em>removed</em> is
+    invisible.</li>
+  <li><strong>CONDSTORE servers only.</strong> The diff rides the same
+    <code>CHANGEDSINCE</code> fetch the flag sync uses. A server without
+    CONDSTORE gets no external-change events at all.</li>
+  <li><strong>The inbox, in the steady state.</strong> Other folders are only
+    re-read when the connection is re-established, so a star applied in Archive
+    is noticed on the next reconnect, not within the minute.</li>
+  <li><strong>Bursts are dropped.</strong> The first sync after an outage can
+    carry hundreds of changes at once. That is a catch-up, not live activity, so
+    past <em>Settings → Webhooks → External change burst limit</em> (200 by
+    default; 0 turns the cap off) the changes are stored and not delivered.</li>
+  <li><strong>Nothing until the account has completed one sync</strong> in this
+    process — otherwise a first sync would replay the whole mailbox one delivery
+    at a time.</li>
+</ul>
+
+<p>
+  A move performed by a <strong>filter rule</strong> is the one mimux-side change
+  that may not fire: the rule runs during the sync, and on a server without
+  UIDPLUS the local row is dropped rather than relocated, so there is nothing
+  left to describe. The message reappears as <code>message.received</code> when
+  its new folder is synced.
 </p>
 
 <div class="note">

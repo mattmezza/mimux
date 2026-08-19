@@ -45,7 +45,7 @@ var settingsSections = []settingsPage{
 	{ID: "signatures", Label: "Signatures"},
 	{ID: "templates", Label: "Templates"},
 	{ID: "api", Label: "API", Pro: true},
-	{ID: "webhooks", Label: "Webhooks", Pro: true},
+	{ID: "webhooks", Label: "Webhooks", Pro: true, Form: true},
 	{ID: "integrations", Label: "Integrations", Form: true},
 	{ID: "backup", Label: "Backup & restore"},
 	// Last on purpose: it is the section you visit once, not the one you live in.
@@ -212,6 +212,14 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 			if c := r.PostFormValue("color:" + a.Name); c != "" {
 				p.AccountColors[a.Name] = c
 			}
+		}
+	}
+	if in("webhooks") {
+		// The endpoint list manages itself over htmx; this is the one field the
+		// page's Save button writes.
+		p.ExternalBurstLimit = atoiDefault(r.PostFormValue("external_burst_limit"), 200)
+		if p.ExternalBurstLimit < 0 {
+			p.ExternalBurstLimit = 0 // 0 = no cap
 		}
 	}
 	if in("integrations") {

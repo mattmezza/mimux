@@ -734,6 +734,13 @@
               message bodies.
             </p>
             {{template "webhooks" (dict "CSRF" .CSRF "Webhooks" .Webhooks "Events" .WebhookEvents "NewSecret" "")}}
+
+            <label class="block space-y-1 pt-2 border-t border-zinc-800">
+              <span class="text-sm text-zinc-200">External change burst limit</span>
+              <input type="number" name="external_burst_limit" min="0" value="{{.Prefs.ExternalBurstLimit}}"
+                class="w-28 rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <span class="block text-xs text-zinc-500">A message read or starred in another mail client fires <code>message.updated</code>. After an outage the first sync back can carry hundreds of those at once — a catch-up, not live activity — so a batch bigger than this is stored but not delivered. 0 turns the cap off.</span>
+            </label>
           </section>
           {{end}}
 

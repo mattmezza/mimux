@@ -48,6 +48,12 @@ type Prefs struct {
 	// both transports; each transport is separately configured (a Web Push
 	// subscription per device, an ntfy topic URL below).
 	NotifyScope string
+	// ExternalBurstLimit caps how many flag changes one sync cycle may announce
+	// as message.updated webhooks. A reconnect after a long outage answers with
+	// the whole backlog at once — that is a catch-up, not a stream of live
+	// changes — so past this many in one batch the store still takes every
+	// write and nothing is announced. 0 turns the cap off. Default 200.
+	ExternalBurstLimit int
 	// NtfyURL is a full ntfy topic URL (https://ntfy.sh/<topic> or a
 	// self-hosted one). Blank disables that transport. It needs no browser
 	// permission and no installed PWA — the fallback for a phone that can't or
@@ -188,34 +194,35 @@ func JoinQuickActions(bar, menu []string) string {
 
 func defaultPrefs() Prefs {
 	return Prefs{
-		MarkReadDelay:    0,
-		SyncIntervalMin:  5,
-		PreviewLines:     1,
-		ShowAvatar:       true,
-		ShowAccountBadge: true,
-		ShowAttachMarker: true,
-		ShowListLabels:   false,
-		ShowFavicon:      false,
-		HideAvatarMobile: false,
-		AvatarShape:      "circle",
-		DarkMessages:     false,
-		RememberMsgTheme: false,
-		SyncMonths:       0,
-		MaxPerSync:       500,
-		BodyCache:        config.DefaultBodyCache,
-		AccountColors:    map[string]string{},
-		QuickActions:     defaultQuickActions(),
-		SearchScope:      "all",
-		ComposeMode:      "html",
-		ComposeLayout:    "fullscreen",
-		ReplyLayout:      "popup",
-		UndoSendDelay:    5,
-		ThreadOrder:      "oldest",
-		RowDoubleAction:  "unread",
-		SwipeLeftAction:  "none",
-		SwipeRightAction: "unread",
-		NotifyScope:      "off",
-		NtfyURL:          "",
+		MarkReadDelay:      0,
+		SyncIntervalMin:    5,
+		PreviewLines:       1,
+		ShowAvatar:         true,
+		ShowAccountBadge:   true,
+		ShowAttachMarker:   true,
+		ShowListLabels:     false,
+		ShowFavicon:        false,
+		HideAvatarMobile:   false,
+		AvatarShape:        "circle",
+		DarkMessages:       false,
+		RememberMsgTheme:   false,
+		SyncMonths:         0,
+		MaxPerSync:         500,
+		BodyCache:          config.DefaultBodyCache,
+		AccountColors:      map[string]string{},
+		QuickActions:       defaultQuickActions(),
+		SearchScope:        "all",
+		ComposeMode:        "html",
+		ComposeLayout:      "fullscreen",
+		ReplyLayout:        "popup",
+		UndoSendDelay:      5,
+		ThreadOrder:        "oldest",
+		RowDoubleAction:    "unread",
+		SwipeLeftAction:    "none",
+		SwipeRightAction:   "unread",
+		NotifyScope:        "off",
+		ExternalBurstLimit: 200,
+		NtfyURL:            "",
 	}
 }
 
@@ -360,6 +367,11 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("ntfy_url"); ok {
 		p.NtfyURL = v
 	}
+	if v, ok := s.getSetting("external_burst_limit"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			p.ExternalBurstLimit = n
+		}
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -384,33 +396,34 @@ func (s *Store) GetPrefs() Prefs {
 // SavePrefs writes all preference keys.
 func (s *Store) SavePrefs(p Prefs) error {
 	kv := map[string]string{
-		"mark_read_delay":    strconv.Itoa(p.MarkReadDelay),
-		"sync_interval_min":  strconv.Itoa(p.SyncIntervalMin),
-		"preview_lines":      strconv.Itoa(p.PreviewLines),
-		"show_avatar":        boolStr(p.ShowAvatar),
-		"show_account_badge": boolStr(p.ShowAccountBadge),
-		"show_attach_marker": boolStr(p.ShowAttachMarker),
-		"show_list_labels":   boolStr(p.ShowListLabels),
-		"show_favicon":       boolStr(p.ShowFavicon),
-		"hide_avatar_mobile": boolStr(p.HideAvatarMobile),
-		"avatar_shape":       p.AvatarShape,
-		"dark_messages":      boolStr(p.DarkMessages),
-		"remember_msg_theme": boolStr(p.RememberMsgTheme),
-		"sync_months":        strconv.Itoa(p.SyncMonths),
-		"max_per_sync":       strconv.Itoa(p.MaxPerSync),
-		"body_cache":         strconv.Itoa(p.BodyCache),
-		"quick_actions":      p.QuickActions,
-		"search_scope":       p.SearchScope,
-		"compose_mode":       p.ComposeMode,
-		"compose_layout":     p.ComposeLayout,
-		"reply_layout":       p.ReplyLayout,
-		"undo_send_delay":    strconv.Itoa(p.UndoSendDelay),
-		"thread_order":       p.ThreadOrder,
-		"row_double_action":  p.RowDoubleAction,
-		"swipe_left_action":  p.SwipeLeftAction,
-		"swipe_right_action": p.SwipeRightAction,
-		"notify_scope":       p.NotifyScope,
-		"ntfy_url":           p.NtfyURL,
+		"mark_read_delay":      strconv.Itoa(p.MarkReadDelay),
+		"sync_interval_min":    strconv.Itoa(p.SyncIntervalMin),
+		"preview_lines":        strconv.Itoa(p.PreviewLines),
+		"show_avatar":          boolStr(p.ShowAvatar),
+		"show_account_badge":   boolStr(p.ShowAccountBadge),
+		"show_attach_marker":   boolStr(p.ShowAttachMarker),
+		"show_list_labels":     boolStr(p.ShowListLabels),
+		"show_favicon":         boolStr(p.ShowFavicon),
+		"hide_avatar_mobile":   boolStr(p.HideAvatarMobile),
+		"avatar_shape":         p.AvatarShape,
+		"dark_messages":        boolStr(p.DarkMessages),
+		"remember_msg_theme":   boolStr(p.RememberMsgTheme),
+		"sync_months":          strconv.Itoa(p.SyncMonths),
+		"max_per_sync":         strconv.Itoa(p.MaxPerSync),
+		"body_cache":           strconv.Itoa(p.BodyCache),
+		"quick_actions":        p.QuickActions,
+		"search_scope":         p.SearchScope,
+		"compose_mode":         p.ComposeMode,
+		"compose_layout":       p.ComposeLayout,
+		"reply_layout":         p.ReplyLayout,
+		"undo_send_delay":      strconv.Itoa(p.UndoSendDelay),
+		"thread_order":         p.ThreadOrder,
+		"row_double_action":    p.RowDoubleAction,
+		"swipe_left_action":    p.SwipeLeftAction,
+		"swipe_right_action":   p.SwipeRightAction,
+		"notify_scope":         p.NotifyScope,
+		"ntfy_url":             p.NtfyURL,
+		"external_burst_limit": strconv.Itoa(p.ExternalBurstLimit),
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color
