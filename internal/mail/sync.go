@@ -332,7 +332,7 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 			return n, err
 		}
 		if isNew {
-			a.runRules(ctx, c, f.ID, uint32(buf.UID))
+			a.runRules(ctx, c, f, uint32(buf.UID), announce)
 			if announce {
 				// One hub broadcast, and every consumer (notifications, webhooks)
 				// hangs off that. Non-blocking, so the sync loop pays nothing.

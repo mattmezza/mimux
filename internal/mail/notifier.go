@@ -47,8 +47,13 @@ func (m *Manager) runNotifier(ctx context.Context) {
 // one. Split from runNotifier — and taking the window rather than reading it —
 // so a test can subscribe first and then broadcast, instead of racing the
 // subscription, and need not wait a minute for the flush.
+//
+// Two events feed it: message-new, an arrival, and rule-notify, a filter rule's
+// "notify" action asking for this one by name (see applyAction). The map value
+// is which of the two it was, because the master switch treats them
+// differently — see flushNotify.
 func (m *Manager) notifyLoop(ctx context.Context, events <-chan Event, window time.Duration) {
-	pending := map[int64]struct{}{}
+	pending := map[int64]bool{}
 	t := time.NewTimer(window)
 	t.Stop()
 	for {
@@ -59,14 +64,16 @@ func (m *Manager) notifyLoop(ctx context.Context, events <-chan Event, window ti
 			if !ok {
 				return
 			}
-			if ev.Type != "message-new" {
+			if ev.Type != "message-new" && ev.Type != "rule-notify" {
 				continue
 			}
 			id, err := strconv.ParseInt(ev.Data, 10, 64)
 			if err != nil {
 				continue
 			}
-			pending[id] = struct{}{} // dedup: the same message can be signalled twice
+			// dedup: the same message is signalled twice — once as an arrival,
+			// once by the rule that matched it — and stays rule-flagged.
+			pending[id] = pending[id] || ev.Type == "rule-notify"
 			t.Reset(window)
 		case <-t.C:
 			m.flushNotify(pending)
@@ -78,6 +85,10 @@ func (m *Manager) notifyLoop(ctx context.Context, events <-chan Event, window ti
 // flushNotify turns one window's worth of message ids into at most one
 // notification.
 //
+// The master switch decides what the window is allowed to say: "all" takes
+// every arrival, "rules" takes only the ids a filter rule asked for by name,
+// "off" takes nothing. One read per window, not one per message.
+//
 // The freshness guards (the account has synced once, the message is less than a
 // day old) already ran in signalNewMessage, which is what keeps a first sync or
 // a UIDVALIDITY re-fetch silent. What is left is notification policy, and it
@@ -87,20 +98,23 @@ func (m *Manager) notifyLoop(ctx context.Context, events <-chan Event, window ti
 // every cycle rather than only the inbox: the Sent copy turns up within the
 // minute, not on the next reconnect. See TestOnlyInboxMailBuzzes. And nothing
 // already read, which means read somewhere else, or read here in the minute
-// this window was open.
-func (m *Manager) flushNotify(ids map[int64]struct{}) {
+// this window was open — unless a rule named it, because "mark as read and
+// notify me" is a rule people write on purpose.
+func (m *Manager) flushNotify(ids map[int64]bool) {
 	if len(ids) == 0 {
 		return
 	}
-	// Once per window, not once per message: this is the expensive read the old
-	// per-message path made forty times a cycle.
-	if m.st.GetPrefs().NotifyScope != "all" {
+	scope := m.st.GetPrefs().NotifyScope
+	if scope != "all" && scope != "rules" {
 		return
 	}
 	msgs := make([]*store.Message, 0, len(ids))
-	for id := range ids {
+	for id, byRule := range ids {
+		if scope == "rules" && !byRule {
+			continue
+		}
 		msg, err := m.st.MessageByID(id)
-		if err != nil || msg == nil || msg.IsRead {
+		if err != nil || msg == nil || (msg.IsRead && !byRule) {
 			continue
 		}
 		f, err := m.st.FolderByID(msg.FolderID)

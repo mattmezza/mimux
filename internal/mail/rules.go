@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 
 	"github.com/emersion/go-imap/v2/imapclient"
 
@@ -34,13 +35,35 @@ func matchingActions(rules []filter.Rule, meta filter.MessageMeta) []filter.Acti
 // c is the sync's own connection: this runs on the worker goroutine, so the
 // actions have to use it rather than the command queue only that goroutine
 // drains (see account.exec).
-func (a *account) runRules(ctx context.Context, c *imapclient.Client, folderID int64, uid uint32) {
+//
+// RULES RUN ON MAIL ARRIVING IN AN INBOX, AND NOWHERE ELSE. Both gates are
+// here, at the one place every caller goes through, rather than repeated per
+// action (which is what the old notify-only inbox check was):
+//
+//   - arrival: fetchSet's announce flag, off for a folder's first full pass.
+//     Without it, installing mimux — or ticking a folder in Settings, or a
+//     mid-session UIDVALIDITY re-fetch — replays every rule over the whole
+//     downloaded window: a "delete" rule empties an archive, a "forward" rule
+//     mails a year of history to a colleague.
+//   - inbox: the steady loop walks every synced folder now, so without this a
+//     rule fires again on the Sent copy of your own reply, a third time on
+//     Gmail's All Mail copy, and — worst — a move/delete rule eats the IMAP
+//     draft you are still typing.
+//
+// ponytail: inbox-only also means server-side (sieve) delivery straight into a
+// custom folder is not filtered here. Gate on a per-folder "rules run here"
+// flag if someone actually needs it; a blanket "every folder" is what caused
+// all three bugs above.
+func (a *account) runRules(ctx context.Context, c *imapclient.Client, f *store.Folder, uid uint32, arrival bool) {
+	if !arrival || f.SpecialUse != "inbox" {
+		return
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("filter: rule execution panicked", "account", a.cfg.Name, "err", r)
 		}
 	}()
-	id, err := a.messageID(folderID, uid)
+	id, err := a.messageID(f.ID, uid)
 	if err != nil || id == 0 {
 		return
 	}
@@ -94,7 +117,12 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 		}()
 		return nil
 	case filter.ActionNotify:
-		return m.notifyForRule(msg)
+		// The rule says "tell me about this one"; the notifier owns everything
+		// after that — the master switch, the one-window debounce, the dedup and
+		// the wording (see notifyLoop). This used to be its own inline path with
+		// its own guards and its own goroutine.
+		m.hub.broadcast(Event{Type: "rule-notify", Data: strconv.FormatInt(msg.ID, 10)})
+		return nil
 	case filter.ActionLabel:
 		// Same write path (and the same IMAP-push gap) as labelling by hand
 		// from the reading pane — see SetLabel.
@@ -102,34 +130,6 @@ func (m *Manager) applyAction(ctx context.Context, c *imapclient.Client, msg *st
 	default:
 		return fmt.Errorf("filter: unknown action %q", act.Type)
 	}
-}
-
-// notifyForRule is the "notify" filter action: a rule matched, so tell the user
-// about this message. Two gates, both there to stop the same message buzzing
-// twice:
-//
-//   - only under the "rules" scope. Under "all" every new inbox message already
-//     notifies (see Manager.flushNotify), which makes the action redundant, not
-//     additive; under "off" nothing notifies at all.
-//   - inbox only. Rules run for every folder a sync touches, so without this a
-//     rule matching your correspondent fires again on the Sent copy of your own
-//     reply, and a third time on Gmail's All Mail copy.
-func (m *Manager) notifyForRule(msg *store.Message) error {
-	if m.st.GetPrefs().NotifyScope != "rules" {
-		return nil
-	}
-	f, err := m.st.FolderByID(msg.FolderID)
-	if err != nil || f == nil || f.SpecialUse != "inbox" {
-		return nil
-	}
-	from := msg.FromName
-	if from == "" {
-		from = msg.FromAddress
-	}
-	// Fire and forget: applyAction runs inside the sync loop, and a push service
-	// that takes ten seconds to answer must not hold up the mailbox.
-	go m.notify(msg.Account, from, msg.Subject, messageLink(m.cfg.Server.BaseURL, msg.FolderID, msg.ID))
-	return nil
 }
 
 // forwardMessage sends msg on to a new recipient as part of a "forward"

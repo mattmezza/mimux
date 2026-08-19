@@ -94,18 +94,34 @@ func newTestIMAPCaps(t *testing.T, caps imap.CapSet, msgs ...string) (*imapclien
 // submitTimeout.
 func syncInbox(t *testing.T, a *account, c *imapclient.Client) {
 	t.Helper()
+	syncSpecial(t, a, c, "inbox")
+}
+
+// deliver appends a message to a mailbox behind the client's back — another
+// client, or the server's own delivery. The next sync sees it as an ARRIVAL
+// rather than as backfill, which is the only thing filter rules run on.
+func deliver(t *testing.T, user *imapmemserver.User, mailbox, raw string) {
+	t.Helper()
+	if _, err := user.Append(mailbox, literal{bytes.NewReader([]byte(raw))}, &imap.AppendOptions{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// syncSpecial is syncInbox for any special-use folder.
+func syncSpecial(t *testing.T, a *account, c *imapclient.Client, special string) {
+	t.Helper()
 	folders, err := a.syncFolders(c)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var inbox *store.Folder
 	for i := range folders {
-		if folders[i].SpecialUse == "inbox" {
+		if folders[i].SpecialUse == special {
 			inbox = &folders[i]
 		}
 	}
 	if inbox == nil {
-		t.Fatal("no inbox discovered")
+		t.Fatalf("no %s folder discovered", special)
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -141,9 +157,11 @@ func TestRuleActionsRunOnTheSyncConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := newTestIMAP(t, testMessage("newsletter@example.com", "picks"))
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "hi"))
 	m := NewManager(&config.Config{}, st)
 	a := newTestAccount(m, "acct", "syncing") // nothing drains a.cmds, exactly as during a sync
+	syncInbox(t, a, c)                        // first pass: backfill, rules stay out of it
+	deliver(t, user, "INBOX", testMessage("newsletter@example.com", "picks"))
 	syncInbox(t, a, c)
 
 	// Server-side truth: both flags landed.
@@ -151,7 +169,7 @@ func TestRuleActionsRunOnTheSyncConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	set := imap.UIDSet{}
-	set.AddNum(1)
+	set.AddNum(2)
 	data, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
 	if err != nil {
 		t.Fatal(err)
@@ -181,12 +199,12 @@ func TestRuleMoveDuringSync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := newTestIMAP(t,
-		testMessage("newsletter@example.com", "picks"),
-		testMessage("alice@example.com", "lunch"),
-	)
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "hi"))
 	m := NewManager(&config.Config{}, st)
 	a := newTestAccount(m, "acct", "syncing")
+	syncInbox(t, a, c) // backfill
+	deliver(t, user, "INBOX", testMessage("newsletter@example.com", "picks"))
+	deliver(t, user, "INBOX", testMessage("alice@example.com", "lunch"))
 	syncInbox(t, a, c)
 
 	inbox, err := st.FolderBySpecial("acct", "inbox")
@@ -197,8 +215,8 @@ func TestRuleMoveDuringSync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(uids) != 1 || !uids[2] {
-		t.Errorf("stored inbox UIDs = %v, want only the unmatched message (uid 2)", uids)
+	if len(uids) != 2 || !uids[1] || !uids[3] {
+		t.Errorf("stored inbox UIDs = %v, want the two unmatched messages (uids 1 and 3)", uids)
 	}
 
 	if data, err := c.Select("Archive", nil).Wait(); err != nil {
@@ -208,7 +226,73 @@ func TestRuleMoveDuringSync(t *testing.T) {
 	}
 	if data, err := c.Select("INBOX", nil).Wait(); err != nil {
 		t.Fatal(err)
+	} else if data.NumMessages != 2 {
+		t.Errorf("INBOX holds %d messages, want 2 after the move", data.NumMessages)
+	}
+}
+
+// TestRulesSkipBackfill: a folder's first full pass is a download of what is
+// already there, not a delivery. Rules that ran over it turned installing mimux
+// into "apply every rule to your whole archive" — a delete rule emptying it, a
+// forward rule mailing a year of history out.
+func TestRulesSkipBackfill(t *testing.T) {
+	st := testStore(t)
+	if err := st.CreateRule(&filter.Rule{
+		Account: "acct", Name: "star newsletters", Enabled: true,
+		Conditions: []filter.Condition{{Field: filter.FieldFrom, Op: filter.OpContains, Value: "newsletter"}},
+		Actions:    []filter.Action{{Type: filter.ActionStar}, {Type: filter.ActionMove, Arg: "Archive"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c := newTestIMAP(t, testMessage("newsletter@example.com", "picks"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "syncing")
+	syncInbox(t, a, c)
+
+	if data, err := c.Select("INBOX", nil).Wait(); err != nil {
+		t.Fatal(err)
 	} else if data.NumMessages != 1 {
-		t.Errorf("INBOX holds %d messages, want 1 after the move", data.NumMessages)
+		t.Fatalf("INBOX holds %d messages, want the backfilled one left alone", data.NumMessages)
+	}
+	set := imap.UIDSet{}
+	set.AddNum(1)
+	data, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true}).Collect()
+	if err != nil || len(data) != 1 {
+		t.Fatalf("fetch = %v, %v", data, err)
+	}
+	if hasFlag(data[0].Flags, imap.FlagFlagged) {
+		t.Error("a rule ran over the backfill: the message got starred")
+	}
+}
+
+// TestRulesOnlyRunInTheInbox: the steady loop re-reads every synced folder, so
+// without a folder gate a rule fires again on the Sent copy of your own reply,
+// once more on Gmail's All Mail copy, and — the one that loses work — on the
+// IMAP draft you are still typing.
+func TestRulesOnlyRunInTheInbox(t *testing.T) {
+	st := testStore(t)
+	if err := st.CreateRule(&filter.Rule{
+		Account: "acct", Name: "file alice", Enabled: true,
+		Conditions: []filter.Condition{{Field: filter.FieldTo, Op: filter.OpContains, Value: "me@example.com"}},
+		Actions:    []filter.Action{{Type: filter.ActionMove, Arg: "Archive"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	c, user := newTestIMAPUser(t)
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "syncing")
+	// Sent has to be non-empty before the first pass, or the arrival gate alone
+	// would carry this test and the folder gate would go untested.
+	deliver(t, user, "Sent", testMessage("me@example.com", "older reply"))
+	syncSpecial(t, a, c, "sent") // backfill
+	deliver(t, user, "Sent", testMessage("me@example.com", "my reply"))
+	syncSpecial(t, a, c, "sent") // an arrival — in Sent, so no rule may touch it
+
+	if data, err := c.Select("Sent", nil).Wait(); err != nil {
+		t.Fatal(err)
+	} else if data.NumMessages != 2 {
+		t.Errorf("Sent holds %d messages, want 2: a rule moved your own outgoing mail", data.NumMessages)
 	}
 }

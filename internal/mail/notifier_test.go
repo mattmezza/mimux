@@ -67,6 +67,42 @@ func signal(m *Manager, ids ...int64) {
 	}
 }
 
+// signalRule is what a rule's "notify" action broadcasts (see applyAction).
+func signalRule(m *Manager, ids ...int64) {
+	for _, id := range ids {
+		m.hub.broadcast(Event{Type: "rule-notify", Data: strconv.FormatInt(id, 10)})
+	}
+}
+
+// TestRuleNotifyRidesTheNotifier: the "notify" filter action used to be its own
+// inline path — its own prefs read, its own inbox check, its own goroutine per
+// message, and no debounce. It is now one more event into the same loop, which
+// is what makes the "rules" scope mean "only what my rules asked for": the
+// plain arrival stays quiet, the named one buzzes, and it buzzes even though a
+// rule marked it read first, because "file it and tell me" is a rule people
+// write on purpose.
+func TestRuleNotifyRidesTheNotifier(t *testing.T) {
+	m := testManager(t)
+	got := ntfyCapture(t, m)
+	prefs := m.st.GetPrefs()
+	prefs.NotifyScope = "rules"
+	if err := m.st.SavePrefs(prefs); err != nil {
+		t.Fatal(err)
+	}
+	inbox, _ := m.st.UpsertFolder("A", "INBOX", "inbox", 0)
+	arrival := seedInbox(t, m, inbox, "A", 1, "Alice", "Just mail", false)
+	named := seedInbox(t, m, inbox, "A", 2, "Bob", "Filed and flagged", true)
+	startNotifier(t, m)
+	signal(m, arrival, named)
+	signalRule(m, named)
+
+	n := <-waitNotify(t, got)
+	if n[0] != "Bob · A" || n[1] != "Filed and flagged" {
+		t.Errorf("notification = %q / %q, want only the message a rule named", n[0], n[1])
+	}
+	assertQuiet(t, got)
+}
+
 // TestNotifierBatchesOneWindow: five messages in one sync cycle is one
 // notification, not five. This is the entire reason the trigger moved off the
 // sync loop.
