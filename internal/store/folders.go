@@ -12,15 +12,22 @@ type Folder struct {
 	HighestModSeq uint64
 	UnreadCount   int
 	Sort          int
+	// Sync is "the steady-state loop visits this folder every cycle" (see
+	// migration 0220). Set on discovery for inbox/sent/drafts, changed only from
+	// Settings → Syncing.
+	Sync bool
 }
 
 // UpsertFolder inserts or updates a folder by (account, name), preserving the
 // id and returning it. UIDVALIDITY/HIGHESTMODSEQ are managed separately by sync.
 func (s *Store) UpsertFolder(account, name, specialUse string, sort int) (int64, error) {
+	// sync is set on INSERT only: a re-LIST must not resurrect a folder the user
+	// deselected in Settings → Syncing.
 	_, err := s.DB.Exec(`
-		INSERT INTO folders (account, name, special_use, sort) VALUES (?, ?, ?, ?)
+		INSERT INTO folders (account, name, special_use, sort, sync)
+		VALUES (?, ?, ?, ?, CASE WHEN ? IN ('inbox', 'sent', 'drafts') THEN 1 ELSE 0 END)
 		ON CONFLICT(account, name) DO UPDATE SET special_use = excluded.special_use, sort = excluded.sort`,
-		account, name, specialUse, sort)
+		account, name, specialUse, sort, specialUse)
 	if err != nil {
 		return 0, err
 	}
@@ -31,9 +38,9 @@ func (s *Store) UpsertFolder(account, name, specialUse string, sort int) (int64,
 
 func (s *Store) FolderByID(id int64) (*Folder, error) {
 	f := &Folder{}
-	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort
+	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
 		FROM folders WHERE id = ?`, id).
-		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort)
+		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort, &f.Sync)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -45,9 +52,9 @@ func (s *Store) FolderByID(id int64) (*Folder, error) {
 // folder rather than a special-use role.
 func (s *Store) FolderByName(account, name string) (*Folder, error) {
 	f := &Folder{}
-	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort
+	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
 		FROM folders WHERE account = ? AND name = ?`, account, name).
-		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort)
+		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort, &f.Sync)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -57,9 +64,9 @@ func (s *Store) FolderByName(account, name string) (*Folder, error) {
 // FolderBySpecial returns the account's folder with the given special-use, nil if none.
 func (s *Store) FolderBySpecial(account, special string) (*Folder, error) {
 	f := &Folder{}
-	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort
+	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
 		FROM folders WHERE account = ? AND special_use = ?`, account, special).
-		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort)
+		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort, &f.Sync)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -69,8 +76,14 @@ func (s *Store) FolderBySpecial(account, special string) (*Folder, error) {
 // ListFolders returns an account's folders, special-use ones first (by a fixed
 // order), then the rest alphabetically.
 func (s *Store) ListFolders(account string) ([]Folder, error) {
-	rows, err := s.DB.Query(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort
+	return s.folderQuery(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
 		FROM folders WHERE account = ? ORDER BY sort, name COLLATE NOCASE`, account)
+}
+
+// folderQuery runs a folder SELECT with the standard column list and scans the
+// rows.
+func (s *Store) folderQuery(query string, args ...any) ([]Folder, error) {
+	rows, err := s.DB.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +91,7 @@ func (s *Store) ListFolders(account string) ([]Folder, error) {
 	var out []Folder
 	for rows.Next() {
 		var f Folder
-		if err := rows.Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort); err != nil {
+		if err := rows.Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort, &f.Sync); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -86,13 +99,43 @@ func (s *Store) ListFolders(account string) ([]Folder, error) {
 	return out, rows.Err()
 }
 
+// SyncedFolders returns the folders the steady-state loop visits every cycle,
+// in the same order ListFolders uses. The inbox is ORed in here rather than
+// being defended in the UI: it is the one folder the whole app assumes is
+// current (the unread badge, notifications, IDLE), so no settings screen — or
+// hand-posted form — gets to switch it off.
+func (s *Store) SyncedFolders(account string) ([]Folder, error) {
+	return s.folderQuery(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
+		FROM folders WHERE account = ? AND (sync = 1 OR special_use = 'inbox')
+		ORDER BY sort, name COLLATE NOCASE`, account)
+}
+
+// SetSyncedFolders replaces an account's continuously-synced set with ids.
+// One transaction: a half-applied save would silently stop syncing a folder.
+func (s *Store) SetSyncedFolders(account string, ids []int64) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE folders SET sync = 0 WHERE account = ?`, account); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := tx.Exec(`UPDATE folders SET sync = 1 WHERE account = ? AND id = ?`, account, id); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
 // FirstInbox returns the first account's inbox folder, or the first folder of
 // any kind — the default landing folder. Returns nil if no folders exist yet.
 func (s *Store) FirstInbox() (*Folder, error) {
 	f := &Folder{}
-	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort
+	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
 		FROM folders ORDER BY (special_use = 'inbox') DESC, sort, id LIMIT 1`).
-		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort)
+		Scan(&f.ID, &f.Account, &f.Name, &f.SpecialUse, &f.UIDValidity, &f.HighestModSeq, &f.UnreadCount, &f.Sort, &f.Sync)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
