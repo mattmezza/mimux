@@ -40,6 +40,7 @@
     {{/* .Ordered is Thread.Messages in the user's reading order (Settings > Reading); Thread.Messages itself stays oldest-first for RootID/LatestMessage. */}}
     {{range .Ordered}}
     {{$msg := .}}
+    {{$edit := index $.DraftLinks .ID}}
     {{$expanded := or (not .IsRead) (eq .ID $latest.ID)}}
     <div data-thread-msg data-msg-id="{{.ID}}"{{if not .IsRead}} data-unread{{end}} class="{{if $expanded}}expanded{{end}}">
       <button type="button" onclick="toggleThreadMessage(this)"
@@ -49,7 +50,8 @@
         <span class="min-w-0 flex-1">
           <span class="thread-msg-hdr flex items-center gap-2">
             {{if not .IsRead}}<span class="thread-unread-dot w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0"></span>{{end}}
-            <span class="thread-sender truncate {{if not .IsRead}}text-zinc-100 font-semibold{{else}}text-zinc-300{{end}}">{{if .FromName}}{{.FromName}}{{else}}{{.FromAddress}}{{end}}</span>
+            <span class="thread-sender truncate {{if $edit}}text-zinc-500{{else if not .IsRead}}text-zinc-100 font-semibold{{else}}text-zinc-300{{end}}">{{if .FromName}}{{.FromName}}{{else}}{{.FromAddress}}{{end}}</span>
+            {{if $edit}}<span class="shrink-0 text-[10px] font-medium rounded bg-amber-500/15 text-amber-300 px-1.5 py-0.5" title="Draft — not sent yet">Draft</span>{{end}}
             {{if .IsStarred}}<span class="text-amber-400 shrink-0">★</span>{{end}}
             <span class="ml-auto shrink-0 text-[11px] text-zinc-500" title="{{absTime .Date}}">{{.Date.Local.Format "Jan 2, 15:04"}}</span>
           </span>
@@ -73,6 +75,13 @@
         <iframe {{if $expanded}}src="/messages/{{.ID}}/body"{{else}}data-src="/messages/{{.ID}}/body"{{end}}
                 onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" class="w-full h-96 border-0 bg-white rounded" title="Message body"></iframe>
         <div class="mt-2 flex items-center gap-1 flex-wrap">
+          {{if $edit}}
+          <a href="#" hx-get="{{$edit}}" hx-target="#compose-root" hx-swap="innerHTML"
+             class="flex items-center gap-1.5 rounded-md bg-amber-500/15 px-2.5 py-1.5 text-[13px] font-medium text-amber-300 hover:bg-amber-500/25 transition-colors duration-150">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125"/></svg>
+            Edit draft
+          </a>
+          {{end}}
           {{range $.QAMsg}}{{template "qa_btn_m" (dict "ID" . "M" $msg "D" $)}}{{end}}
         </div>
       </div>

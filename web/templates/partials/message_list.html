@@ -43,7 +43,7 @@
      appending a page never touches a row already on screen — selection, j/k
      position and scroll all survive untouched. */}}
 {{define "message_page"}}
-{{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker "ShowLabels" $.Prefs.ShowListLabels)}}{{end}}
+{{range .Threads}}{{template "thread_row" (dict "T" . "Unified" $.Unified "Src" $.Src "Colors" $.AccountColors "ShowFavicon" $.Prefs.ShowFavicon "ShowBadge" $.Prefs.ShowAccountBadge "ShowAttach" $.Prefs.ShowAttachMarker "ShowLabels" $.Prefs.ShowListLabels "DraftLinks" $.DraftLinks)}}{{end}}
 {{/* No NextCursor means the scope is exhausted and the sentinel simply isn't
      rendered. intersect, not htmx's revealed: revealed only listens for scroll
      on window, and #message-list is its own scroll container, so it would never

@@ -274,6 +274,14 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, unified boo
 	}
 	data["Threads"] = threads
 	data["HasMessages"] = len(msgs) > 0
+	// A thread row shows its LATEST message only, so that's all a draft badge
+	// needs to cover here — a draft buried earlier in a thread surfaces when
+	// the row is expanded (handleThreadRows) or the pane opens (handleThread).
+	latest := make([]store.Message, len(threads))
+	for i := range threads {
+		latest[i] = threads[i].LatestMessage()
+	}
+	data["DraftLinks"] = s.draftLinks(latest)
 	if unified {
 		data["ListURL"] = "/u"
 		data["Src"] = "u"
@@ -429,6 +437,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"Thread":           thread,
 		"Ordered":          ordered,
 		"Latest":           latest,
+		"DraftLinks":       s.draftLinks(thread.Messages),
 		"Folders":          folders,
 		"CurrentFolder":    latest.FolderID,
 		"MarkReadDelay":    prefs.MarkReadDelay,
@@ -467,7 +476,7 @@ func (s *Server) handleThreadRows(w http.ResponseWriter, r *http.Request) {
 			msgs[len(msgs)-1-i] = m
 		}
 	}
-	s.renderPartial(w, "thread_subrows", msgs)
+	s.renderPartial(w, "thread_subrows", map[string]any{"Msgs": msgs, "DraftLinks": s.draftLinks(msgs)})
 }
 
 // rowMenuActions are the actions a list row's right-click menu can offer: the
@@ -718,7 +727,7 @@ func (s *Server) handleMarkRead(read bool) http.HandlerFunc {
 			msg.IsRead = read
 			s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, msg, read) })
 		}
-		s.renderPartial(w, rowTemplate(r), msg)
+		s.renderRow(w, r, msg)
 	}
 }
 
@@ -774,8 +783,16 @@ func (s *Server) handleStar(star bool) http.HandlerFunc {
 		_, _ = s.store.SetStarred(msg.ID, star)
 		msg.IsStarred = star
 		s.background(func(ctx context.Context) error { return s.mail.SetStarred(ctx, msg, star) })
-		s.renderPartial(w, rowTemplate(r), msg)
+		s.renderRow(w, r, msg)
 	}
+}
+
+// renderRow re-renders one list row after a star/read toggle — msg's own row
+// markup (rowTemplate), decorated with the same draft badge/edit-link mapping
+// as the rest of the list, so a starred or read-toggled draft row doesn't
+// flash back to looking like an ordinary message.
+func (s *Server) renderRow(w http.ResponseWriter, r *http.Request, msg *store.Message) {
+	s.renderPartial(w, rowTemplate(r), map[string]any{"M": msg, "DraftLinks": s.draftLinks([]store.Message{*msg})})
 }
 
 // rowTemplate picks the row markup a star/read swap should return: ?sub=1 comes
