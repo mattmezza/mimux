@@ -32,11 +32,20 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -tags "${BUILD_TAGS}" \
     -ldflags="-s -w -X main.version=${VERSION}${LICENCE_PUBKEY:+ -X github.com/mattmezza/mimux/pro.licencePubKeyB64=${LICENCE_PUBKEY}}" \
     -o mimux ./cmd/mimux
+# The licence texts that ship with the image. ELv2's Notices clause requires
+# every recipient of pro/ to get its terms, and the AGPL says the same about the
+# client — so both are collected here and copied into the final stage. pro/LICENSE
+# only when this is a pro build: the free image contains no ELv2 code, and a
+# licence file for code that isn't there is the kind of tidy that misleads.
+# LICENSING.md is the map: which path is under which licence.
+RUN mkdir -p /licences && cp LICENSE LICENSING.md /licences/ && \
+    case "${BUILD_TAGS}" in *pro*) cp pro/LICENSE /licences/LICENSE.pro ;; esac
 
-# Stage 3: Final image (per target arch — just ca-certs + the binary).
+# Stage 3: Final image (per target arch — ca-certs, the binary, the licences).
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates tzdata
 COPY --from=go /build/mimux /usr/local/bin/mimux
+COPY --from=go /licences/ /usr/share/licenses/mimux/
 VOLUME /data
 EXPOSE 8083
 ENTRYPOINT ["mimux"]
