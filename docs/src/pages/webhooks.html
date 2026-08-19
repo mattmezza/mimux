@@ -255,6 +255,78 @@ POST /v1/webhooks/{id}/resume</code></pre>
 </table>
 </div>
 
+<h2>Local development</h2>
+
+<p>
+  Writing a receiver against a URL that has to be publicly reachable is the
+  worst part of webhooks. It doesn't have to be: a pro build's CLI streams live
+  events straight to a port on your laptop.
+</p>
+
+<pre><code>mimux mail webhooks listen -forward-to http://localhost:3000/hooks/mimux</code></pre>
+
+<pre><code>listening for: every event — forwarding to http://localhost:3000/hooks/mimux
+signing secret: whsec_kR8vP2mQ...
+Verify it exactly as you verify production: HMAC-SHA256 over "&lt;t&gt;.&lt;body&gt;".
+Nothing is queued while this is not connected — events that fire meanwhile are lost.
+Ctrl-C to stop.
+
+message.received   200      14ms
+message.updated    200       9ms</code></pre>
+
+<p>
+  Put that <code>whsec_…</code> secret in your receiver's config and verify with
+  the same code you wrote for production — <strong>the check is identical</strong>.
+  Each forwarded request carries the same three headers
+  (<code>X-Mimux-Event</code>, <code>X-Mimux-Delivery-Id</code>,
+  <code>X-Mimux-Signature</code>) over the same body bytes, signed the same way.
+  A receiver that verifies here verifies unchanged when a real endpoint points
+  at it.
+</p>
+
+<p>
+  Nothing is registered and nothing is stored: a listener sees <em>every</em>
+  event, whatever your configured endpoints are subscribed to. That is what
+  makes it zero-config — it behaves like a new webhook subscribed to everything,
+  for as long as it runs. Narrow it with <code>-events</code>:
+</p>
+
+<pre><code>mimux mail webhooks listen -forward-to http://localhost:3000/hooks \
+  -events message.received,message.updated</code></pre>
+
+<div class="note">
+  <p>
+    <strong>Events that fire while nothing is listening are lost.</strong> They
+    are not queued, not buffered and not replayable to a listener — the stream
+    is live or it is nothing. Replay exists only for configured endpoints, whose
+    deliveries are rows in a table. If an event matters, it needs a real
+    endpoint.
+  </p>
+  <p>
+    The same applies while a listener is <em>connected but not keeping up</em>:
+    the server buffers a little and then drops, rather than letting a stalled
+    receiver hold up mail syncing. Dropped events are reported on the next line
+    that does get through, so you always know it happened.
+  </p>
+</div>
+
+<p>
+  Forwards are <strong>not retried</strong>. There is no ladder and no backoff
+  here: a non-2xx from your receiver is printed with its status and how long it
+  took, and the next event follows. A receiver you are watching does not need a
+  day of retries, and a silent retry would hide the failure you are looking for.
+  The stream itself does reconnect — after three seconds — when it drops, so a
+  <code>mimux</code> restart on the other end is a blip rather than the end of
+  the session. A rejected token, a missing <code>webhooks:manage</code> scope or
+  a lapsed licence stops it instead of retrying forever.
+</p>
+
+<p>
+  Under the hood it is <code>GET /v1/webhooks/listen</code>, an NDJSON stream —
+  one JSON object per line, a <code>{"type":"ping"}</code> keepalive every 30
+  seconds — so anything that can read a line at a time can consume it directly.
+</p>
+
 <h2>Stats</h2>
 
 <p>

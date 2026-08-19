@@ -964,6 +964,57 @@
         }
       }
     },
+    "/v1/webhooks/listen": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "operationId": "listenWebhooks",
+        "summary": "Stream live events (NDJSON)",
+        "description": "A live NDJSON stream of every webhook event, for local development — the server half of `mimux mail webhooks listen`.\n\n**This is not an endpoint.** Nothing is registered, nothing is stored, and there is no delivery log. A listener sees *every* event regardless of what any configured endpoint is subscribed to, which is what makes it zero-config: connect and events arrive.\n\n**Events that fire while nothing is connected are lost.** They are not queued and cannot be replayed to a listener — the durable path is a configured endpoint. Use this to build and verify a receiver, not to receive anything you care about keeping.\n\n## The wire format\n\n`application/x-ndjson`: one JSON object per line, flushed as it is produced. Read it line by line; do not wait for the body to end, because it does not.\n\n```json\n{\"type\":\"event\",\"event\":\"message.received\",\"id\":\"4f8c1d0e5b7a2c9f3e1d6a8b0c4f7e21\",\"payload\":{\"id\":\"4f8c…\",\"event\":\"message.received\",\"created_at\":\"2026-08-19T09:14:02Z\",\"data\":{}}}\n{\"type\":\"ping\"}\n{\"type\":\"error\",\"message\":\"The licence has expired.\"}\n```\n\n- `type: \"event\"` — `payload` is the **exact body** a configured endpoint would be POSTed, so signing it with your own secret produces a request a production receiver verifies unchanged. `id` is the delivery id, and it is this stream's own — not the id of any stored delivery of the same event.\n- `type: \"ping\"` — a keepalive every 30 seconds, so a quiet stream is not closed by a proxy. Ignore it.\n- `type: \"error\"` — the server is closing the stream on purpose (the licence lapsed while you were connected). Nothing follows it.\n- `dropped` — present when this listener has fallen behind. Events are buffered, and a client that stops reading loses them rather than stalling the mail sync: the count is how many, cumulative.\n\n`X-Accel-Buffering: no` is set, so an nginx in front of mimux passes the stream through instead of buffering it.\n\n**Scope: `webhooks:manage`.**",
+        "x-required-scope": "webhooks:manage",
+        "parameters": [
+          {
+            "name": "events",
+            "in": "query",
+            "required": false,
+            "description": "Comma-separated event names to stream. Omit for every event, which is the default and the usual choice.",
+            "schema": {
+              "type": "string"
+            },
+            "example": "message.received,sync.error"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stream. Stays open until the client disconnects, mimux stops, or the licence lapses.",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "$ref": "#/components/schemas/LiveEvent"
+                },
+                "example": "{\"type\":\"event\",\"event\":\"message.received\",\"id\":\"4f8c1d0e5b7a2c9f3e1d6a8b0c4f7e21\",\"payload\":{\"id\":\"4f8c1d0e5b7a2c9f3e1d6a8b0c4f7e21\",\"event\":\"message.received\",\"created_at\":\"2026-08-19T09:14:02Z\",\"data\":{\"subject\":\"Invoice 41\"}}}\n{\"type\":\"ping\"}\n"
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "402": {
+            "$ref": "#/components/responses/LicenceRequired"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
     "/v1/webhooks/{id}": {
       "parameters": [{ "$ref": "#/components/parameters/WebhookID" }],
       "patch": {
@@ -2110,6 +2161,30 @@
             "type": "string",
             "description": "The action's argument where it takes one: the target folder for `move`, the address for `forward`, the label for `label`. Absent when empty."
           }
+        }
+      },
+      "LiveEvent": {
+        "type": "object",
+        "description": "One line of the `GET /v1/webhooks/listen` stream. NDJSON, so each of these is a complete JSON object on its own line.",
+        "required": ["type"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["event", "ping", "error"],
+            "description": "`event` is a real webhook event; `ping` is the 30-second keepalive and carries nothing else; `error` means the server is closing the stream and nothing follows."
+          },
+          "event": { "type": "string", "description": "The event name, on an `event` line. Same value a delivery's `X-Mimux-Event` header carries.", "example": "message.received" },
+          "id": { "type": "string", "description": "This stream's delivery id for the event — what to put in `X-Mimux-Delivery-Id` when forwarding it. It is not the id of any stored delivery." },
+          "payload": {
+            "type": "object",
+            "description": "The exact body a configured endpoint would be POSTed: the `id` / `event` / `created_at` / `data` envelope. Sign these bytes verbatim and a production receiver verifies the forwarded request unchanged.",
+            "additionalProperties": true
+          },
+          "dropped": {
+            "type": "integer",
+            "description": "How many events this listener has missed, cumulative. Present only once something has been dropped: a client that stops reading loses events rather than stalling mimux's mail sync."
+          },
+          "message": { "type": "string", "description": "Why the stream is closing, on an `error` line." }
         }
       },
       "Webhook": {
