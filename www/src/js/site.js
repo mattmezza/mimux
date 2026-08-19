@@ -57,6 +57,36 @@
     });
   }
 
+  // Buy buttons: the POST goes to the shop and on to Stripe, so nothing on this
+  // page changes while the browser waits. Spin the button so the click is
+  // acknowledged, and refuse the second one — it would open a second checkout
+  // session. Coming back from Stripe restores this page from the bfcache with
+  // the button still spinning, so pageshow clears it.
+  var buyForms = document.querySelectorAll("form[action$='/checkout']");
+  buyForms.forEach(function (form) {
+    form.addEventListener("submit", function (e) {
+      if (form.classList.contains("is-busy")) { e.preventDefault(); return; }
+      form.classList.add("is-busy");
+      var btn = form.querySelector("button[type=submit]");
+      if (btn) {
+        btn.classList.add("is-busy");
+        btn.setAttribute("aria-busy", "true");
+      }
+    });
+  });
+  if (buyForms.length) {
+    window.addEventListener("pageshow", function (e) {
+      if (!e.persisted) return;
+      buyForms.forEach(function (form) {
+        form.classList.remove("is-busy");
+        form.querySelectorAll(".is-busy").forEach(function (b) {
+          b.classList.remove("is-busy");
+          b.removeAttribute("aria-busy");
+        });
+      });
+    });
+  }
+
   // Copy-to-clipboard buttons: <button data-copy="text to copy">
   document.querySelectorAll("[data-copy]").forEach(function (btn) {
     var label = btn.textContent;

@@ -243,6 +243,25 @@ h1, h2, h3 {
   background: var(--color-paper-200);
 }
 
+/* In-flight state for the buy buttons: the POST leaves for account.mimux.dev
+   and then Stripe, which takes a beat on a slow line. The label turns
+   transparent rather than being swapped out, so the button keeps its box — no
+   reflow. Same shape as the one in account/templates/layout.html; keep them in
+   step. */
+.btn.is-busy { position: relative; color: transparent; pointer-events: none }
+.btn.is-busy::after {
+  content: ""; position: absolute; inset: 0; margin: auto;
+  width: 1.05rem; height: 1.05rem;
+  border: 2px solid var(--color-paper-50); border-top-color: transparent;
+  border-radius: 50%;
+  animation: btn-spin 700ms linear infinite;
+}
+.btn-secondary.is-busy::after { border-color: var(--color-ink-950); border-top-color: transparent }
+@keyframes btn-spin { to { transform: rotate(360deg) } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.is-busy::after { animation: none; opacity: 0.6 }
+}
+
 /* Currency switch: a segmented control that sits with the pricing copy — same
    voice as the one on account.mimux.dev. Ink hairline, hard print shadow, mono
    caps, the chosen segment inked solid. Buttons only: site.js swaps the price
