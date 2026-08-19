@@ -1,4 +1,8 @@
-{{define "title"}}Inbox — mimux{{end}}
+{{/* Mirrors the {{if .SearchView}}/{{else if or .Unified .Folder}} branching
+     content below (and message_list's #list-title), so a fresh page load and
+     an htmx swap always agree on the tab title. app.js corrects this further
+     once a message/thread/compose is open on top. */}}
+{{define "title"}}{{if .SearchView}}Search — mimux{{else if or .Unified .Folder}}{{if .Unified}}All inboxes{{else}}{{folderLabel .Folder}}{{end}} — mimux{{else}}Inbox — mimux{{end}}{{end}}
 {{define "content"}}
 <div class="h-full flex flex-col {{if not .Prefs.ShowAvatar}}hide-avatars {{end}}{{if .Prefs.HideAvatarMobile}}hide-avatars-mobile {{end}}{{if eq .Prefs.AvatarShape "rounded"}}avatar-rounded {{else if eq .Prefs.AvatarShape "square"}}avatar-square {{end}}preview-lines-{{.Prefs.PreviewLines}}" x-data="mimuxUI" :data-filter="filter"
      {{/* Row gesture prefs live here (not on #message-list, which htmx swaps

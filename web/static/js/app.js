@@ -441,14 +441,44 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
   });
 })();
 
+// --- tab title reflects what's on screen ---
+// Subject when reading a message/thread, folder/search name on the list,
+// compose kind while composing — so the tab is spottable in a crowded
+// window. Reads text already rendered for the human (h1, #list-title, the
+// compose header) rather than fetching or tracking anything new; fires off
+// the same htmx:afterSettle hooks the rest of the app already uses.
+function updateViewTitle() {
+  const composeH2 = document.querySelector("#compose-window h2");
+  if (composeH2) { document.title = `${composeH2.textContent.trim()} — mimux`; return; }
+  const subject = document.querySelector("#reading-pane #message-detail h1");
+  if (subject) {
+    let s = subject.textContent.trim();
+    if (s.length > 60) s = s.slice(0, 60).trimEnd() + "…";
+    document.title = `${s} — mimux`;
+    return;
+  }
+  const list = document.getElementById("list-title");
+  document.title = `${list ? list.textContent.trim() : "Inbox"} — mimux`;
+}
+document.addEventListener("htmx:afterSettle", (e) => {
+  if (!e.target || !["message-list", "reading-pane", "compose-root"].includes(e.target.id)) return;
+  updateViewTitle();
+});
+// htmx:afterSettle never fires for a close: forceCloseCompose clears
+// #compose-root with plain innerHTML, not a swap. Same function, both paths.
+window.updateViewTitle = updateViewTitle;
+
 // --- unread count in tab title ---
 async function refreshUnreadTitle() {
   let n = 0;
   try { n = parseInt(await (await fetch("/unread")).text(), 10) || 0; } catch (e) { return; }
+  // List views only (task: tab-spotting a message needs its subject clean,
+  // not "(3) Subject"): skip the prefix while a message/thread is open.
+  if (document.querySelector("#reading-pane #message-detail")) return;
   const base = document.title.replace(/^\(\d+\)\s+/, "");
   document.title = n > 0 ? `(${n}) ${base}` : base;
 }
-document.addEventListener("DOMContentLoaded", refreshUnreadTitle);
+document.addEventListener("DOMContentLoaded", () => { updateViewTitle(); refreshUnreadTitle(); });
 
 // --- search: scope pill, folder tracking, suggestions, server results ---
 const SCOPES = ["folder", "account", "all"];
@@ -1184,6 +1214,7 @@ function forceCloseCompose() {
   preComposeFocus = null;
   composeBaseline = null;
   composeCloseAfterSave = false;
+  updateViewTitle();
 }
 window.forceCloseCompose = forceCloseCompose;
 
