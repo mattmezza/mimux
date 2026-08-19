@@ -41,10 +41,17 @@ import (
 // The commands mirror the MCP tools one for one — same nouns, same scopes, same
 // semantics — because they are the same product wearing a different skin.
 //
+// `mimux mail login <url>` is the way in: it opens the browser, you approve the
+// scopes in a session you already have, and the token lands in
+// os.UserConfigDir()/mimux/credentials.json (0600) keyed by instance. Nothing
+// is ever typed or pasted. The environment still works for CI and containers:
+//
 //	MIMUX_URL        base URL of the running mimux (default http://localhost:8083)
 //	MIMUX_TOKEN      an API token from Settings → API (MIMUX_API_TOKEN also read)
 //
-// --url and --token override both.
+// --url and --token override both. Where a command talks, in order: --url,
+// MIMUX_URL, the `use` default, the only instance logged in, localhost:8083.
+// Which token: --token, the environment, the stored entry for that instance.
 
 const cliDefaultURL = "http://localhost:8083"
 
@@ -58,6 +65,8 @@ type cliClient struct {
 	errw  io.Writer
 	in    io.Reader
 	http  *http.Client
+
+	credsDone bool // the stored credentials have been consulted for this invocation
 }
 
 type cliCommand struct {
@@ -75,6 +84,9 @@ type usageError struct{ msg string }
 func (e usageError) Error() string { return e.msg }
 
 var cliCommands = []cliCommand{
+	{"login", "[<url>]", "", "Approve a token in the browser and store it.", cliLogin},
+	{"logout", "[<url>]", "", "Forget a stored token (revoke it in Settings → API).", cliLogout},
+	{"use", "[<url>]", "", "Make an instance the default, or list them.", cliUse},
 	{"whoami", "", "", "Show the token's label and scopes.", cliWhoami},
 	{"accounts", "", "accounts:read", "List accounts with sync state and counts.", cliAccounts},
 	{"folders", "", "mail:read", "List the folder tree per account.", cliFolders},
@@ -91,15 +103,24 @@ var cliCommands = []cliCommand{
 // RunCLI is the `mimux mail` subcommand. Returns a process exit code: 0 fine,
 // 1 the operation failed, 2 wrong usage.
 func RunCLI(args []string) int {
-	c := &cliClient{
-		base:  cmp.Or(os.Getenv("MIMUX_URL"), cliDefaultURL),
+	return newCLIClient(os.Stdout, os.Stderr, os.Stdin, &http.Client{Timeout: 2 * time.Minute}).dispatch(args)
+}
+
+// newCLIClient resolves where to talk before any flag is parsed: the
+// environment, then the instance `use` pinned (or the only one logged in),
+// then localhost. --url overrides it afterwards, and the token that goes with
+// whatever it settles on is looked up later in do(). A broken credential store
+// is ignored here — `login` is how you fix it, and it must still run.
+func newCLIClient(out, errw io.Writer, in io.Reader, h *http.Client) *cliClient {
+	stored, _ := loadCreds()
+	return &cliClient{
+		base:  cmp.Or(os.Getenv("MIMUX_URL"), storedBase(stored), cliDefaultURL),
 		token: cmp.Or(os.Getenv("MIMUX_TOKEN"), os.Getenv("MIMUX_API_TOKEN")),
-		out:   os.Stdout,
-		errw:  os.Stderr,
-		in:    os.Stdin,
-		http:  &http.Client{Timeout: 2 * time.Minute},
+		out:   out,
+		errw:  errw,
+		in:    in,
+		http:  h,
 	}
-	return c.dispatch(args)
 }
 
 func (c *cliClient) dispatch(args []string) int {
@@ -151,8 +172,11 @@ func cliUsage(w io.Writer) {
 		_, _ = fmt.Fprintf(tw, "  %s %s\t%s\t%s\n", cmd.name, cmd.args, scope, cmd.help)
 	}
 	_ = tw.Flush()
+	_, _ = fmt.Fprintln(w, "\nStart with `mimux mail login <url>`: it approves a token in the browser and")
+	_, _ = fmt.Fprintln(w, "stores it, so nothing has to be pasted anywhere.")
 	_, _ = fmt.Fprintln(w, "\nCommon flags: --url, --token, --json (add -h to any command for its own).")
-	_, _ = fmt.Fprintf(w, "Config: MIMUX_URL (default %s), MIMUX_TOKEN from Settings → API.\n", cliDefaultURL)
+	_, _ = fmt.Fprintf(w, "Config: MIMUX_URL (default %s), MIMUX_TOKEN from Settings → API — both\n", cliDefaultURL)
+	_, _ = fmt.Fprintln(w, "override what login stored.")
 }
 
 // --- transport ---
@@ -201,8 +225,9 @@ func (c *cliClient) get(path string) (json.RawMessage, error) { return c.do("GET
 // do performs one API call and returns the response body, turning the API's
 // error envelope into an error a human (or an agent reading stderr) can act on.
 func (c *cliClient) do(method, path string, body any) (json.RawMessage, error) {
+	c.applyCreds()
 	if strings.TrimSpace(c.token) == "" {
-		return nil, errors.New("no API token — set MIMUX_TOKEN or pass --token. Mint one in Settings → API")
+		return nil, errors.New("not signed in — run `mimux mail login " + strings.TrimSuffix(c.base, "/") + "`, or set MIMUX_TOKEN to a token from Settings → API")
 	}
 	var rdr io.Reader
 	if body != nil {
