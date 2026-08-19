@@ -166,3 +166,80 @@ func TestSelectInboxAfterReadOnlyCommand(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// waitEvent returns the first event of the given type, or fails.
+func waitEvent(t *testing.T, events <-chan Event, typ string) Event {
+	t.Helper()
+	for {
+		select {
+		case e := <-events:
+			if e.Type == typ {
+				return e
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("no %s event was published", typ)
+			return Event{}
+		}
+	}
+}
+
+// noEvent fails if an event of the given type turns up within the window.
+func noEvent(t *testing.T, events <-chan Event, typ string) {
+	t.Helper()
+	for {
+		select {
+		case e := <-events:
+			if e.Type == typ {
+				t.Fatalf("published %+v, wanted silence", e)
+			}
+		case <-time.After(200 * time.Millisecond):
+			return
+		}
+	}
+}
+
+// TestFirstPassAnnouncesNothing: ticking a folder in Settings starts a first
+// full pass on an account that has been running for hours, so the "nothing
+// until the account has synced once" guard no longer covers it. Backfilling a
+// year of Archive must not fire a year of notifications and webhook
+// deliveries — and the very next arrival in that folder still must.
+func TestFirstPassAnnouncesNothing(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "hi"))
+	raw := testMessage("filed@example.com", "old thread")
+	if _, err := user.Append("Archive", literal{bytes.NewReader([]byte(raw))}, &imap.AppendOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncInbox(t, a, c)
+	a.setStatus("ok", "") // the account has been up and syncing for a while
+
+	archive, err := st.FolderByName("acct", "Archive")
+	if err != nil || archive == nil {
+		t.Fatalf("FolderByName(Archive) = %v, %v", archive, err)
+	}
+
+	events, unsubscribe := m.Subscribe()
+	defer unsubscribe()
+
+	// The user ticks Archive: its first pass runs.
+	if _, err := a.syncFolder(context.Background(), c, archive, c.Caps()); err != nil {
+		t.Fatal(err)
+	}
+	uids, err := st.FolderUIDs(archive.ID)
+	if err != nil || len(uids) != 1 {
+		t.Fatalf("the backfill stored %v (%v), want the one message", uids, err)
+	}
+	noEvent(t, events, "message-new")
+
+	// The next cycle is the steady state, and an arrival there is an arrival.
+	raw = testMessage("bob@example.com", "reply")
+	if _, err := user.Append("Archive", literal{bytes.NewReader([]byte(raw))}, &imap.AppendOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.syncFolder(context.Background(), c, archive, c.Caps()); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, events, "message-new")
+}

@@ -220,11 +220,13 @@ func (m *Manager) NotifyTest() {
 //
 // Not folder-filtered on purpose — a subscriber knows what it cares about, and
 // the id resolves to the folder anyway — but it is backfill-filtered, or a
-// fresh install would announce months of old mail one event at a time. Two
+// fresh install would announce months of old mail one event at a time. Three
 // guards do that: nothing until the account has completed a successful sync in
 // this process (which is what makes the initial backfill silent, at a cost of
-// at most one poll interval of silence after a restart), and nothing older than
-// a day (the backstop for a mid-session UIDVALIDITY re-fetch).
+// at most one poll interval of silence after a restart), nothing older than a
+// day (the backstop for a mid-session UIDVALIDITY re-fetch), and — the one that
+// covers a folder ticked in Settings on a long-running account — fetchSet's
+// announce flag, which is off for any folder's first full pass.
 //
 // Everything else is the subscriber's policy, not this function's: the notifier
 // wants unread inbox mail only, a webhook subscriber wants to hear about the

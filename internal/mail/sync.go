@@ -168,7 +168,12 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		start = imap.UID(maxUID) + 1
 	}
 
-	newCount, err := a.fetchRange(ctx, c, f, start, condstore)
+	// start:* (0 = "*"). announce is off for a folder's first full pass: that is
+	// a backfill, not an arrival. It used to be enough that a first pass only
+	// happened at startup, before LastSync was stamped — now ticking a folder in
+	// Settings starts one on a long-running account, and a year of Archive must
+	// not arrive as a year of notifications and webhook deliveries.
+	newCount, err := a.fetchSet(ctx, c, f, imap.UIDSet{{Start: start, Stop: 0}}, !firstFull)
 	if err != nil {
 		return false, err
 	}
@@ -213,13 +218,6 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	_ = a.m.st.RecountUnread(f.ID)
 
 	return changed, nil
-}
-
-// fetchRange fetches envelope/flags/bodystructure + a snippet part for a UID
-// range and upserts each message. Returns the number of newly stored messages.
-func (a *account) fetchRange(ctx context.Context, c *imapclient.Client, f *store.Folder, start imap.UID, condstore bool) (int, error) {
-	_ = condstore
-	return a.fetchSet(ctx, c, f, imap.UIDSet{{Start: start, Stop: 0}}) // start:* (0 = "*")
 }
 
 // windowStartUID returns the lowest UID to fetch so the newest
@@ -290,12 +288,17 @@ func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *s
 	if len(missing) == 0 {
 		return 0, nil
 	}
-	return a.fetchSet(ctx, c, f, missing)
+	// Announces: past the first pass, a message that turns up in the healing diff
+	// is one this install missed, not one it is backfilling.
+	return a.fetchSet(ctx, c, f, missing, true)
 }
 
 // fetchSet fetches envelope/flags/bodystructure + a snippet part for an explicit
 // UID set and upserts each message. Returns the number of newly stored messages.
-func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.Folder, set imap.UIDSet) (int, error) {
+//
+// announce is whether a newly stored message counts as an arrival worth telling
+// anyone about (see signalNewMessage). Off for a folder's first full pass.
+func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.Folder, set imap.UIDSet, announce bool) (int, error) {
 	opts := &imap.FetchOptions{
 		UID:           true,
 		Flags:         true,
@@ -330,9 +333,11 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		}
 		if isNew {
 			a.runRules(ctx, c, f.ID, uint32(buf.UID))
-			// One hub broadcast, and every consumer (notifications, webhooks)
-			// hangs off that. Non-blocking, so the sync loop pays nothing.
-			a.signalNewMessage(f, buf)
+			if announce {
+				// One hub broadcast, and every consumer (notifications, webhooks)
+				// hangs off that. Non-blocking, so the sync loop pays nothing.
+				a.signalNewMessage(f, buf)
+			}
 		}
 	}
 	return n, nil
