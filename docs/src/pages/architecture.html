@@ -152,9 +152,38 @@ description: How mimux is built — a single Go binary serving htmx, IMAP IDLE s
   <strong>actions</strong> run when they all match:
   <code>move</code>, <code>label</code>, <code>forward</code>,
   <code>mark_read</code>, <code>star</code>, <code>delete</code>,
-  <code>notify</code>. Rules are evaluated in position order against incoming
-  mail; a rule with no conditions would match everything, so at least one is
-  required.
+  <code>notify</code>. Rules are evaluated in position order and every match
+  contributes its actions; a rule with no conditions would match everything, so
+  at least one is required.
+</p>
+
+<p>
+  The sync loop applies them through one gate, in <code>runRules</code>: a
+  message is filtered only when it is an <strong>arrival</strong> (the same flag
+  that decides whether a stored message is worth announcing, off for a folder's
+  first full pass) <strong>in an inbox</strong>. Both halves are load-bearing.
+  Without the first, a fresh install — or a folder newly ticked in
+  <em>Settings &rarr; Syncing</em>, or a UIDVALIDITY re-fetch — replays every
+  rule over the whole downloaded window. Without the second, a cycle that walks
+  Sent, Drafts and Archive fires the same rule again on the copy of your own
+  reply, once more on Gmail's All Mail copy, and on the IMAP draft you are still
+  typing.
+</p>
+
+<p>
+  Actions run on the sync's own connection rather than the worker's command
+  queue, which the (busy) worker goroutine is the only one to drain. The two
+  that cannot: <code>forward</code>, which talks SMTP and appends to Sent, is
+  handed to a goroutine; <code>notify</code> broadcasts a <code>rule-notify</code>
+  event on the same hub the arrival event uses, and the debounced notifier
+  batches it with everything else in the window.
+</p>
+
+<p>
+  Because the engine is pure, the filters page can run a rule's conditions over
+  the newest stored inbox messages and show what would have matched —
+  <code>filter.DryRun</code> over <code>store.RecentInbox</code>, one read, no
+  side effects.
 </p>
 
 <h2>The free/pro split</h2>

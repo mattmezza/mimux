@@ -84,6 +84,36 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
   loop.
 </p>
 
+<h2>Filters run on arrival, and only there</h2>
+
+<p>
+  A filter rule is a list of <strong>conditions</strong> — from, to, subject or
+  body preview; contains or regular expression — that must all match, and a
+  list of <strong>actions</strong> to run when they do: mark as read, star,
+  label, move to a folder, move to trash, forward, or notify you. Rules are
+  evaluated top to bottom and <em>every</em> rule that matches applies, not just
+  the first, which is why their order is yours to set.
+</p>
+
+<p>
+  They run on <strong>new mail arriving in an inbox</strong>. Not over the mail
+  already on the server when you install mimux, or when you tick another folder
+  to sync: that is a download, not a delivery, and a rule that trashed or
+  forwarded a year of history on first run would be a disaster. Not on the Sent
+  copy of what you write, not on Gmail's second copy in All Mail, and not on the
+  draft you are still typing. Mail your provider filed into a folder by its own
+  server-side rules is already filed; mimux leaves it where it is.
+</p>
+
+<p>
+  Before you enable a rule you can test it against your last few hundred stored
+  inbox messages: the editor lists what its conditions would have matched, and
+  changes nothing at all. And <em>notify me</em> is the same notification path
+  as everything else — one buzz per batch, wording and transport from
+  <em>Settings &rarr; Notifications</em>, where the master switch can also be
+  set to <em>only what my filter rules say</em>.
+</p>
+
 <h2>What mimux is not</h2>
 
 <ul>
@@ -175,9 +205,10 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
     <strong>Known limitations as of v0.20.</strong>
     Offline mode is read-only: the service worker
     falls back to your last-synced inbox, and any action needs the server.
-    Gmail label display and the <code>label:</code> filter action are dormant,
-    because the upstream go-imap v2 library cannot fetch
-    <code>X-GM-LABELS</code>/<code>X-GM-THRID</code> yet; threading falls back to
+    Gmail label display is dormant, because the upstream go-imap v2 library
+    cannot fetch <code>X-GM-LABELS</code>/<code>X-GM-THRID</code> yet — labels
+    you apply here, by hand or with a filter rule, are stored and shown by mimux
+    but do not travel back to Gmail; threading falls back to
     the standard JWZ algorithm, which works well.
   </p>
 </div>
