@@ -17,6 +17,9 @@ set -euo pipefail
 
 REPO_URL=${MIMUX_INSTALL_BASE:-https://github.com/mattmezza/mimux/releases}
 PRICING_URL=https://mimux.dev/pricing/
+TERMS_URL=https://mimux.dev/terms/
+PRIVACY_URL=https://mimux.dev/privacy/
+LEGAL_URL=https://mimux.dev/legal/
 PORT=8083
 
 flavour=""
@@ -68,9 +71,18 @@ parse_args() {
 		esac
 		shift
 	done
-	# A pipe is not a terminal, so `curl | bash` can never prompt. That is the
-	# common case, not an error — it just means every question takes its default.
-	[ -t 0 ] || interactive=0
+	# `curl | bash` puts the script itself on stdin, so stdin is never a
+	# terminal here — checking it only ever told us the pipe exists, not
+	# whether a human is on the other end, so every prompt silently defaulted
+	# to free even with a real terminal sitting right there. What actually
+	# gates a prompt is whether it can reach the user: a controlling terminal
+	# open at /dev/tty, with the question itself visible on stdout. Without
+	# one (CI, cron, a fully detached pipe) every question takes its default;
+	# --non-interactive above already forces that and never probes /dev/tty
+	# to get there.
+	if [ "$interactive" -eq 1 ]; then
+		{ [ -e /dev/tty ] && [ -t 1 ]; } || interactive=0
+	fi
 }
 
 # uname reports a dozen spellings for two architectures. Anything not on this
@@ -114,9 +126,16 @@ mimux comes in two builds:
          webhooks and the mimux command-line client. 14-day trial is built
          in; licences at $PRICING_URL
 
+More info: pricing $PRICING_URL · terms $TERMS_URL · privacy $PRIVACY_URL · legal $LEGAL_URL
+
 EOF
 	local answer
-	read -r -p "Which one? [free/pro] (free): " answer || answer=""
+	# Reads from the controlling terminal, not stdin — stdin is the script
+	# itself under `curl | bash`. interactive=1 only ever gets here once
+	# parse_args has confirmed /dev/tty is open, so this should never block;
+	# -t is a belt-and-braces exit in case the terminal stops answering
+	# mid-prompt, rather than hanging the install forever.
+	read -r -t 300 -p "Which one? [free/pro] (free): " answer < /dev/tty || answer=""
 	case "${answer:-free}" in
 		""|free|f|Free|FREE) flavour=free ;;
 		pro|p|Pro|PRO)       flavour=pro ;;
@@ -213,7 +232,7 @@ resolve_name() {
 	[ "$flavour" = pro ] || { printf 'mimux\n'; return 0; }
 	if [ -z "$as_mimux" ]; then
 		if [ "$interactive" -eq 1 ]; then
-			read -r -p "Install it as 'mimux' rather than 'mimux-pro'? [Y/n]: " answer || answer=""
+			read -r -t 300 -p "Install it as 'mimux' rather than 'mimux-pro'? [Y/n]: " answer < /dev/tty || answer=""
 			case "${answer:-y}" in
 				n|N|no|No|NO) as_mimux=0 ;;
 				*)            as_mimux=1 ;;
@@ -236,7 +255,7 @@ confirm_overwrite() {
 		die "$target already exists. Re-run with --force to replace it, or drop
 --as-mimux to install alongside it as mimux-pro."
 	fi
-	read -r -p "$target already exists. Replace it? [y/N]: " answer || answer=""
+	read -r -t 300 -p "$target already exists. Replace it? [y/N]: " answer < /dev/tty || answer=""
 	case "${answer:-n}" in
 		y|Y|yes|Yes|YES) : ;;
 		*) die "left $target alone. Re-run without --as-mimux to install as mimux-pro." ;;
