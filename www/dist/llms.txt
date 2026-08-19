@@ -6,22 +6,38 @@
 > roadmap) for scripts and AI agents. One Go binary, one SQLite file, on your
 > own hardware (€49/yr or €99 perpetual, per instance, 14-day free trial).
 
+Current release: v0.23.0. Install is one command — either
+`docker run -d --name mimux -p 8083:8083 -v mimux-data:/data ghcr.io/mattmezza/mimux:latest`,
+or `curl -fsSL https://mimux.dev/install.sh | bash` (add `-s -- pro` for the
+automation layer). Zero configuration; the first visit creates the admin user.
+
 ## Pages
 
-- [Features](https://mimux.dev/features/): unified inbox, IMAP IDLE sync, deep search, Markdown compose with undo-send, server-side filters, PWA with encrypted push.
-- [Automation & APIs](https://mimux.dev/agents/): the MCP server at /api/mcp, the REST API with OpenAPI spec, the CLI, signed webhooks, scoped tokens, two-step sending.
+- [Features](https://mimux.dev/features/): unified inbox, IMAP IDLE sync of the folders you choose, deep search, Markdown compose with undo-send and IMAP-backed drafts, server-side filters, PWA with encrypted push.
+- [Automation & APIs](https://mimux.dev/agents/): the MCP server at /api/mcp, the REST API with OpenAPI spec, the `mimux mail` CLI, signed webhooks, scoped tokens, two-step sending.
 - [Pricing](https://mimux.dev/pricing/): free client forever; pro €49/yr or €99 perpetual per instance; offline Ed25519 licence verification, no phone-home.
 - [About](https://mimux.dev/about/): built by Matteo Merola (Merola Software & Services, Zurich); the published free/pro line and why it can't move.
 - [Security](https://mimux.dev/security/): how to report vulnerabilities privately, scope, and mimux's security posture.
 
 ## Docs
 
-- [Documentation](https://docs.mimux.dev): install, configuration, OAuth setup and the API reference (rendered from the OpenAPI spec the binary serves).
+- [Documentation](https://docs.mimux.dev): the index — what to read first, and the free/pro split in one paragraph.
+- [How mimux works](https://docs.mimux.dev/how-it-works/): the model, what a sync cycle covers, what mimux is not, IMAP-backed drafts.
+- [Installation](https://docs.mimux.dev/install/): Docker and the one-line installer, image tags, environment variables, OAuth, HTTPS, upgrading, backup.
+- [Web UI, PWA and notifications](https://docs.mimux.dev/interfaces/): keyboard shortcuts, installing as an app, Web Push and ntfy.
+- [Command line](https://docs.mimux.dev/cli/): every subcommand — `mimux upgrade`, `mimux completion`, and the pro `mimux mail`, `mimux mcp`, `mimux licence status`.
+- [The automation layer](https://docs.mimux.dev/automation/): API tokens, scopes, rate limits, the licence key and the trial. Read before the API.
+- [REST API guide](https://docs.mimux.dev/api/): auth, envelopes, pagination, idempotency and the common flows, in prose.
+- [API reference](https://docs.mimux.dev/reference/): the generated OpenAPI reference — every endpoint and field, served by the binary at /api/v1/openapi.json.
+- [MCP server](https://docs.mimux.dev/mcp/): streamable HTTP at /api/mcp or the stdio bridge; nine tools, gated by the token's scopes.
+- [Webhooks](https://docs.mimux.dev/webhooks/): events, HMAC-SHA256 signatures, the retry ladder, auto-disable, the delivery log with replay, and local forwarding for development.
+- [Architecture](https://docs.mimux.dev/architecture/): sync, storage, threading, search, filters, and the build-tag split between client and pro layer.
 
 ## Source
 
 - [GitHub repository](https://github.com/mattmezza/mimux): the full source, AGPL-3.0 client plus the ELv2 pro layer.
 - [LICENSING.md](https://github.com/mattmezza/mimux/blob/main/LICENSING.md): which directory is under which licence, and how `make verify-free` proves the split.
+- [Agent skill](https://github.com/mattmezza/mimux/blob/main/skills/mimux-cli/SKILL.md): teaches a coding agent to drive the CLI — install with `npx skills add mattmezza/mimux --skill mimux-cli`.
 
 ## Purchase
 

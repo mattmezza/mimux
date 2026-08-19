@@ -6,7 +6,7 @@
 > roadmap) for scripts and AI agents. One Go binary, on your own hardware.
 
 Canonical site: <https://mimux.dev/>. This document mirrors the site's content
-for language-model consumption.
+for language-model consumption. Current release: v0.23.0.
 
 ## What it is
 
@@ -21,24 +21,38 @@ credentials, your machine.
 
 ## How you get it
 
-One command to boot, zero configuration to run:
+One command to boot, zero configuration to run — a container:
 
 ```sh
-git clone https://github.com/mattmezza/mimux
-cd mimux && docker compose up -d
+docker run -d --name mimux -p 8083:8083 \
+  -v mimux-data:/data ghcr.io/mattmezza/mimux:latest
 # then open http://localhost:8083
 ```
 
-1. **Start it.** One container, one volume, one port.
+or a checksum-verified binary on your PATH (Linux and macOS, both
+architectures):
+
+```sh
+curl -fsSL https://mimux.dev/install.sh | bash            # the free client
+curl -fsSL https://mimux.dev/install.sh | bash -s -- pro  # + the automation layer
+```
+
+1. **Start it.** One container (or one binary), one volume, one port.
 2. **Open it.** The first visit walks you through creating your admin account.
 3. **Point it at your mail.** Add accounts under Settings → Accounts — OAuth2
    for Gmail and Zoho, app passwords everywhere else. Changes take effect
    without a restart.
 
+Releases carry full three-part semver tags (`v0.23.0`). Images are published as
+`:latest`, the exact `:v0.23.0`, and a floating `:v0.23` that tracks patches of
+that minor — pin the minor and security fixes arrive, features do not. Pro
+images carry the same tags with a `-pro` suffix, plus `:pro`. `mimux upgrade`
+replaces a binary install in place (`--check` reports, `--version vX.Y.Z` pins).
+
 One Go binary serves the UI (htmx + Alpine.js + Tailwind) and talks IMAP and
 SMTP; one SQLite file holds everything — accounts, credentials, message cache,
-sessions, filters, OAuth tokens. Back up the directory and you have backed up
-everything.
+sessions, filters, OAuth tokens, API tokens. Back up the directory and you have
+backed up everything.
 
 ## Features (all free, AGPL-3.0)
 
@@ -46,10 +60,23 @@ everything.
   conversation threading, unread counts, and the full folder tree per account.
 - **Background sync** over IMAP IDLE with polling fallback, one connection per
   account. Gmail and Zoho over OAuth2, everything else over (app) passwords.
+- **A folder set, not just the inbox**: every sync cycle walks the inbox, Sent
+  and Drafts, plus whatever else you tick per account in Settings → Syncing, so
+  mail sent from your phone shows up within the cycle. The inbox syncs last and
+  always. Changes made in another mail client are picked up in those folders —
+  read/unread and star/unstar on servers that support CONDSTORE, and a message
+  deleted or moved away there leaves here too.
 - **Search**: instant local full-text search plus on-demand deep IMAP server
   search, streamed back live over SSE as each account answers.
 - **Compose**: reply, reply-all, forward over SMTP — plain text, rich text or
-  Markdown — with local draft autosave, undo-send and scheduled send.
+  Markdown — with undo-send, scheduled send and optional autosave.
+- **Drafts live in the mailbox.** A saved draft is written to SQLite first and
+  published to the account's IMAP Drafts folder behind the request, so it is
+  waiting in your other clients; a slow or unreachable server costs a retry on
+  the next cycle, never the draft. Attachments are part of the draft and go up
+  with it. Drafts written in another client are listed here and editable —
+  opening one adopts it, so your first save replaces that copy rather than
+  leaving a second beside it.
 - **Filters & rules**: conditions → actions (move, label, forward, mark read,
   star, delete, notify), run server-side on incoming mail.
 - **Keyboard-first**: j/k navigation, e archive, R reply, / search, ? for the
@@ -59,27 +86,64 @@ everything.
 - **Calendar invites** render inline; accept or decline in place.
 - **AI compose/reply and translate**, optional and bring-your-own-key
   (OpenRouter, Google Translate). Off by default; keys stay in your database.
-- **Backup = cp**: all state in one SQLite file.
+- **Settings is one page per section** — appearance, reading, composing, quick
+  actions, notifications, syncing, search, accounts, signatures, templates, API,
+  webhooks, integrations, backup, licence — each at its own URL.
+- **Backup = cp**: all state in one SQLite file. Settings → Backup & restore
+  also exports a portable JSON copy of the configuration: accounts with their
+  credentials and OAuth tokens, preferences, filters, signatures, templates,
+  saved searches, trusted senders, labels, API tokens, webhook endpoints and
+  per-folder sync choices. No mail travels in it. It holds passwords and API
+  keys in plain text — treat the file accordingly.
 
 ## mimux pro — the automation layer for agents and scripts
 
-If something other than a human drives mimux, that is the paid layer:
+If something other than a human drives mimux, that is the paid layer. All three
+interfaces are the same product underneath, authenticated by the same scoped API
+tokens from Settings → API:
 
-- **REST API**: messages, folders, search, drafts, send and filters over plain
-  HTTP. Self-documented — the binary serves its own OpenAPI spec at
+- **REST API**: accounts, folders, messages (including archive/spam/trash,
+  labels and attachment download), search — local or an async deep-search job —
+  drafts, send, filters, token introspection and the whole webhooks family, over
+  plain HTTP. Self-documented — the binary serves its own OpenAPI spec at
   `/api/v1/openapi.json`, rendered at <https://docs.mimux.dev>.
-- **MCP server** at `/api/mcp` (streamable HTTP, plus a stdio bridge): the
-  mailbox becomes tools — search, read, move, label, draft — for Claude or any
-  MCP-capable client.
-- **CLI**: search, read, file and draft from the shell — plain text or JSON
-  output, so the inbox pipes into jq, an LLM, or the next script in the chain.
-- **Signed webhooks**: new mail and rule matches pushed to n8n, Home Assistant
-  or your own scripts, with signatures, retries with backoff, and a delivery log.
+- **MCP server** at `/api/mcp` (streamable HTTP, stateless; plus a stdio bridge
+  via `mimux mcp`): nine tools — `list_accounts`, `list_folders`, `search_mail`,
+  `read_message`, `mark_read`, `star_message`, `move_message`, `draft_reply`,
+  `send_draft` — plus a `mimux://inbox/summary` resource. The tool list is built
+  per request from the token's scopes, so a credential that cannot do something
+  is never shown the tool for it.
+- **CLI** (`mimux mail`): a thin HTTP client of a running instance — `login`,
+  `use`, `logout`, `whoami`, `accounts`, `folders`, `list`, `search`, `read`,
+  `mark-read`, `star`, `move`, `draft`, `send`, `webhooks listen`. It mirrors the
+  MCP tools one for one, in plain text or `--json`, so the inbox pipes into jq,
+  an LLM, or the next script. `mimux mail login <url>` opens a browser to approve
+  a token (authorization code with PKCE over a loopback port) — nothing is
+  pasted, and the token is an ordinary revocable one from Settings → API.
+  `mimux completion bash|zsh` prints a completion script generated from the same
+  subcommand registry the binary dispatches on.
+- **An agent skill** teaches a coding agent to drive that CLI — auth, the query
+  language, scopes, failure modes and the never-send-without-approval rule:
+  `npx skills add mattmezza/mimux --skill mimux-cli`.
+- **Signed webhooks**: `message.received`, `message.sent`, `message.updated`
+  (carrying what changed and whether the origin was `mimux` or `external`),
+  `message.deleted`, `sync.error` and `search.completed`, pushed to n8n, Home
+  Assistant or your own scripts. Each endpoint has its own secret;
+  `X-Mimux-Signature` is `t=<unix>,v1=HMAC-SHA256(secret, "<t>.<body>")` over the
+  stored body bytes, so a retry verifies exactly as the first attempt did.
+  Failures walk a seven-step ladder over ~24 hours, then the endpoint is
+  auto-disabled and you get an email — at most one a day per endpoint. Endpoints
+  can be paused and resumed; every one reports delivery stats. The deliveries
+  screen and `GET /v1/webhooks/{id}/deliveries` show each attempt with the
+  receiver's own answer (first 2KB) and let you replay one with the same
+  delivery id. For local development, `mimux mail webhooks listen -forward-to
+  http://localhost:3000/hooks` streams live events to your laptop, signed the
+  same way — nothing is queued while no listener is connected.
 - **GraphQL endpoint**: on the roadmap; part of pro when it ships, same price.
 - **Guardrails by architecture**: agents draft, but sending is a separate,
-  explicit call (two-step send); API tokens carry scopes and the tool list an
-  agent sees is filtered by them; everything runs on your server, so mail never
-  transits a vendor cloud.
+  explicit call (two-step send); moving to trash needs an extra confirmation;
+  API tokens carry scopes and the tool list an agent sees is filtered by them;
+  everything runs on your server, so mail never transits a vendor cloud.
 
 ## Pricing
 
@@ -88,7 +152,8 @@ If something other than a human drives mimux, that is the paid layer:
 - **Pro annual: {{price:annual:eur}}/year per instance.** Cancel anytime; keeps updating while
   active.
 - **Pro perpetual: {{price:perpetual:eur}} once per instance.** Covers every build released within
-  one year of purchase; those builds run forever.
+  one year of purchase; those builds run forever. Builds released after that
+  window need a new licence, and nothing forces the upgrade.
 - **Trial**: a pro build runs the full automation layer free for 14 days from
   first boot — no key, no card.
 - **Licence enforcement is offline**: Ed25519 signature verification inside the
