@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -615,11 +616,71 @@ func (s *Server) handleOutboxUndo(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// --- local drafts page (the simpler alternative to folding drafts into the
-// IMAP Drafts special-use folder view — see server.go routes) ---
+// --- the drafts page: every unfinished message, wherever it was written ---
+
+// draftRow is one line of that page. A draft written here has an Edit id and
+// opens in compose; one written in another client has only a mailbox copy and
+// opens read-only in the reading pane for now.
+type draftRow struct {
+	Edit     int64 // local draft id, 0 for a draft that only exists on the server
+	Message  int64 // store message id of the mailbox copy, 0 if not published yet
+	FolderID int64
+	Account  string
+	Subject  string
+	To       string
+	Updated  time.Time
+}
+
+// draftsPerFolder caps how much of a Drafts folder the page reads. Nobody has
+// more unfinished mail than this, and the ones that matter are the recent ones.
+const draftsPerFolder = 200
+
+// draftRows merges the local drafts with what is sitting in each account's IMAP
+// Drafts folder. A local draft and its own published copy are one message, not
+// two, so the mailbox copy is dropped when its Message-ID matches a local row —
+// which is exactly what the stable Message-ID on the draft is for.
+func (s *Server) draftRows() ([]draftRow, error) {
+	drafts, err := s.store.ListDrafts()
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]draftRow, 0, len(drafts))
+	mine := map[string]bool{}
+	for _, d := range drafts {
+		if d.MessageID != "" {
+			mine[d.Account+"\x00"+d.MessageID] = true
+		}
+		rows = append(rows, draftRow{
+			Edit: d.ID, Message: 0, FolderID: d.FolderID, Account: d.Account,
+			Subject: d.Subject, To: d.To, Updated: d.UpdatedAt,
+		})
+	}
+	for _, ac := range s.cfg.Accounts {
+		f, err := s.store.FolderBySpecial(ac.Name, "drafts")
+		if err != nil || f == nil {
+			continue
+		}
+		msgs, err := s.store.ListMessages(f.ID, draftsPerFolder)
+		if err != nil {
+			slog.Error("drafts: folder list", "account", ac.Name, "err", err)
+			continue
+		}
+		for _, m := range msgs {
+			if m.MessageID != "" && mine[m.Account+"\x00"+m.MessageID] {
+				continue
+			}
+			rows = append(rows, draftRow{
+				Message: m.ID, FolderID: m.FolderID, Account: m.Account,
+				Subject: m.Subject, To: m.ToAddresses, Updated: m.Date,
+			})
+		}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].Updated.After(rows[j].Updated) })
+	return rows, nil
+}
 
 func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
-	drafts, err := s.store.ListDrafts()
+	drafts, err := s.draftRows()
 	if err != nil {
 		slog.Error("drafts: list", "err", err)
 		http.Error(w, "failed to load drafts", http.StatusInternalServerError)

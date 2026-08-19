@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mattmezza/mimux/internal/store"
 )
@@ -57,5 +58,59 @@ func TestDropDraftIgnoresNothing(t *testing.T) {
 	s.dropDraft(d.ID)
 	if left, _ := s.store.ListDrafts(); len(left) != 0 {
 		t.Errorf("%d draft(s) left", len(left))
+	}
+}
+
+// TestDraftRowsMergeLocalAndMailbox: the page is one list. A local draft and
+// its own published copy are the same message and must appear once; a draft
+// written in another client has no local row and still has to show up.
+func TestDraftRowsMergeLocalAndMailbox(t *testing.T) {
+	s := testServer(t)
+	folderID, err := s.store.UpsertFolder("Personal", "Drafts", "drafts", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := func(uid uint32, msgID, subject string) {
+		t.Helper()
+		if err := s.store.UpsertMessage(&store.Message{
+			Account: "Personal", FolderID: folderID, UID: uid, MessageID: msgID,
+			Subject: subject, Date: time.Now(),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(1, "mine@example.com", "written here")
+	seed(2, "theirs@example.com", "written on the phone")
+
+	d := &store.Draft{Account: "Personal", Subject: "written here", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	// Published: this is the row the synced copy belongs to.
+	if err := s.store.ClearDraftDirty(d.ID, "mine@example.com", folderID, 1, d.UpdatedAt); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := s.draftRows()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("draftRows = %d rows (%+v), want 2 — the local draft and its copy are one item", len(rows), rows)
+	}
+	var editable, foreign int
+	for _, r := range rows {
+		if r.Edit == d.ID {
+			editable++
+		}
+		if r.Edit == 0 && r.Subject == "written on the phone" && r.Message != 0 {
+			foreign++
+		}
+	}
+	if editable != 1 {
+		t.Errorf("the local draft appears %d times, want once", editable)
+	}
+	if foreign != 1 {
+		t.Errorf("the other client's draft appears %d times, want once and read-only", foreign)
 	}
 }

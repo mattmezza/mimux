@@ -69,7 +69,11 @@
       </a>
       {{else if .Folders}}
       <ul class="space-y-0.5">
-        {{range .Folders}}
+        {{/* The Drafts folder is deliberately not listed here: Tools → Drafts is
+             the one drafts view, and it shows this folder's contents merged with
+             the drafts not yet published. Two "Drafts" entries, one of them a
+             strict subset of the other, was the confusing part. */}}
+        {{range .Folders}}{{if ne .SpecialUse "drafts"}}
         <li>
           <a href="/?f={{.ID}}" {{if eq .SpecialUse "inbox"}}data-account-inbox{{end}}{{if eq .SpecialUse "sent"}} data-sent{{end}} hx-get="/f/{{.ID}}" hx-target="#message-list" hx-swap="outerHTML" hx-push-url="/?f={{.ID}}" hx-indicator="#list-skeleton" @click="sidebarOpen = false"
              class="group flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
@@ -78,7 +82,7 @@
             {{if gt .UnreadCount 0}}<span class="shrink-0 text-[11px] rounded-full bg-zinc-800 group-hover:bg-zinc-700 px-1.5 text-zinc-300">{{.UnreadCount}}</span>{{end}}
           </a>
         </li>
-        {{end}}
+        {{end}}{{end}}
       </ul>
       {{else}}
       <p class="px-2 text-[11px] text-zinc-600">Syncing folders…</p>
@@ -104,7 +108,7 @@
         <li>
           <a href="/drafts" class="flex items-center gap-2 px-2 py-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
             {{template "folder_icon" "drafts"}}
-            <span class="truncate flex-1">Drafts (local)</span>
+            <span class="truncate flex-1">Drafts</span>
           </a>
         </li>
         <li>

@@ -190,6 +190,7 @@ func (a *account) draftsFolder(c *imapclient.Client) (*store.Folder, error) {
 	}
 	return a.m.st.FolderBySpecial(a.cfg.Name, "drafts")
 }
+
 // pushDirtyDrafts republishes every draft this account saved locally but never
 // got onto the server: a push that errored, one that hit submit's budget while
 // the worker was reconnecting, one still owed when the process restarted, or —

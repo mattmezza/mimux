@@ -376,6 +376,35 @@ func TestWebhookTranslatesHubEvents(t *testing.T) {
 	}
 }
 
+// TestWebhookDraftsAreSilent pins the thing that would otherwise make webhooks
+// unusable now that saving a draft APPENDs it to the Drafts folder: every save
+// is a new arrival there, and every arrival must stay off the wire. The
+// translate() switch fires only on inbox and sent, so this is a no-change test
+// on purpose — it fails the day someone adds a default case.
+func allWebhookEvents() string {
+	names := make([]string, 0, len(store.WebhookEvents))
+	for _, e := range store.WebhookEvents {
+		names = append(names, e.ID)
+	}
+	return strings.Join(names, " ")
+}
+
+func TestWebhookDraftsAreSilent(t *testing.T) {
+	e, st, _ := testEngine(t)
+	ep := seedEndpoint(t, st, "https://example.test/hook", allWebhookEvents())
+	drafts := seedFolder(t, st, "a1", "Drafts", "drafts")
+
+	seen := map[string]string{}
+	for uid := uint32(1); uid <= 3; uid++ { // three saves of the same draft
+		id := seedMsg(t, st, store.Message{Account: "a1", FolderID: drafts, UID: uid,
+			Subject: "half a thought", MessageID: "<draft@x>"})
+		e.translate(mail.Event{Type: "message-new", Data: strconv.FormatInt(id, 10)}, seen)
+	}
+	if log, _ := st.ListWebhookDeliveries(ep.ID, 10); len(log) != 0 {
+		t.Fatalf("saving a draft queued %d webhook deliver(ies): every keystroke would be a delivery", len(log))
+	}
+}
+
 // TestWebhookTranslatesMessageUpdated: the hub's "<id> <change> <origin>"
 // becomes a message.updated carrying the message as it is now, for subscribers
 // only.
