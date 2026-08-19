@@ -17,6 +17,7 @@
         {{end}}
 
         <div class="flex items-center gap-3">
+          {{if .Account}}{{$c := ""}}{{if .AccountColors}}{{$c = index .AccountColors .Account}}{{end}}<span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}"></span>{{end}}
           <h1 class="text-lg font-semibold text-zinc-100">{{if .Account}}{{acctLabel .Account}} drafts{{else}}Drafts{{end}}</h1>
           {{if .Account}}<a href="/drafts" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors duration-150">All accounts →</a>{{end}}
         </div>
