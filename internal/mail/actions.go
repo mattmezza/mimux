@@ -101,6 +101,7 @@ func (m *Manager) setRead(ctx context.Context, c *imapclient.Client, msg *store.
 	if err := m.storeFlag(ctx, c, msg, imap.FlagSeen, read); err != nil {
 		return err
 	}
+	defer m.changed(msg)
 	return m.st.ClearSeenDirty(msg.ID, read)
 }
 
@@ -147,7 +148,11 @@ func (m *Manager) SetStarred(ctx context.Context, msg *store.Message, starred bo
 }
 
 func (m *Manager) setStarred(ctx context.Context, c *imapclient.Client, msg *store.Message, starred bool) error {
-	return m.storeFlag(ctx, c, msg, imap.FlagFlagged, starred)
+	if err := m.storeFlag(ctx, c, msg, imap.FlagFlagged, starred); err != nil {
+		return err
+	}
+	m.changed(msg)
+	return nil
 }
 
 func (m *Manager) storeFlag(ctx context.Context, c *imapclient.Client, msg *store.Message, flag imap.Flag, add bool) error {
@@ -195,7 +200,11 @@ func (m *Manager) SetLabel(msg *store.Message, label string, add bool) error {
 		return nil
 	}
 	msg.Labels = labels
-	return m.st.SetLabels(msg.ID, labels)
+	if err := m.st.SetLabels(msg.ID, labels); err != nil {
+		return err
+	}
+	m.changed(msg)
+	return nil
 }
 
 // Move relocates a message to the account's folder with the given special-use
@@ -248,6 +257,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 	if target.ID == src.ID {
 		return nil
 	}
+	defer m.changed(msg)
 	return a.exec(ctx, c, func(c *imapclient.Client) error {
 		if _, err := c.Select(src.Name, nil).Wait(); err != nil {
 			return err
@@ -269,6 +279,23 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 		}
 		return c.Expunge().Close()
 	})
+}
+
+// changed announces that a message this user acted on is no longer what the
+// open pages are showing. It reuses new-mail — "the list moved, re-read it" —
+// because that is exactly what every consumer of it already does, and it is the
+// only way a second tab or a phone finds out before the next sync poll.
+//
+// The tab that asked for the change also refreshes. That is accepted: the swap
+// it already did and the refresh it now does render the same list. Deferred at
+// the read and move call sites, so a failed action also announces itself — a
+// re-read is what puts an optimistic swap back the way the server sees it.
+//
+// ponytail: one broadcast per mutated message. A select-many path (bulk mark
+// read) wants these coalesced per request — do it there, by broadcasting once
+// after the loop, when that path exists.
+func (m *Manager) changed(msg *store.Message) {
+	m.hub.broadcast(Event{Type: "new-mail", Data: msg.Account})
 }
 
 // Toast pushes a transient error message to connected clients.
