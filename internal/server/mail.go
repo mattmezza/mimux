@@ -288,7 +288,7 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, unified boo
 func (s *Server) handleStatusbar(w http.ResponseWriter, r *http.Request) {
 	// Version too: the poll swaps the whole footer, so leaving it out made the
 	// release link point at an empty tag 60s after load.
-	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status(), "Version": s.version})
+	s.renderPartial(w, "statusbar", map[string]any{"Statuses": s.mail.Status(), "Version": s.version, "ReleaseTag": strings.TrimSuffix(s.version, "-pro")})
 }
 
 // accountInfo is one row of the accounts dialog: the account + its live status

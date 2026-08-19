@@ -128,6 +128,9 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 		data = make(map[string]any)
 	}
 	data["Version"] = s.version
+	// The GitHub release tag has no flavour suffix: the pro build of v0.23.0
+	// reports itself as v0.23.0-pro but the tag is v0.23.0.
+	data["ReleaseTag"] = strings.TrimSuffix(s.version, "-pro")
 	// The spinner's starting state, so a cold load paints it right on first
 	// paint instead of waiting for the first SSE event.
 	data["Syncing"] = s.mail.AnySyncing()
