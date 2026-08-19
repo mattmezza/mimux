@@ -93,8 +93,15 @@ func PrefixSubject(kind, subject string) string {
 // wrote:" header followed by the original body with every line prefixed by
 // "> ".
 func QuoteBody(date time.Time, from, body string) string {
+	return quoteText(date, from, body, "\n")
+}
+
+// quoteText is QuoteBody with a caller-chosen gap between the attribution line
+// and the quote. Markdown needs a blank line there: without it the attribution
+// is swallowed into the blockquote as a lazy continuation line.
+func quoteText(date time.Time, from, body, gap string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "On %s, %s wrote:\n", date.Format("Mon, 2 Jan 2006 15:04"), from)
+	fmt.Fprintf(&b, "%s%s", attribution(date, from), gap)
 	for _, line := range strings.Split(body, "\n") {
 		b.WriteString("> ")
 		b.WriteString(line)
@@ -103,13 +110,69 @@ func QuoteBody(date time.Time, from, body string) string {
 	return b.String()
 }
 
+func attribution(date time.Time, from string) string {
+	return fmt.Sprintf("On %s, %s wrote:", date.Format("Mon, 2 Jan 2006 15:04"), from)
+}
+
+// truncMarker closes a quote cut short by the "first N lines" setting.
+const truncMarker = "[…]"
+
+// firstLines keeps the first n lines of s, reporting whether anything was cut.
+func firstLines(s string, n int) (string, bool) {
+	lines := strings.Split(s, "\n")
+	if n < 1 || len(lines) <= n {
+		return s, false
+	}
+	return strings.Join(lines[:n], "\n"), true
+}
+
+// QuoteOriginal renders the body a reply opens with: an attribution line and
+// the quoted original, formatted for the compose mode the reply opens in
+// (plain|markdown|html). The user's own text goes above it — plain and markdown
+// come back with the two blank lines to type into, html with an empty leading
+// paragraph — because mainstream clients top-post and so do we.
+//
+// style is the ReplyQuote preference: "all" quotes the whole message, "lines"
+// the first n lines of its text, "none" nothing at all (returns ""). text is
+// the original's plain text; htmlBody its HTML part ("" when it had none) and
+// is used by html mode only, cleaned through the compose allowlist — never the
+// reading-pane sanitizer, whose cid: rewriting and image blocking are for
+// display and would be saved back as the user's own markup.
+//
+// "lines" always truncates the text alternative, html mode included: cutting a
+// markup tree at the tenth line leaves unbalanced tags, and a text quote is the
+// honest version of "the first few lines".
+func QuoteOriginal(mode, style string, lines int, date time.Time, from, text, htmlBody string) string {
+	if style == "none" {
+		return ""
+	}
+	if style == "lines" {
+		if cut, truncated := firstLines(text, lines); truncated {
+			text, htmlBody = cut+"\n"+truncMarker, ""
+		} else {
+			text, htmlBody = cut, ""
+		}
+	}
+	switch mode {
+	case "html":
+		if safe := SanitizeComposeHTML(htmlBody); strings.TrimSpace(safe) != "" {
+			return "<p><br></p><blockquote>" + htmlesc(attribution(date, from)) + "<br>" + safe + "</blockquote>"
+		}
+		return QuoteBodyHTML(date, from, text)
+	case "markdown":
+		return "\n\n" + quoteText(date, from, text, "\n\n")
+	default:
+		return "\n\n" + quoteText(date, from, text, "\n")
+	}
+}
+
 // QuoteBodyHTML renders the reply quote for html (WYSIWYG) mode: an empty
 // paragraph to type into, then the original wrapped in a <blockquote> with line
 // breaks preserved. Body is plain text (the stored snippet), HTML-escaped.
 func QuoteBodyHTML(date time.Time, from, body string) string {
 	var b strings.Builder
 	b.WriteString("<p><br></p><blockquote>")
-	fmt.Fprintf(&b, "On %s, %s wrote:<br>", date.Format("Mon, 2 Jan 2006 15:04"), htmlesc(from))
+	b.WriteString(htmlesc(attribution(date, from)) + "<br>")
 	for i, line := range strings.Split(body, "\n") {
 		if i > 0 {
 			b.WriteString("<br>")

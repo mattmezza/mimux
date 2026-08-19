@@ -133,8 +133,10 @@ func (m *Manager) notifyForRule(msg *store.Message) error {
 }
 
 // forwardMessage sends msg on to a new recipient as part of a "forward"
-// filter action, quoting the stored snippet (the full body isn't fetched
-// for this — see note on prefillReply in server/compose.go).
+// filter action, quoting the stored snippet. Unlike a forward the user asks
+// for (Manager.QuoteSource, via server's prefillReply) this one runs inside the
+// sync loop against every matching message, and a body fetch per match is not
+// something the mailbox should wait on.
 func (m *Manager) forwardMessage(ctx context.Context, msg *store.Message, to string) error {
 	from := msg.FromAddress
 	if msg.FromName != "" {

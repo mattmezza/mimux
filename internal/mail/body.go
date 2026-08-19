@@ -120,6 +120,30 @@ func (m *Manager) PlainText(ctx context.Context, msg *store.Message) (string, er
 	return collapseWS(stripHTML(src)), nil
 }
 
+// QuoteSource returns a message's body in the two forms a reply or forward
+// quotes it in: its text (the text/plain part, or the HTML one rendered down to
+// text with the line structure kept — unlike PlainText, which collapses
+// everything for the summarizer) and its raw HTML part, "" when it had none.
+// The caller sanitizes the HTML with SanitizeComposeHTML: it is about to become
+// the user's own markup, not something rendered in the reading pane.
+//
+// Same cached parsed body as everything else (LRU → SQLite → IMAP).
+func (m *Manager) QuoteSource(ctx context.Context, msg *store.Message) (text, htmlBody string, err error) {
+	b, err := m.parsedBody(ctx, msg, false)
+	if err != nil {
+		return "", "", err
+	}
+	text, htmlBody = b.textContent, b.htmlContent
+	// Full HTML shipped under text/plain: it is the HTML part, whatever it said.
+	if strings.TrimSpace(htmlBody) == "" && looksHTML(text) {
+		text, htmlBody = "", text
+	}
+	if strings.TrimSpace(text) == "" {
+		text = htmlToText(htmlBody)
+	}
+	return strings.TrimSpace(text), htmlBody, nil
+}
+
 // parseBody parses a full RFC 822 message into its text/HTML parts and inline
 // (cid) attachments. It is tolerant of malformed parts — a bad part is skipped,
 // never fatal.

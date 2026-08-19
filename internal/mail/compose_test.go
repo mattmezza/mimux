@@ -42,6 +42,85 @@ func TestQuoteBody(t *testing.T) {
 	}
 }
 
+// TestQuoteOriginal covers the reply prefill in every compose mode and at
+// every setting: the quote a reply opens with is the one thing the user sees
+// before they type a word.
+func TestQuoteOriginal(t *testing.T) {
+	date := time.Date(2026, 7, 20, 10, 30, 0, 0, time.UTC)
+	const from = "Alice <alice@example.com>"
+	const text = "line one\nline two\nline three"
+	const htmlBody = `<p>line <b>one</b></p><script>alert(1)</script>`
+	const attr = "On Mon, 20 Jul 2026 10:30, Alice <alice@example.com> wrote:"
+
+	t.Run("plain quotes every line", func(t *testing.T) {
+		got := QuoteOriginal("plain", "all", 10, date, from, text, htmlBody)
+		want := "\n\n" + attr + "\n> line one\n> line two\n> line three\n"
+		if got != want {
+			t.Errorf("got\n%q\nwant\n%q", got, want)
+		}
+	})
+
+	t.Run("markdown separates the attribution from the blockquote", func(t *testing.T) {
+		got := QuoteOriginal("markdown", "all", 10, date, from, text, htmlBody)
+		want := "\n\n" + attr + "\n\n> line one\n> line two\n> line three\n"
+		if got != want {
+			t.Errorf("got\n%q\nwant\n%q", got, want)
+		}
+	})
+
+	t.Run("html blockquotes the sanitized original", func(t *testing.T) {
+		got := QuoteOriginal("html", "all", 10, date, from, text, htmlBody)
+		if !strings.HasPrefix(got, "<p><br></p><blockquote>") || !strings.HasSuffix(got, "</blockquote>") {
+			t.Fatalf("not a top-posted blockquote: %q", got)
+		}
+		if !strings.Contains(got, "line <b>one</b>") {
+			t.Errorf("original markup missing: %q", got)
+		}
+		if strings.Contains(got, "<script") {
+			t.Errorf("compose sanitizer did not run: %q", got)
+		}
+	})
+
+	t.Run("html falls back to the text alternative", func(t *testing.T) {
+		got := QuoteOriginal("html", "all", 10, date, from, text, "")
+		if !strings.Contains(got, "line one<br>line two") {
+			t.Errorf("text fallback missing: %q", got)
+		}
+	})
+
+	t.Run("first N lines truncates and marks it, html included", func(t *testing.T) {
+		for _, mode := range []string{"plain", "markdown", "html"} {
+			got := QuoteOriginal(mode, "lines", 2, date, from, text, htmlBody)
+			if strings.Contains(got, "line three") {
+				t.Errorf("%s: quoted past the line budget: %q", mode, got)
+			}
+			if !strings.Contains(got, "line two") || !strings.Contains(got, truncMarker) {
+				t.Errorf("%s: want two lines and a truncation marker: %q", mode, got)
+			}
+			// The markup is dropped when truncating — cutting a tree at line 2
+			// would leave unbalanced tags.
+			if mode == "html" && strings.Contains(got, "<b>") {
+				t.Errorf("html truncation kept the markup: %q", got)
+			}
+		}
+	})
+
+	t.Run("a short original is not marked as truncated", func(t *testing.T) {
+		got := QuoteOriginal("plain", "lines", 10, date, from, text, "")
+		if strings.Contains(got, truncMarker) {
+			t.Errorf("marked short body as truncated: %q", got)
+		}
+	})
+
+	t.Run("none quotes nothing at all", func(t *testing.T) {
+		for _, mode := range []string{"plain", "markdown", "html"} {
+			if got := QuoteOriginal(mode, "none", 10, date, from, text, htmlBody); got != "" {
+				t.Errorf("%s: want empty body, got %q", mode, got)
+			}
+		}
+	})
+}
+
 func TestReplyRecipients(t *testing.T) {
 	got := ReplyRecipients("me@example.com", "Alice <alice@example.com>")
 	want := []string{"Alice <alice@example.com>"}
