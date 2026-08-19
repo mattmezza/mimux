@@ -8,6 +8,7 @@ package filter_test
 import (
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/mattmezza/mimux/internal/filter"
 	"github.com/mattmezza/mimux/internal/store"
@@ -124,5 +125,60 @@ func TestFilterRuleCRUD(t *testing.T) {
 	}
 	if missing, err := s.GetRule(r.ID); err != nil || missing != nil {
 		t.Fatalf("GetRule on deleted id = %v, %v", missing, err)
+	}
+}
+
+// TestRecentInbox is the dry run's corpus: inbox rows only, newest first,
+// account-scoped when the rule is, and shaped as the engine's MessageMeta so
+// the page can run the very same Matches the sync loop runs.
+func TestRecentInbox(t *testing.T) {
+	s := openStore(t)
+	inbox, err := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := s.UpsertFolder("A", "Archive", "archive", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.UpsertFolder("B", "INBOX", "inbox", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seed := func(folder int64, account string, uid uint32, from, subject string, age time.Duration) {
+		t.Helper()
+		if err := s.UpsertMessage(&store.Message{
+			Account: account, FolderID: folder, UID: uid, FromAddress: from,
+			ToAddresses: "me@example.com", Subject: subject, Snippet: "hello",
+			Date: time.Now().Add(-age),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seed(inbox, "A", 1, "old@example.com", "Older", 2*time.Hour)
+	seed(inbox, "A", 2, "new@example.com", "Newer", time.Hour)
+	seed(archive, "A", 3, "filed@example.com", "Filed", time.Minute)
+	seed(other, "B", 1, "b@example.com", "Other account", time.Minute)
+
+	all, err := s.RecentInbox("", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("RecentInbox(all) = %d messages, want the 3 inbox ones (no Archive)", len(all))
+	}
+	if all[0].Subject != "Other account" || all[1].Subject != "Newer" {
+		t.Errorf("RecentInbox is not newest-first: %+v", all)
+	}
+	if all[1].From != "new@example.com" || all[1].To != "me@example.com" || all[1].Body != "hello" {
+		t.Errorf("RecentInbox did not fill the fields a rule matches on: %+v", all[1])
+	}
+
+	scoped, err := s.RecentInbox("A", 10)
+	if err != nil || len(scoped) != 2 {
+		t.Fatalf("RecentInbox(A) = %+v, %v, want only account A's inbox", scoped, err)
+	}
+	if limited, err := s.RecentInbox("", 1); err != nil || len(limited) != 1 {
+		t.Fatalf("RecentInbox limit ignored: %+v, %v", limited, err)
 	}
 }

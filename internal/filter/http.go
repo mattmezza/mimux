@@ -29,50 +29,49 @@ type RuleStore interface {
 	DeleteRule(id int64) error
 	ToggleRule(id int64) error
 	ReorderRules(ids []int64) error
+	// RecentInbox is the dry run's corpus: the newest stored inbox messages,
+	// as the engine sees them. account "" means every account.
+	RecentInbox(account string, limit int) ([]MessageMeta, error)
 }
 
+// dryRunScan is how much recent mail a dry run reads. Big enough to be a real
+// answer on a normal mailbox, small enough to stay one indexed query.
+const dryRunScan = 200
+
+// dryRunShow is how many matches the page lists before it says "and N more".
+const dryRunShow = 15
+
 // Routes returns a chi router covering the filters management page:
-// list/create/edit/delete/reorder/toggle/export/test. Mount it under
+// list/create/edit/delete/reorder/toggle, plus the dry run. Mount it under
 // /filters behind the app's auth+CSRF middleware, e.g.:
 //
-//	r.Mount("/filters", filter.Routes(st, s.secure, funcs, sidebar))
+//	r.Mount("/filters", filter.Routes(st, s.secure, templateFuncs, s.filtersPageData))
 //
-// funcs must contain the helpers the shared layout partials use (folderLabel
-// etc.); sidebar supplies the layout's folder-tree data.
-func Routes(rs RuleStore, secure bool, funcs template.FuncMap, sidebar func() any) chi.Router {
+// page fills in what the shared layout needs (version, appearance, sync
+// state) and the vocabulary the form offers (Accounts, Folders, Labels) —
+// none of which this package can know on its own.
+func Routes(rs RuleStore, secure bool, funcs template.FuncMap, page func(map[string]any)) chi.Router {
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseFS(web.FS,
 		"templates/pages/filters.html",
 		"templates/layouts/base.html",
-		"templates/partials/topbar.html",
-		"templates/partials/sidebar.html",
-		"templates/partials/search_suggest.html",
-		"templates/partials/statusbar.html",
-		"templates/partials/filter_row.html",
-		"templates/partials/filter_form.html",
-		"templates/partials/filter_test_form.html",
-		"templates/partials/compose_fab.html",
-		"templates/components/help-overlay.html",
-		"templates/components/accounts-overlay.html",
 	))
-	h := &handler{rs: rs, tmpl: tmpl, secure: secure, sidebar: sidebar}
+	h := &handler{rs: rs, tmpl: tmpl, secure: secure, page: page}
 
 	r := chi.NewRouter()
 	r.Get("/", h.list)
 	r.Post("/", h.create)
 	r.Post("/reorder", h.reorder)
-	r.Get("/export", h.export)
 	r.Post("/{id}", h.update)
 	r.Post("/{id}/delete", h.delete)
 	r.Post("/{id}/toggle", h.toggle)
-	r.Post("/{id}/test", h.test)
 	return r
 }
 
 type handler struct {
-	rs      RuleStore
-	tmpl    *template.Template
-	secure  bool
-	sidebar func() any
+	rs     RuleStore
+	tmpl   *template.Template
+	secure bool
+	page   func(map[string]any)
 }
 
 // --- view models (carry CSRF + derived fields alongside the plain Rule) ---
@@ -93,6 +92,14 @@ type formView struct {
 	Enabled        bool
 	ConditionsJSON template.JS
 	ActionsJSON    template.JS
+}
+
+// dryRunView is "what would this rule have done to the mail I already have".
+type dryRunView struct {
+	Rule    Rule
+	Scanned int
+	Matches []MessageMeta
+	More    int
 }
 
 func blankForm(csrf string) formView {
@@ -116,6 +123,10 @@ func editForm(csrf string, r Rule) formView {
 
 // --- handlers ---
 
+// list renders the whole page: the rules, optionally the create/edit form
+// (?new=1 / ?edit=<id>) and optionally that rule's dry run (&test=1). One
+// handler, because every one of those is the same screen in a different state
+// and a POST that redirects back here is the only way state changes.
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	rules, err := h.rs.ListRules()
 	if err != nil {
@@ -145,20 +156,33 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	if msg := r.URL.Query().Get("err"); msg != "" {
 		data["Error"] = msg
 	}
-	if editID := r.URL.Query().Get("edit"); editID != "" {
-		id, err := strconv.ParseInt(editID, 10, 64)
-		if err == nil {
-			if rule, err := h.rs.GetRule(id); err == nil && rule != nil {
-				data["Form"] = editForm(csrf, *rule)
+	if id, err := strconv.ParseInt(r.URL.Query().Get("edit"), 10, 64); err == nil {
+		if rule, err := h.rs.GetRule(id); err == nil && rule != nil {
+			data["Form"] = editForm(csrf, *rule)
+			if r.URL.Query().Get("test") != "" {
+				data["DryRun"] = h.dryRun(*rule)
 			}
 		}
 	} else if r.URL.Query().Get("new") != "" {
 		data["Form"] = blankForm(csrf)
 	}
-	if test := r.URL.Query().Get("test"); test != "" {
-		data["TestResult"] = struct{ Match bool }{Match: test == "match"}
-	}
 	h.render(w, data)
+}
+
+// dryRun answers "which of my recent messages does this rule match" by running
+// the same Matches the sync loop runs, over stored mail. No I/O beyond one
+// read: a dry run can never mark, move or forward anything.
+func (h *handler) dryRun(rule Rule) dryRunView {
+	corpus, err := h.rs.RecentInbox(rule.Account, dryRunScan)
+	if err != nil {
+		slog.Error("filters: dry run", "err", err)
+	}
+	v := dryRunView{Rule: rule, Scanned: len(corpus), Matches: DryRun(rule, corpus)}
+	if len(v.Matches) > dryRunShow {
+		v.More = len(v.Matches) - dryRunShow
+		v.Matches = v.Matches[:dryRunShow]
+	}
+	return v
 }
 
 func (h *handler) create(w http.ResponseWriter, r *http.Request) {
@@ -244,53 +268,11 @@ func (h *handler) reorder(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/filters", http.StatusSeeOther)
 }
 
-func (h *handler) export(w http.ResponseWriter, r *http.Request) {
-	rules, err := h.rs.ListRules()
-	if err != nil {
-		http.Error(w, "failed to load rules", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", `attachment; filename="filters.json"`)
-	enc := json.NewEncoder(w)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(rules); err != nil {
-		slog.Error("filters: export", "err", err)
-	}
-}
-
-// test is the dry-run endpoint: it matches a single hand-entered message
-// against one rule and redirects back with the result. DryRun (a slice of
-// messages) is exposed for programmatic/future use.
-func (h *handler) test(w http.ResponseWriter, r *http.Request) {
-	id, err := idParam(r)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	rule, err := h.rs.GetRule(id)
-	if err != nil || rule == nil {
-		http.NotFound(w, r)
-		return
-	}
-	msg := MessageMeta{
-		From:    r.PostFormValue("from"),
-		To:      r.PostFormValue("to"),
-		Subject: r.PostFormValue("subject"),
-		Body:    r.PostFormValue("body"),
-	}
-	result := "nomatch"
-	if rule.Matches(msg) {
-		result = "match"
-	}
-	http.Redirect(w, r, fmt.Sprintf("/filters?edit=%d&test=%s", id, result), http.StatusSeeOther) // #nosec G710 -- fixed local path, id is an int64, result is a constant.
-}
-
 // --- helpers ---
 
 func (h *handler) render(w http.ResponseWriter, data map[string]any) {
-	if h.sidebar != nil {
-		data["Sidebar"] = h.sidebar()
+	if h.page != nil {
+		h.page(data)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, "base", data); err != nil {
@@ -312,7 +294,7 @@ func idParam(r *http.Request) (int64, error) {
 
 // ruleFromForm builds a Rule from posted form values and validates it.
 // cond_field/cond_op/cond_value and act_type/act_arg are parallel repeated
-// fields, one per condition/action row (see filter_form.html).
+// fields, one per condition/action row (see filters.html).
 func ruleFromForm(r *http.Request, id int64) (Rule, error) {
 	if err := r.ParseForm(); err != nil {
 		return Rule{}, fmt.Errorf("could not parse form")
@@ -329,8 +311,11 @@ func ruleFromForm(r *http.Request, id int64) (Rule, error) {
 	actions := make([]Action, 0, len(types))
 	for i := range types {
 		arg := ""
-		if i < len(args) {
-			arg = args[i]
+		// An action that takes no argument still posts its (hidden, stale) input,
+		// so switching "move to Archive" to "star" would store `star Archive` and
+		// show it on the page. The engine ignores the extra, the reader does not.
+		if i < len(args) && NeedsArg(types[i]) {
+			arg = strings.TrimSpace(args[i])
 		}
 		actions = append(actions, Action{Type: types[i], Arg: arg})
 	}

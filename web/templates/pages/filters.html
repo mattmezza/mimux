@@ -1,46 +1,235 @@
 {{define "title"}}Filters — mimux{{end}}
 {{define "content"}}
-<div class="h-full flex flex-col" x-data="mimuxUI" :data-filter="filter">
-  {{template "topbar" .}}
-  <div class="flex-1 flex min-h-0">
-    {{template "sidebar" .}}
-    <main class="flex-1 overflow-y-auto">
-      <div class="max-w-3xl mx-auto w-full p-6 space-y-6">
-        <div class="flex items-center justify-between">
-          <h1 class="text-lg font-semibold text-zinc-100">Filters</h1>
-          <div class="flex items-center gap-2">
-            <a href="/filters/export" class="text-xs px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">Export JSON</a>
-            <a href="/filters?new=1" class="text-xs px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white font-medium transition-colors duration-150">+ New rule</a>
-          </div>
+{{/* One screen, one file. The page is a configuration screen, so it wears the
+     settings chrome (own header, back to inbox) rather than the mail chrome —
+     and the form, the rule rows and the dry run live here rather than in three
+     partials nothing else ever included. */}}
+{{$csrf := .CSRF}}
+<div class="h-dvh flex flex-col min-h-0">
+  <header class="h-12 shrink-0 flex items-center gap-3 px-4 border-b border-zinc-800 bg-zinc-900">
+    <a href="/" class="p-1.5 -ml-1.5 rounded-md text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 transition-colors duration-150" title="Back to inbox" aria-label="Back to inbox">
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5"/></svg>
+    </a>
+    <h1 class="text-base font-semibold text-zinc-100">Filters</h1>
+    <span class="text-sm text-zinc-500">· {{len .Rules}} rule{{if ne (len .Rules) 1}}s{{end}}</span>
+    {{if not .Form}}
+    <a href="/filters?new=1" class="ml-auto text-xs px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white font-medium transition-colors duration-150">New rule</a>
+    {{end}}
+  </header>
+
+  <div class="flex-1 min-h-0 overflow-y-auto" id="main-content">
+    <div class="max-w-3xl w-full mx-auto p-6 space-y-6">
+
+      <p class="text-xs text-zinc-500">
+        Rules run in order, top to bottom, on <strong class="text-zinc-400">new mail arriving in an inbox</strong> —
+        every rule that matches applies, not just the first. Mail already synced, and mail landing in
+        Sent, Drafts or Archive, is left alone.
+      </p>
+
+      {{with .Error}}
+      <p class="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-400">{{.}}</p>
+      {{end}}
+
+      {{if .Form}}{{$f := .Form}}
+      <form method="post" action="{{if $f.Editing}}/filters/{{$f.ID}}{{else}}/filters{{end}}"
+            x-data='{"conditions": {{$f.ConditionsJSON}}, "actions": {{$f.ActionsJSON}}, needsArg(t) { return ["forward","move","label"].includes(t) }}'
+            class="rounded-lg border border-zinc-800 bg-zinc-800/40 p-4 space-y-5">
+        <input type="hidden" name="csrf_token" value="{{$csrf}}">
+
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-sm font-semibold text-zinc-100">{{if $f.Editing}}Edit rule{{else}}New rule{{end}}</h2>
+          <label class="flex items-center gap-2 text-xs text-zinc-400">
+            <input type="checkbox" name="enabled" {{if $f.Enabled}}checked{{end}}
+                   class="rounded border-zinc-700 bg-zinc-900 text-indigo-500 focus:ring-indigo-500">
+            Enabled
+          </label>
         </div>
 
-        {{with .Error}}<p class="text-red-500 text-xs">{{.}}</p>{{end}}
-        {{if .TestResult}}
-          <p class="text-xs {{if .TestResult.Match}}text-emerald-400{{else}}text-zinc-500{{end}}">
-            {{if .TestResult.Match}}Test message matches this rule.{{else}}Test message does not match this rule.{{end}}
-          </p>
-        {{end}}
+        <div class="grid sm:grid-cols-2 gap-3">
+          <label class="block space-y-1">
+            <span class="text-xs text-zinc-400">Rule name</span>
+            <input name="name" required value="{{$f.Name}}" placeholder="Newsletters"
+                   class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+          </label>
+          <label class="block space-y-1">
+            <span class="text-xs text-zinc-400">Applies to</span>
+            {{$cur := $f.Account}}{{$found := false}}
+            <select name="account"
+                    class="w-full rounded-md bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+              <option value="" {{if not $cur}}selected{{end}}>All accounts</option>
+              {{range .Accounts}}{{if eq .Name $cur}}{{$found = true}}{{end}}
+              <option value="{{.Name}}" {{if eq .Name $cur}}selected{{end}}>{{.DisplayLabel}}</option>
+              {{end}}
+              {{/* A rule scoped to an account that has since been removed keeps
+                   its scope instead of silently becoming a global rule. */}}
+              {{if and $cur (not $found)}}<option value="{{$cur}}" selected>{{$cur}} — removed account</option>{{end}}
+            </select>
+          </label>
+        </div>
 
-        {{if .Form}}
-          {{template "filter_form" .Form}}
-          {{if .Form.Editing}}{{template "filter_test_form" .Form}}{{end}}
-        {{end}}
-
-        {{if .Rules}}
         <div class="space-y-2">
-          {{range .Rules}}{{template "filter_row" .}}{{end}}
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">If all of these match</span>
+            <button type="button" @click="conditions.push({field:'from', op:'contains', value:''})"
+                    class="text-xs text-indigo-400 hover:text-indigo-300">+ Add condition</button>
+          </div>
+          {{/* Wraps on a phone: the value input takes the second line
+               (order-last + w-full) instead of being squeezed to nothing
+               between two selects. */}}
+          <template x-for="(c, i) in conditions" :key="i">
+            <div class="flex flex-wrap items-center gap-2">
+              <select name="cond_field" x-model="c.field"
+                      class="flex-1 sm:flex-none sm:w-28 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+                <option value="from">From</option>
+                <option value="to">To</option>
+                <option value="subject">Subject</option>
+                <option value="body">Body</option>
+              </select>
+              <select name="cond_op" x-model="c.op"
+                      class="flex-1 sm:flex-none sm:w-32 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+                <option value="contains">contains</option>
+                <option value="regex">matches regex</option>
+              </select>
+              <input name="cond_value" x-model="c.value" placeholder="value"
+                     class="order-last w-full sm:order-none sm:w-auto sm:flex-1 min-w-0 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs focus:outline-none focus:border-indigo-500">
+              <button type="button" title="Remove condition" aria-label="Remove condition" @click="conditions.splice(i,1)" class="text-zinc-500 hover:text-red-400 text-xs px-1">✕</button>
+            </div>
+          </template>
+          <p class="text-[11px] text-zinc-600">
+            Matching ignores case. <strong class="text-zinc-500">Body</strong> matches the stored preview of the
+            message, not the whole body — rules run during sync, which cannot wait for a full download.
+          </p>
         </div>
+
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-zinc-500">Then do this</span>
+            <button type="button" @click="actions.push({type:'mark_read', arg:''})"
+                    class="text-xs text-indigo-400 hover:text-indigo-300">+ Add action</button>
+          </div>
+          <template x-for="(a, i) in actions" :key="i">
+            <div class="flex flex-wrap items-center gap-2">
+              <select name="act_type" x-model="a.type"
+                      class="flex-1 sm:flex-none sm:w-40 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs">
+                <option value="mark_read">Mark as read</option>
+                <option value="star">Star</option>
+                <option value="label">Label</option>
+                <option value="move">Move to folder</option>
+                <option value="delete">Move to Trash</option>
+                <option value="forward">Forward to</option>
+                <option value="notify">Notify me</option>
+              </select>
+              {{/* One input, shown only for the actions that take an argument.
+                   It stays in the DOM when hidden so the posted act_arg array
+                   keeps lining up with act_type; the server drops the value for
+                   actions that take none. */}}
+              <input name="act_arg" x-model="a.arg" x-show="needsArg(a.type)"
+                     :list="a.type === 'move' ? 'filter-folders' : (a.type === 'label' ? 'filter-labels' : null)"
+                     :placeholder="a.type === 'forward' ? 'someone@example.com' : (a.type === 'move' ? 'Folder name' : 'Label')"
+                     class="order-last w-full sm:order-none sm:w-auto sm:flex-1 min-w-0 rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-zinc-100 text-xs focus:outline-none focus:border-indigo-500">
+              <span x-show="!needsArg(a.type)" class="hidden sm:block flex-1 text-[11px] text-zinc-600"
+                    x-text="a.type === 'notify' ? 'Uses your Notifications settings.' : ''"></span>
+              <button type="button" title="Remove action" aria-label="Remove action" @click="actions.splice(i,1)" class="text-zinc-500 hover:text-red-400 text-xs px-1">✕</button>
+            </div>
+          </template>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-1">
+          <button class="rounded-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white font-medium px-4 py-1.5 text-xs">
+            {{if $f.Editing}}Save changes{{else}}Create rule{{end}}
+          </button>
+          <a href="/filters" class="text-xs text-zinc-400 hover:text-zinc-100">Cancel</a>
+          {{if $f.Editing}}
+          <a href="/filters?edit={{$f.ID}}&test=1" class="ml-auto text-xs px-3 py-1.5 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">Test against recent mail</a>
+          {{end}}
+        </div>
+      </form>
+
+      {{/* Suggestions, not constraints: a folder or label that does not exist
+           yet is still a valid thing to name. */}}
+      <datalist id="filter-folders">{{range .Folders}}<option value="{{.}}"></option>{{end}}</datalist>
+      <datalist id="filter-labels">{{range .Labels}}<option value="{{.}}"></option>{{end}}</datalist>
+      {{end}}
+
+      {{with .DryRun}}
+      <section class="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 space-y-2">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 class="text-sm font-semibold text-zinc-100">Dry run</h2>
+          <span class="text-xs text-zinc-500">{{len .Matches}}{{if .More}}+{{end}} of your last {{.Scanned}} inbox messages match</span>
+        </div>
+        <p class="text-[11px] text-zinc-600">Conditions only, against mail already synced. Nothing was marked, moved, forwarded or notified.</p>
+        {{if .Matches}}
+        <ul class="divide-y divide-zinc-800 text-xs">
+          {{range .Matches}}
+          <li class="py-1.5 flex gap-3 min-w-0">
+            <span class="w-48 shrink-0 truncate text-zinc-400">{{.From}}</span>
+            <span class="flex-1 truncate text-zinc-300">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</span>
+          </li>
+          {{end}}
+        </ul>
+        {{if .More}}<p class="text-xs text-zinc-500">…and {{.More}} more</p>{{end}}
         {{else}}
-        <div class="flex flex-col items-center justify-center gap-2 text-center py-16 text-zinc-500">
-          <span class="text-3xl">🧹</span>
-          <p>No rules yet. Automate the boring stuff.</p>
+        <p class="text-xs text-zinc-500">Nothing in that window matches. Fresh mail can still match — this only looks at what is already stored.</p>
+        {{end}}
+      </section>
+      {{end}}
+
+      {{if .Rules}}
+      <div class="space-y-2">
+        {{range .Rules}}
+        <div class="rounded-lg border border-zinc-800 bg-zinc-800/30 px-3 py-2.5 flex items-start gap-3{{if not .Enabled}} opacity-60{{end}}">
+          <div class="flex flex-col gap-0.5 shrink-0 pt-0.5">
+            <form method="post" action="/filters/reorder">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <input type="hidden" name="ids" value="{{.UpIDs}}">
+              <button type="submit" title="Move up" aria-label="Move rule up" {{if not .UpIDs}}disabled{{end}} class="text-zinc-500 hover:text-zinc-200 disabled:opacity-30 leading-none text-xs">▲</button>
+            </form>
+            <form method="post" action="/filters/reorder">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <input type="hidden" name="ids" value="{{.DownIDs}}">
+              <button type="submit" title="Move down" aria-label="Move rule down" {{if not .DownIDs}}disabled{{end}} class="text-zinc-500 hover:text-zinc-200 disabled:opacity-30 leading-none text-xs">▼</button>
+            </form>
+          </div>
+
+          <div class="flex-1 min-w-0 space-y-1">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="text-zinc-100 font-medium truncate">{{.Name}}</span>
+              <span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-zinc-700 text-zinc-400">{{if .Account}}{{acctLabel .Account}}{{else}}All accounts{{end}}</span>
+              {{if not .Enabled}}<span class="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full border border-amber-500/40 text-amber-400/90">Off</span>{{end}}
+            </div>
+            <p class="text-xs text-zinc-500 break-words">
+              <span class="text-zinc-600">If</span>
+              {{range $i, $c := .Conditions}}{{if $i}} <span class="text-zinc-600">and</span> {{end}}{{$c.Describe}}{{end}}
+            </p>
+            <p class="text-xs text-zinc-400 break-words">
+              <span class="text-zinc-600">Then</span>
+              {{range $i, $a := .Actions}}{{if $i}}, {{end}}{{$a.Describe}}{{end}}
+            </p>
+          </div>
+
+          <div class="flex items-center gap-1.5 shrink-0">
+            <form method="post" action="/filters/{{.ID}}/toggle">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <button class="text-xs px-2 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
+            </form>
+            <a href="/filters?edit={{.ID}}" class="text-xs px-2 py-1 rounded-md border border-zinc-700 text-zinc-300 hover:bg-zinc-800 transition-colors duration-150">Edit</a>
+            <form method="post" action="/filters/{{.ID}}/delete" onsubmit="return confirm('Delete this rule?')">
+              <input type="hidden" name="csrf_token" value="{{$csrf}}">
+              <button class="text-xs px-2 py-1 rounded-md border border-zinc-700 text-red-400 hover:bg-red-500/10 transition-colors duration-150">Delete</button>
+            </form>
+          </div>
         </div>
         {{end}}
       </div>
-    </main>
+      {{else if not .Form}}
+      <div class="flex flex-col items-center justify-center gap-2 text-center py-16 text-zinc-500">
+        <span class="text-3xl">🧹</span>
+        <p>No rules yet. Automate the boring stuff.</p>
+        <a href="/filters?new=1" class="text-xs px-3 py-1.5 rounded-md bg-indigo-500 hover:bg-indigo-400 text-white font-medium transition-colors duration-150">New rule</a>
+      </div>
+      {{end}}
+
+    </div>
   </div>
-  {{template "statusbar" .}}
-  {{template "compose_fab" .}}
 </div>
-{{template "accounts-overlay" .}}
 {{end}}

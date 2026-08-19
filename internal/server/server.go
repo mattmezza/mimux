@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -127,6 +128,17 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 	if data == nil {
 		data = make(map[string]any)
 	}
+	s.pageData(data)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, "base", data); err != nil {
+		slog.Error("render", "page", page, "err", err)
+	}
+}
+
+// pageData is what base.html needs from every full page. Split out of render
+// because the filters router owns its own template set and used to render
+// without any of it — no custom accent, no app icon, no sync spinner.
+func (s *Server) pageData(data map[string]any) {
 	data["Version"] = s.version
 	// The GitHub release tag has no flavour suffix: the pro build of v0.23.0
 	// reports itself as v0.23.0-pro but the tag is v0.23.0.
@@ -135,10 +147,36 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 	// paint instead of waiting for the first SSE event.
 	data["Syncing"] = s.mail.AnySyncing()
 	s.appearanceData(data)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := t.ExecuteTemplate(w, "base", data); err != nil {
-		slog.Error("render", "page", page, "err", err)
+}
+
+// filtersPageData is pageData plus the vocabulary the filters form offers:
+// the accounts a rule can be scoped to and the folder/label names its actions
+// can name. internal/filter knows about neither, so it takes this callback.
+func (s *Server) filtersPageData(data map[string]any) {
+	s.pageData(data)
+	data["Accounts"] = s.accounts()
+	data["Folders"] = s.allFolderNames()
+	data["Labels"] = s.knownLabels()
+}
+
+// allFolderNames is every folder name across every account, deduped and
+// sorted — the suggestion list for a "move to" action. A rule can be global,
+// so the union is the honest answer; the name is resolved per account when the
+// rule actually fires (see mail.moveToFolder).
+func (s *Server) allFolderNames() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, a := range s.accounts() {
+		folders, _ := s.store.ListFolders(a.Name)
+		for _, f := range folders {
+			if !seen[f.Name] {
+				seen[f.Name] = true
+				out = append(out, f.Name)
+			}
+		}
 	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *Server) Handler() http.Handler {
@@ -283,7 +321,7 @@ func (s *Server) Handler() http.Handler {
 		// /settings/* routes above for readability — chi's trie prefers a static
 		// segment over a wildcard whatever the registration order.
 		r.Get("/settings/{section}", s.handleSettingsSection)
-		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, func() any { return s.sidebarData() }))
+		r.Mount("/filters", filter.Routes(s.store, s.secure, templateFuncs, s.filtersPageData))
 		// Clients are built per request so AI keys edited in Settings take
 		// effect without a restart (translate does the same, in handleMessageBody).
 		r.Mount("/ai", ai.Routes(s.aiClient))

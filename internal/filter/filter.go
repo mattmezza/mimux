@@ -41,7 +41,10 @@ const (
 )
 
 // MessageMeta is the subset of a message a rule can match against. The sync
-// engine adapts its own message representation into this.
+// engine adapts its own message representation into this — note that Body is
+// the stored preview (the first part of the message the sync fetched), not the
+// full body: rules are evaluated during sync, and a body fetch per message is
+// not something the mailbox can wait on.
 type MessageMeta struct {
 	From    string `json:"from"`
 	To      string `json:"to"`
@@ -69,6 +72,54 @@ type Rule struct {
 	Enabled    bool        `json:"enabled"`
 	Conditions []Condition `json:"conditions"`
 	Actions    []Action    `json:"actions"`
+}
+
+// fieldLabels/actionLabels are how a rule reads back to the person who wrote
+// it, on the filters page. Kept next to the constants so a new field or action
+// is one edit, not two files apart.
+var fieldLabels = map[string]string{
+	FieldFrom: "From", FieldTo: "To", FieldSubject: "Subject", FieldBody: "Body",
+}
+
+var actionLabels = map[string]string{
+	ActionMarkRead: "Mark as read", ActionStar: "Star", ActionDelete: "Move to Trash",
+	ActionNotify: "Notify me", ActionMove: "Move to", ActionLabel: "Label",
+	ActionForward: "Forward to",
+}
+
+// Describe renders a condition as a sentence: `Subject contains "invoice"`.
+func (c Condition) Describe() string {
+	field, ok := fieldLabels[strings.ToLower(c.Field)]
+	if !ok {
+		field = c.Field
+	}
+	op := "contains"
+	if strings.ToLower(c.Op) == OpRegex {
+		op = "matches"
+	}
+	return fmt.Sprintf("%s %s %q", field, op, c.Value)
+}
+
+// Describe renders an action the same way: `Move to Archive`, `Star`.
+func (a Action) Describe() string {
+	label, ok := actionLabels[a.Type]
+	if !ok {
+		label = a.Type
+	}
+	if a.Arg != "" {
+		return label + " " + a.Arg
+	}
+	return label
+}
+
+// NeedsArg reports whether an action type takes an argument — the one thing
+// the form has to know to show or hide its input, and Validate enforces.
+func NeedsArg(actionType string) bool {
+	switch actionType {
+	case ActionForward, ActionMove, ActionLabel:
+		return true
+	}
+	return false
 }
 
 // fieldValue picks the message field a condition targets.
@@ -177,8 +228,8 @@ func (r Rule) Validate() error {
 		if !validActionTypes[a.Type] {
 			return fmt.Errorf("unknown action %q", a.Type)
 		}
-		if (a.Type == ActionForward || a.Type == ActionMove || a.Type == ActionLabel) && strings.TrimSpace(a.Arg) == "" {
-			return fmt.Errorf("action %q needs an argument", a.Type)
+		if NeedsArg(a.Type) && strings.TrimSpace(a.Arg) == "" {
+			return fmt.Errorf("%q needs a folder, label or address", actionLabels[a.Type])
 		}
 	}
 	return nil

@@ -49,6 +49,33 @@ func (s *Store) RulesForAccount(account string) ([]filter.Rule, error) {
 	return out, rows.Err()
 }
 
+// RecentInbox returns the newest stored inbox messages as the rules engine
+// sees them, for the filters page's dry run. account "" (a global rule) means
+// every account.
+//
+// Inbox only, because that is the only place rules ever run (see
+// account.runRules), and stored-only: this is a read, so testing a rule can
+// never touch the mailbox.
+func (s *Store) RecentInbox(account string, limit int) ([]filter.MessageMeta, error) {
+	rows, err := s.DB.Query(`SELECT m.from_address, m.to_addresses, m.subject, m.snippet
+		FROM messages m JOIN folders f ON f.id = m.folder_id
+		WHERE f.special_use = 'inbox' AND (? = '' OR m.account = ?)
+		ORDER BY m.date DESC LIMIT ?`, account, account, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []filter.MessageMeta
+	for rows.Next() {
+		var m filter.MessageMeta
+		if err := rows.Scan(&m.From, &m.To, &m.Subject, &m.Body); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) GetRule(id int64) (*filter.Rule, error) {
 	row := s.DB.QueryRow(`SELECT id, account, name, position, enabled, conditions, actions FROM filter_rules WHERE id = ?`, id)
 	r, err := scanRule(row)
