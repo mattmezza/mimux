@@ -70,7 +70,7 @@ func planDescription(plan string) string {
 	if plan == planAnnual {
 		return "The mimux automation layer: REST API, MCP server and webhooks. Renews yearly; cancel any time."
 	}
-	return "The mimux automation layer: REST API, MCP server and webhooks. One payment, covers every release up to the current version."
+	return "The mimux automation layer: REST API, MCP server and webhooks. One payment, covers every build released within a year of purchase — and those builds run forever."
 }
 
 // validCurrency reports whether code is one we sell in. Anything else is a

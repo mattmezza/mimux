@@ -44,6 +44,12 @@ type Config struct {
 	// licence check compares it against a perpetual licence's watermark, and
 	// cfg is what it already gets through ext.Deps.
 	Version string
+	// BuildDate is when this build was released, set by cmd/mimux at boot from
+	// its own -ldflags value. RFC3339 or a bare 2006-01-02, and empty for any
+	// build nobody released — a local `go build`, `make build`, `go run`. A
+	// perpetual licence covers every build released before its coverage ends,
+	// so this is the date that check compares against; empty fails open.
+	BuildDate string
 	// LicenceKey is MIMUX_LICENCE_KEY. Blank falls back to the key stored in
 	// the database. Bootstrap config like the rest of this struct: an install
 	// that provisions its licence from the environment should not have to reach

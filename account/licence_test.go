@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -69,6 +70,9 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 			if got.ExpiresAt != nil {
 				t.Errorf("perpetual: exp = %v, want null", *got.ExpiresAt)
 			}
+			if want := now.AddDate(1, 0, 0).Unix(); got.CoveredUntil != want {
+				t.Errorf("perpetual: covered_until = %d, want purchase + 1 year (%d)", got.CoveredUntil, want)
+			}
 		}
 
 		// Tampering must break verification: the signature covers the payload
@@ -90,6 +94,44 @@ func TestPerpetualExpJSONIsNull(t *testing.T) {
 	}
 	if !strings.Contains(string(b), `"exp":null`) {
 		t.Fatalf("perpetual payload = %s, want exp:null", b)
+	}
+}
+
+// TestCoveredUntilOnTheWire pins the other half of the shared payload format:
+// perpetual carries covered_until, annual does not carry it at all. pro/ reads
+// its absence as "key predates the field" and falls back to the watermark, so
+// emitting a zero here would silently move every annual licence onto a coverage
+// window that ended in 1970.
+func TestCoveredUntilOnTheWire(t *testing.T) {
+	now := time.Unix(1755400000, 0)
+
+	b, err := json.Marshal(newLicence("a@b.co", planPerpetual, "v0.20", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fmt.Sprintf(`"covered_until":%d`, now.AddDate(1, 0, 0).Unix()); !strings.Contains(string(b), want) {
+		t.Errorf("perpetual payload = %s, want %s", b, want)
+	}
+
+	b, err = json.Marshal(newLicence("a@b.co", planAnnual, "v0.20", now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "covered_until") {
+		t.Errorf("annual payload = %s, want no covered_until", b)
+	}
+}
+
+func TestCurrentVersionMustBeMinorOnly(t *testing.T) {
+	for _, v := range []string{"v0.20", "v1.0", "v10.234"} {
+		if !currentVersionRE.MatchString(v) {
+			t.Errorf("CURRENT_VERSION=%q rejected, want accepted", v)
+		}
+	}
+	for _, v := range []string{"v0.20.1", "0.20", "v0", "v0.20-pro", "", "vX.Y", "v0.20 "} {
+		if currentVersionRE.MatchString(v) {
+			t.Errorf("CURRENT_VERSION=%q accepted, want rejected", v)
+		}
 	}
 }
 

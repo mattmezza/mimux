@@ -77,6 +77,12 @@ type licencePayload struct {
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt *int64 `json:"exp"` // nil for perpetual
 	Watermark string `json:"watermark"`
+	// CoveredUntil is what a perpetual licence actually buys: every build
+	// released up to this instant, running forever. Zero means the key predates
+	// this field — those fall back to the version watermark below, so no key
+	// already in someone's Settings changes behaviour. Absent rather than null
+	// on the wire (omitempty) because absent is exactly what it means.
+	CoveredUntil int64 `json:"covered_until,omitempty"`
 }
 
 // licenceState is one evaluation: what the middleware enforces, what it adds to
@@ -152,7 +158,7 @@ func evaluateLicence(cfg *config.Config, st *store.Store, now time.Time) licence
 		// install over a mangled paste.
 		return trialState(st, now, source, err.Error())
 	}
-	return checkLicence(p, cfg.Version, source, now)
+	return checkLicence(p, cfg.Version, cfg.BuildDate, source, now)
 }
 
 // licenceKey returns the configured key and where it came from. The environment
@@ -171,25 +177,47 @@ func licenceKey(cfg *config.Config, st *store.Store) (key, source string) {
 }
 
 // checkLicence applies the plan rules to a verified payload.
-func checkLicence(p licencePayload, buildVersion, source string, now time.Time) licenceState {
+func checkLicence(p licencePayload, buildVersion, buildDate, source string, now time.Time) licenceState {
 	s := licenceState{Source: source, Payload: &p, Allowed: true}
 	who := maskEmail(p.Email)
 
 	if p.Plan == planPerpetual || p.ExpiresAt == nil {
-		// A perpetual licence buys the version you bought it at, forever. A
-		// newer build is not covered — and that is said out loud rather than
-		// silently degraded, because a silent degrade is how you find out via a
-		// broken automation at 3am.
-		if p.Plan == planPerpetual && buildAfterWatermark(buildVersion, p.Watermark) {
-			s.Allowed = false
-			s.Code = "licence_version"
-			s.Message = fmt.Sprintf("This perpetual licence covers mimux up to %s; this build is %s. "+
-				"Renew at %s to cover %s, or run %s. Webhook deliveries queue up until then, "+
-				"and mail itself keeps working either way.",
-				p.Watermark, buildVersion, accountURL, buildVersion, p.Watermark)
-			s.Line = fmt.Sprintf("Perpetual licence covers up to %s, this build is %s — API, MCP and webhook deliveries are paused (%s, from %s).",
-				p.Watermark, buildVersion, who, source)
-			return s
+		// A perpetual licence buys a year of releases, and those builds run
+		// forever. A build released after the window is not covered — and that
+		// is said out loud rather than silently degraded, because a silent
+		// degrade is how you find out via a broken automation at 3am.
+		if p.Plan == planPerpetual {
+			if p.CoveredUntil > 0 {
+				until := time.Unix(p.CoveredUntil, 0).UTC()
+				if built, ok := parseBuildDate(buildDate); ok && built.After(until) {
+					s.Allowed = false
+					s.Code = "licence_version"
+					s.Message = fmt.Sprintf("This perpetual licence covers every mimux build released up to %s; "+
+						"this one (%s) was released %s. Every build inside your window keeps working forever — "+
+						"downgrade to one of those, or buy again at %s to cover the newer ones. "+
+						"Webhook deliveries queue up until then, and mail itself keeps working either way.",
+						day(until), buildVersion, day(built), accountURL)
+					s.Line = fmt.Sprintf("Perpetual licence covers builds released up to %s, this one is from %s — API, MCP and webhook deliveries are paused (%s, from %s).",
+						day(until), day(built), who, source)
+					return s
+				}
+				s.Line = fmt.Sprintf("Perpetual licence, covers every build released up to %s (%s, from %s).",
+					day(until), who, source)
+				return s
+			}
+			// Keys issued before covered_until existed carry only the version
+			// watermark. They keep the rules they were sold under.
+			if buildAfterWatermark(buildVersion, p.Watermark) {
+				s.Allowed = false
+				s.Code = "licence_version"
+				s.Message = fmt.Sprintf("This perpetual licence covers mimux up to %s; this build is %s. "+
+					"Renew at %s to cover %s, or run %s. Webhook deliveries queue up until then, "+
+					"and mail itself keeps working either way.",
+					p.Watermark, buildVersion, accountURL, buildVersion, p.Watermark)
+				s.Line = fmt.Sprintf("Perpetual licence covers up to %s, this build is %s — API, MCP and webhook deliveries are paused (%s, from %s).",
+					p.Watermark, buildVersion, who, source)
+				return s
+			}
 		}
 		s.Line = fmt.Sprintf("Perpetual licence, covers builds up to %s (%s, from %s).", p.Watermark, who, source)
 		return s
@@ -284,8 +312,10 @@ func ensureTrialStart(st *store.Store, now time.Time) {
 	}
 }
 
-// buildAfterWatermark reports whether the running build is newer than what a
-// perpetual licence covers. Versions are the repo's vMAJOR.MINOR tags; anything
+// buildAfterWatermark reports whether the running build is newer than the
+// version watermark. This is the back-compat path only: perpetual keys issued
+// before covered_until existed have no coverage date, and are still enforced
+// the way they were sold. Versions are compared at vMAJOR.MINOR; anything
 // unparsable — "dev", a git hash, a blank — counts as covered, because locking
 // a developer out of a build they just compiled is a bug, not enforcement.
 func buildAfterWatermark(build, watermark string) bool {
@@ -295,6 +325,25 @@ func buildAfterWatermark(build, watermark string) bool {
 		return false
 	}
 	return bMaj > wMaj || (bMaj == wMaj && bMin > wMin)
+}
+
+// parseBuildDate reads the -ldflags build date. Fails open on anything it does
+// not recognise — an empty value (every locally built binary), a git hash
+// someone wired in, a half-written timestamp — for the same reason
+// buildAfterWatermark does: locking someone out of a build over a date nobody
+// can read is a bug, not enforcement.
+//
+// ponytail: two layouts, because those are the two things that get injected —
+// a release timestamp and a plain day. Add more when something actually emits
+// one.
+func parseBuildDate(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	for _, layout := range []string{time.RFC3339, time.DateOnly} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 // parseVersion pulls MAJOR.MINOR out of "v0.19", "0.19", "v0.19-pro", "v0.19.2".

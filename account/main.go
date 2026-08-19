@@ -211,8 +211,21 @@ func loadConfig() (config, error) {
 	if len(missing) > 0 {
 		return c, fmt.Errorf("missing required env: %s", strings.Join(missing, ", "))
 	}
+	if !currentVersionRE.MatchString(c.currentVersion) {
+		return c, fmt.Errorf("CURRENT_VERSION=%q: want vMAJOR.MINOR (e.g. v0.20). "+
+			"The minor is the unit of entitlement and the string customers read on their licence; "+
+			"patch releases ship inside a minor and never change it", c.currentVersion)
+	}
 	return c, nil
 }
+
+// currentVersionRE is the whole CURRENT_VERSION policy. Releases are tagged
+// vX.Y.Z, but the watermark stamped into a licence is the minor — v0.20.3 and
+// v0.20.0 are the same thing to a customer, and a shop that stamped the patch
+// would mint keys that read as narrower than what was sold. Rejected at boot
+// rather than at the first purchase: a typo in account.env must not be
+// discovered by a customer.
+var currentVersionRE = regexp.MustCompile(`^v[0-9]+\.[0-9]+$`)
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -404,7 +417,10 @@ func licenceEmail(p licencePayload, key string) string {
 		fmt.Fprintf(&b, "Plan: annual — valid until %s, and it renews automatically.\n",
 			time.Unix(*p.ExpiresAt, 0).UTC().Format("2 January 2006"))
 	default:
-		fmt.Fprintf(&b, "Plan: perpetual — never expires, and entitles you to every\nrelease up to and including %s.\n", p.Watermark)
+		fmt.Fprintf(&b, "Plan: perpetual — never expires. It covers every mimux build\n"+
+			"released until %s, and the builds you already have keep\n"+
+			"working forever.\n",
+			time.Unix(p.CoveredUntil, 0).UTC().Format("2 January 2006"))
 	}
 	b.WriteString("\n" + emailFooter)
 	return b.String()

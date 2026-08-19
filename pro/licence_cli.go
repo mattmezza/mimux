@@ -23,9 +23,9 @@ import (
 // store read-only: WAL lets it run alongside a live mimux, and nothing here
 // writes (the trial's start row is the server's to stamp, not this command's).
 
-// RunLicence is the `mimux licence [status]` subcommand. version is the running
-// build's version, which cmd/mimux owns.
-func RunLicence(args []string, version string) int {
+// RunLicence is the `mimux licence [status]` subcommand. version and buildDate
+// are the running build's -ldflags values, which cmd/mimux owns.
+func RunLicence(args []string, version, buildDate string) int {
 	if len(args) > 1 || (len(args) == 1 && args[0] != "status") {
 		fmt.Fprintln(os.Stderr, "usage: mimux licence status")
 		return 2
@@ -35,7 +35,7 @@ func RunLicence(args []string, version string) int {
 		fmt.Fprintln(os.Stderr, "mimux licence:", err)
 		return 1
 	}
-	cfg.Version = version
+	cfg.Version, cfg.BuildDate = version, buildDate
 
 	var st *store.Store
 	if _, serr := os.Stat(cfg.DB.Path); serr == nil {
@@ -62,6 +62,11 @@ func licenceReport(w io.Writer, cfg *config.Config, st *store.Store, now time.Ti
 		"none": "none configured",
 	}[s.Source])
 	fmt.Fprintf(&b, "build:     %s\n", buildLabel(cfg.Version))
+	if built, ok := parseBuildDate(cfg.BuildDate); ok {
+		fmt.Fprintf(&b, "released:  %s\n", day(built))
+	} else {
+		fmt.Fprintf(&b, "released:  unknown (locally built — coverage dates do not apply)\n")
+	}
 	if p := s.Payload; p != nil {
 		fmt.Fprintf(&b, "plan:      %s\n", p.Plan)
 		fmt.Fprintf(&b, "email:     %s\n", maskEmail(p.Email))
@@ -75,11 +80,22 @@ func licenceReport(w io.Writer, cfg *config.Config, st *store.Store, now time.Ti
 		} else {
 			fmt.Fprintf(&b, "expires:   never\n")
 		}
+		if p.Plan == planPerpetual && p.CoveredUntil > 0 {
+			until := time.Unix(p.CoveredUntil, 0).UTC()
+			covered := "covers this build"
+			if built, ok := parseBuildDate(cfg.BuildDate); ok && built.After(until) {
+				covered = "DOES NOT cover this build"
+			}
+			fmt.Fprintf(&b, "covered:   builds released up to %s (%s)\n", day(until), covered)
+		}
 		if p.Watermark != "" {
 			covered := "covers this build"
-			if p.Plan != planPerpetual {
+			switch {
+			case p.Plan != planPerpetual:
 				covered = "informational — annual licences are not version-limited"
-			} else if buildAfterWatermark(cfg.Version, p.Watermark) {
+			case p.CoveredUntil > 0:
+				covered = "informational — the covered: date is what is enforced"
+			case buildAfterWatermark(cfg.Version, p.Watermark):
 				covered = "DOES NOT cover this build"
 			}
 			fmt.Fprintf(&b, "watermark: %s (%s)\n", p.Watermark, covered)

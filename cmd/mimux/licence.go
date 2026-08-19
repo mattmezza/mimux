@@ -9,5 +9,5 @@ package main
 import "github.com/mattmezza/mimux/pro"
 
 func init() {
-	subcommands["licence"] = func(args []string) int { return pro.RunLicence(args, version) }
+	subcommands["licence"] = func(args []string) int { return pro.RunLicence(args, version, buildDate) }
 }

@@ -31,7 +31,19 @@ type licencePayload struct {
 	IssuedAt  int64  `json:"iat"`
 	ExpiresAt *int64 `json:"exp"`
 	Watermark string `json:"watermark"`
+	// CoveredUntil is the perpetual promise the terms of sale actually make:
+	// every build released within a year of purchase, running forever. The
+	// policy lives here, in the shop — pro/ only compares its own release date
+	// against the number we signed. Omitted for annual (exp is the whole story
+	// there) and absent from every key issued before this field existed, which
+	// pro/ falls back to the watermark for.
+	CoveredUntil int64 `json:"covered_until,omitempty"`
 }
+
+// perpetualCoverage is how much of the release stream one perpetual purchase
+// buys. Changing it changes what new licences promise; www/src/terms says the
+// same number in words, so the two move together.
+const perpetualCoverage = 1 // years
 
 func newLicenceID() string {
 	return "lic_" + strings.ToLower(rand.Text())
@@ -69,8 +81,11 @@ func parseLicenceKey(key string) (licencePayload, error) {
 	return p, nil
 }
 
-// newLicence builds the payload for a plan. Annual expires in a year; perpetual
-// never expires but is watermarked with the version it entitles you to.
+// newLicence builds the payload for a plan. Annual expires in a year and keeps
+// renewing; perpetual never expires and covers every build released in the year
+// after purchase — those builds then run forever. The watermark rides along on
+// both as the display version it was bought at; it is no longer what perpetual
+// coverage is enforced against.
 func newLicence(email, plan, watermark string, now time.Time) licencePayload {
 	p := licencePayload{
 		ID:        newLicenceID(),
@@ -79,9 +94,12 @@ func newLicence(email, plan, watermark string, now time.Time) licencePayload {
 		IssuedAt:  now.Unix(),
 		Watermark: watermark,
 	}
-	if plan == planAnnual {
+	switch plan {
+	case planAnnual:
 		exp := now.AddDate(1, 0, 0).Unix()
 		p.ExpiresAt = &exp
+	case planPerpetual:
+		p.CoveredUntil = now.AddDate(perpetualCoverage, 0, 0).Unix()
 	}
 	return p
 }

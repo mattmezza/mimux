@@ -23,6 +23,12 @@ import (
 
 var version = "dev"
 
+// buildDate is when this build was released, injected alongside version by the
+// release workflow (-X main.buildDate=...). Empty for anything built locally,
+// and that emptiness is load-bearing: a perpetual licence is enforced against
+// this date, so a build nobody released is never anyone's problem to explain.
+var buildDate = ""
+
 // subcommands maps CLI verbs (mimux <verb> [args…]) to their implementations.
 // Empty in the free build; pro-tagged files in this package register theirs
 // (mcp, …) from init(), so the free binary neither has nor mentions them.
@@ -51,8 +57,8 @@ func main() {
 		slog.Error("startup", "err", err)
 		os.Exit(1)
 	}
-	// main owns the -ldflags version value; everything else reads it off cfg.
-	cfg.Version = version
+	// main owns the -ldflags values; everything else reads them off cfg.
+	cfg.Version, cfg.BuildDate = version, buildDate
 	if err := os.MkdirAll(filepath.Dir(cfg.DB.Path), 0o750); err != nil { // #nosec G703 -- path comes from the admin's own config file
 		slog.Error("startup", "err", err)
 		os.Exit(1)
