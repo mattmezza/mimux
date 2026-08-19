@@ -464,3 +464,32 @@ func TestSteadyPushesOwedDrafts(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// TestDropDraftRemovesAForeignCopy: deleting a draft written in another client
+// takes the copy out of the mailbox. The row it deletes from is a draft that
+// carries nothing but the copy's location — which is all the drafts page has
+// for one it never adopted.
+func TestDropDraftRemovesAForeignCopy(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	if err := user.Create("Drafts", nil); err != nil {
+		t.Fatal(err)
+	}
+	a := draftAccount(t, st, c)
+	msg := foreignDraft(t, a, c, user, ComposeInput{
+		To: []string{"ada@example.com"}, Subject: "written elsewhere",
+		Body: "delete me", MessageID: "phone-2@example.com",
+	})
+
+	if err := a.m.dropDraft(context.Background(), c,
+		&store.Draft{Account: msg.Account, FolderID: msg.FolderID, UID: msg.UID}); err != nil {
+		t.Fatalf("drop: %v", err)
+	}
+	if copies := draftCopies(t, c, "Drafts"); len(copies) != 0 {
+		t.Errorf("Drafts still holds %v after the delete", copies)
+	}
+	// UIDPLUS: the copy is really gone, so the local row goes with it.
+	if left, _ := st.ListMessages(msg.FolderID, 10); len(left) != 0 {
+		t.Errorf("%d mailbox row(s) left locally after the copy was expunged", len(left))
+	}
+}

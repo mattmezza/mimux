@@ -362,16 +362,29 @@
 <div id="compose-attachments" class="mt-2 flex flex-wrap gap-1.5"{{if .OOB}} hx-swap-oob="true"{{end}}>
   {{$draft := .DraftID}}
   {{range .Attachments}}
-  <span class="inline-flex items-center gap-1.5 max-w-full rounded-md border border-zinc-700 bg-zinc-800 py-1 pl-2 pr-1 text-xs text-zinc-200">
-    <svg class="w-3.5 h-3.5 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
-    <span class="truncate">{{.Filename}}</span>
-    <span class="shrink-0 text-zinc-500">{{humanBytes .Size}}</span>
-    <button type="button" title="Remove attachment" aria-label="Remove attachment {{.Filename}}"
-      hx-post="/compose/draft/{{$draft}}/attachment/{{.ID}}/delete" hx-swap="none"
-      class="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-400 transition-colors duration-150">
-      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
-    </button>
-  </span>
+  {{/* Preview/Download reuse the reading pane's controls (previewAttachment,
+       ?dl=1) against the draft's own endpoint: the bytes come out of SQLite,
+       the headers are the same. */}}
+  <div data-attachment class="max-w-full rounded-md border border-zinc-700 bg-zinc-800 overflow-hidden text-xs text-zinc-200">
+    <div class="flex items-center gap-1.5 py-1 pl-2 pr-1">
+      <svg class="w-3.5 h-3.5 shrink-0 text-zinc-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+      <span class="truncate max-w-[12rem]" title="{{.Filename}}">{{.Filename}}</span>
+      <span class="shrink-0 text-zinc-500">{{humanBytes .Size}}</span>
+      {{$kind := attachKind .ContentType .Filename}}
+      {{if ne $kind "other"}}
+      <button type="button" onclick="previewAttachment(this, '/compose/draft/{{$draft}}/attachment/{{.ID}}', '{{$kind}}')"
+        class="shrink-0 px-1 text-indigo-400 hover:text-indigo-300 transition-colors duration-150">Preview</button>
+      {{end}}
+      <a href="/compose/draft/{{$draft}}/attachment/{{.ID}}?dl=1" download="{{.Filename}}"
+        class="shrink-0 px-1 text-zinc-400 hover:text-zinc-100 transition-colors duration-150">Download</a>
+      <button type="button" title="Remove attachment" aria-label="Remove attachment {{.Filename}}"
+        hx-post="/compose/draft/{{$draft}}/attachment/{{.ID}}/delete" hx-swap="none"
+        class="shrink-0 rounded p-0.5 text-zinc-500 hover:bg-zinc-700 hover:text-red-400 transition-colors duration-150">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div data-preview class="hidden border-t border-zinc-700 p-2"></div>
+  </div>
   {{end}}
 </div>
 {{end}}

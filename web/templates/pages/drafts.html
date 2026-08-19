@@ -16,24 +16,28 @@
         </a>
         {{end}}
 
-        <h1 class="text-lg font-semibold text-zinc-100">Drafts</h1>
+        <div class="flex items-center gap-3">
+          <h1 class="text-lg font-semibold text-zinc-100">{{if .Account}}{{acctLabel .Account}} drafts{{else}}Drafts{{end}}</h1>
+          {{if .Account}}<a href="/drafts" class="text-xs text-indigo-400 hover:text-indigo-300 transition-colors duration-150">All accounts →</a>{{end}}
+        </div>
 
         {{if .Drafts}}
         {{/* One list, whether the draft was written here or on another client:
              a local row and its own copy in the IMAP Drafts folder are deduped
-             by Message-ID server side (draftRows). A draft with no local row
-             (.Edit == 0) came from elsewhere: its title opens it read-only,
-             and Edit adopts it into a local draft first — after which it is
-             just a draft, tag and all gone. */}}
+             by Message-ID server side (draftRows). Clicking a row always opens
+             the editor — a local draft straight into compose, one from another
+             client (.Edit == 0) through the adopt flow, which falls back to the
+             read-only view with a toast when the draft cannot be reproduced.
+             "view" is the way to read one without adopting it. */}}
         <div class="space-y-2">
           {{range .Drafts}}
           <div class="flex items-center gap-3 rounded-md border border-zinc-800 bg-zinc-900/50 px-3 py-2">
-            {{if .Edit}}
-            <a href="#" hx-get="/compose?draft={{.Edit}}" hx-target="#compose-root" hx-swap="innerHTML" class="min-w-0 flex-1">
-            {{else}}
-            <a href="/?t={{.Message}}&src={{.FolderID}}" class="min-w-0 flex-1">
-            {{end}}
-              <div class="truncate text-zinc-100 font-medium">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</div>
+            <a href="#" hx-get="{{if .Edit}}/compose?draft={{.Edit}}{{else}}/compose?adopt={{.Message}}{{end}}"
+               hx-target="#compose-root" hx-swap="innerHTML" class="min-w-0 flex-1">
+              <div class="flex items-center gap-2">
+                {{if $.ShowAccount}}{{$c := index $.AccountColors .Account}}<span class="account-badge shrink-0 text-[10px] font-medium rounded px-1.5 py-0.5 text-white truncate max-w-[7rem]" style="background-color:{{if $c}}{{$c}}{{else}}#6366f1{{end}}" title="{{acctLabel .Account}}">{{acctLabel .Account}}</span>{{end}}
+                <div class="truncate text-zinc-100 font-medium">{{if .Subject}}{{.Subject}}{{else}}(no subject){{end}}</div>
+              </div>
               <div class="truncate text-zinc-500 text-xs">
                 {{if .To}}To: {{.To}}{{else}}No recipients yet{{end}} —
                 <span title="{{absTime .Updated}}">{{relTime .Updated}}</span>
@@ -41,19 +45,19 @@
               </div>
             </a>
             {{if not .Edit}}
-            {{/* Adopts the mailbox copy into a local draft, then opens it. The
-                 window stays shut if it cannot be brought over faithfully. */}}
-            <a href="#" hx-get="/compose?adopt={{.Message}}" hx-target="#compose-root" hx-swap="innerHTML"
-              class="shrink-0 rounded-md px-2 py-1 text-xs text-indigo-400 hover:bg-zinc-800 hover:text-indigo-300 transition-colors duration-150">Edit</a>
+            <a href="/?t={{.Message}}&src={{.FolderID}}"
+              class="shrink-0 rounded-md px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200 transition-colors duration-150">view</a>
             {{end}}
-            {{if .Edit}}
-            <form method="post" action="/drafts/{{.Edit}}/delete">
+            {{/* Both kinds delete: a local draft takes its published copy with
+                 it (dropDraft), one from another client is only that copy. */}}
+            <form method="post" action="{{if .Edit}}/drafts/{{.Edit}}/delete{{else}}/drafts/message/{{.Message}}/delete{{end}}"
+              onsubmit="return confirm('Delete this draft?')">
               <input type="hidden" name="csrf_token" value="{{$.CSRF}}">
+              {{if $.Account}}<input type="hidden" name="account" value="{{$.Account}}">{{end}}
               <button title="Delete draft" aria-label="Delete draft" class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-red-500 transition-colors duration-150">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0"/></svg>
               </button>
             </form>
-            {{end}}
           </div>
           {{end}}
         </div>

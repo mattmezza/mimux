@@ -37,6 +37,8 @@ type Prefs struct {
 	ComposeLayout    string            // window layout for new messages: "fullscreen", "popup", or "modal" (default "fullscreen")
 	ReplyLayout      string            // window layout for reply/reply-all/forward: "fullscreen", "popup", or "modal" (default "popup")
 	ComposeAutosave  bool              // opt-in: debounce-save the draft a few seconds after typing stops (default false)
+	ReplyQuote       string            // how much of the original a reply quotes; see AllReplyQuotes (default "all")
+	ReplyQuoteLines  int               // lines quoted when ReplyQuote is "lines" (default 10)
 	UndoSendDelay    int               // seconds Send waits before delivering, undo-able (3|5|10, default 5)
 	ThreadOrder      string            // message order inside an open thread: "oldest" (newest at the bottom, default) or "newest"
 	RowDoubleAction  string            // double-click / double-tap a list row; see AllRowActions (default "unread")
@@ -79,6 +81,28 @@ func ValidNotifyScope(v, def string) string {
 	}
 	return def
 }
+
+// AllReplyQuotes are the reply-quoting choices, for the Settings select. Order
+// matters: it's the order shown, and the first entry is the default.
+var AllReplyQuotes = []struct{ ID, Label string }{
+	{"all", "The entire message"},
+	{"lines", "Only the first few lines"},
+	{"none", "Nothing"},
+}
+
+// ValidReplyQuote returns v if it names a quoting choice, else def.
+func ValidReplyQuote(v, def string) string {
+	for _, q := range AllReplyQuotes {
+		if q.ID == v {
+			return v
+		}
+	}
+	return def
+}
+
+// DefaultReplyQuoteLines is the line budget for the "first few lines" choice —
+// enough to carry the point of most messages without burying the reply.
+const DefaultReplyQuoteLines = 10
 
 // AllRowActions lists what a gesture on a message list row can do — same menu
 // for the double-click/double-tap and for each swipe direction.
@@ -217,6 +241,8 @@ func defaultPrefs() Prefs {
 		ComposeLayout:      "fullscreen",
 		ReplyLayout:        "popup",
 		ComposeAutosave:    false,
+		ReplyQuote:         "all",
+		ReplyQuoteLines:    DefaultReplyQuoteLines,
 		UndoSendDelay:      5,
 		ThreadOrder:        "oldest",
 		RowDoubleAction:    "unread",
@@ -354,6 +380,14 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("compose_autosave"); ok {
 		p.ComposeAutosave = v == "1"
 	}
+	if v, ok := s.getSetting("reply_quote"); ok {
+		p.ReplyQuote = ValidReplyQuote(v, p.ReplyQuote)
+	}
+	if v, ok := s.getSetting("reply_quote_lines"); ok {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			p.ReplyQuoteLines = n
+		}
+	}
 	if v, ok := s.getSetting("thread_order"); ok && (v == "oldest" || v == "newest") {
 		p.ThreadOrder = v
 	}
@@ -422,6 +456,8 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"compose_layout":       p.ComposeLayout,
 		"reply_layout":         p.ReplyLayout,
 		"compose_autosave":     boolStr(p.ComposeAutosave),
+		"reply_quote":          p.ReplyQuote,
+		"reply_quote_lines":    strconv.Itoa(p.ReplyQuoteLines),
 		"undo_send_delay":      strconv.Itoa(p.UndoSendDelay),
 		"thread_order":         p.ThreadOrder,
 		"row_double_action":    p.RowDoubleAction,

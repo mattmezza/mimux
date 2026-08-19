@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -416,6 +417,34 @@ func (s *Server) handleDraftAttachmentDelete(w http.ResponseWriter, r *http.Requ
 	s.renderDraftAttachments(w, draftID)
 }
 
+// handleDraftAttachment serves one file kept with a saved draft: inline for the
+// compose window's Preview, ?dl=1 to download. The bytes come out of SQLite
+// rather than off the server (that is the whole point of draft_attachments) but
+// go over the wire under the same headers as a message attachment, sandbox CSP
+// included — see serveAttachment.
+func (s *Server) handleDraftAttachment(w http.ResponseWriter, r *http.Request) {
+	draftID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	attID, aerr := strconv.ParseInt(chi.URLParam(r, "aid"), 10, 64)
+	if err != nil || aerr != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// The draft id is part of the lookup, as in DeleteDraftAttachment: a stale
+	// id from one compose window cannot reach into another draft's files.
+	atts, err := s.store.DraftAttachments(draftID)
+	if err != nil {
+		http.Error(w, "attachment unavailable", http.StatusInternalServerError)
+		return
+	}
+	for _, a := range atts {
+		if a.ID == attID {
+			serveAttachment(w, r, a.Data, a.ContentType, a.Filename)
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
 // parseComposeForm parses a compose POST in either shape it arrives in: a
 // multipart body when files ride along (send, and a save that carries newly
 // picked ones) or a plain form otherwise. The body is capped so a giant upload
@@ -811,7 +840,10 @@ const draftsPerFolder = 200
 // Drafts folder. A local draft and its own published copy are one message, not
 // two, so the mailbox copy is dropped when its Message-ID matches a local row —
 // which is exactly what the stable Message-ID on the draft is for.
-func (s *Server) draftRows() ([]draftRow, error) {
+//
+// account narrows the list to one account, the way a per-account inbox narrows
+// the unified one; "" is every account, which is what /drafts shows by default.
+func (s *Server) draftRows(account string) ([]draftRow, error) {
 	drafts, err := s.store.ListDrafts()
 	if err != nil {
 		return nil, err
@@ -819,6 +851,9 @@ func (s *Server) draftRows() ([]draftRow, error) {
 	rows := make([]draftRow, 0, len(drafts))
 	mine := map[string]bool{}
 	for _, d := range drafts {
+		if account != "" && d.Account != account {
+			continue
+		}
 		if d.MessageID != "" {
 			mine[d.Account+"\x00"+d.MessageID] = true
 		}
@@ -834,6 +869,9 @@ func (s *Server) draftRows() ([]draftRow, error) {
 		})
 	}
 	for _, ac := range s.cfg.Accounts {
+		if account != "" && ac.Name != account {
+			continue
+		}
 		f, err := s.store.FolderBySpecial(ac.Name, "drafts")
 		if err != nil || f == nil {
 			continue
@@ -860,8 +898,16 @@ func (s *Server) draftRows() ([]draftRow, error) {
 	return rows, nil
 }
 
+// handleDraftsPage serves /drafts — every account's unfinished mail — and
+// /drafts?account=<name>, the one account's, which is what that account's
+// Drafts folder in the sidebar opens. Same split as "All inboxes" above the
+// per-account inboxes, so drafts read like mail rather than like a tool.
 func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
-	drafts, err := s.draftRows()
+	account := r.URL.Query().Get("account")
+	if _, ok := s.accountByName(account); !ok {
+		account = "" // unknown (or absent): all accounts
+	}
+	drafts, err := s.draftRows(account)
 	if err != nil {
 		slog.Error("drafts: list", "err", err)
 		http.Error(w, "failed to load drafts", http.StatusInternalServerError)
@@ -876,6 +922,11 @@ func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
 		"Sidebar":   s.sidebarData(),
 		"Drafts":    drafts,
 		"Scheduled": scheduled,
+		"Account":   account,
+		// The account chip belongs on the merged list only — in one account's
+		// own view every row would carry the same one, as in the message list.
+		"ShowAccount":   account == "" && len(s.cfg.Accounts) > 1,
+		"AccountColors": s.store.GetPrefs().AccountColors,
 	})
 }
 
@@ -886,5 +937,49 @@ func (s *Server) handleDraftDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.dropDraft(id)
-	http.Redirect(w, r, "/drafts", http.StatusSeeOther)
+	s.redirectToDrafts(w, r)
+}
+
+// handleForeignDraftDelete deletes a draft that has no local row: one written in
+// another client and never adopted, so there is nothing to dropDraft. The copy
+// in the mailbox goes through the very same machinery a published revision does
+// (Manager.DropDraft → dropRevision, UIDPLUS rules and all), and the synced
+// messages row goes here so the page loses the line at once instead of at the
+// next sync.
+func (s *Server) handleForeignDraftDelete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	msg, err := s.store.MessageByID(id)
+	if err != nil || msg == nil {
+		http.NotFound(w, r)
+		return
+	}
+	// DropDraft only reads where the copy sits; a draft carrying just that says
+	// it exactly, and reuses the removal rules rather than restating them.
+	d := &store.Draft{Account: msg.Account, FolderID: msg.FolderID, UID: msg.UID}
+	if err := s.store.DeleteMessage(msg.ID); err != nil {
+		slog.Error("drafts: mailbox row delete", "message", msg.ID, "err", err)
+	}
+	s.background(func(ctx context.Context) error {
+		if err := s.mail.DropDraft(ctx, d); err != nil {
+			slog.Warn("drafts: mailbox copy not removed", "message", id, "err", err)
+		}
+		return nil
+	})
+	s.redirectToDrafts(w, r)
+}
+
+// redirectToDrafts sends the browser back to the drafts view it deleted from,
+// so a per-account view does not bounce to the merged one.
+func (s *Server) redirectToDrafts(w http.ResponseWriter, r *http.Request) {
+	to := "/drafts"
+	if ac := r.PostFormValue("account"); ac != "" {
+		if _, ok := s.accountByName(ac); ok {
+			to += "?account=" + url.QueryEscape(ac)
+		}
+	}
+	http.Redirect(w, r, to, http.StatusSeeOther)
 }

@@ -145,7 +145,8 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
 <p>
   Attachments are part of the draft. A file picked in compose is stored with it
   and goes up in the published copy, so the draft on your phone is the whole
-  unfinished message; reopening lists the files with a way to remove them, and
+  unfinished message; reopening lists the files with a way to preview, download
+  or remove them, and
   sending attaches them exactly as if you had just picked them. The same 25MB
   total a send allows applies to what a draft may keep. Undoing a delayed send
   puts the files back too.
@@ -153,8 +154,12 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
 
 <p>
   Drafts written elsewhere are editable. The drafts page is one list — yours and
-  whatever is sitting in the account's Drafts folder — and a draft from another
-  client opens in compose the first time you hit Edit: it is fetched, read back
+  whatever is sitting in the account's Drafts folder — reached from Tools for
+  every account at once, or from an account's own Drafts folder in the sidebar
+  for just that one, the same split as the unified inbox and the per-account
+  ones. Clicking any draft opens the editor, and deleting one removes the copy
+  in the mailbox as well as the row here. A draft from another
+  client opens in compose the first time you click it: it is fetched, read back
   into compose fields and attachments, and adopted as a local draft that
   remembers the copy it came from, so your first save replaces that copy rather
   than leaving a second one beside it. A rich-text draft comes back into the

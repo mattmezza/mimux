@@ -49,6 +49,7 @@ var templateFuncs = template.FuncMap{
 	"composeHTML":    composeHTML,
 	"toJSON":         toJSON,
 	"humanBytes":     humanBytes,
+	"attachKind":     attachmentKind,
 	"translateLangs": func() []translate.Language { return translate.Languages },
 }
 

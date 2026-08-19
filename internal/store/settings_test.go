@@ -51,6 +51,35 @@ func TestPrefsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestReplyQuotePrefs: quoting the whole original is what a mail client does
+// unless told otherwise, and the stored choice has to survive a round trip.
+func TestReplyQuotePrefs(t *testing.T) {
+	s := open(t)
+	if p := s.GetPrefs(); p.ReplyQuote != "all" || p.ReplyQuoteLines != DefaultReplyQuoteLines {
+		t.Fatalf("unexpected quoting defaults: %q / %d", p.ReplyQuote, p.ReplyQuoteLines)
+	}
+	if err := s.SavePrefs(Prefs{ReplyQuote: "lines", ReplyQuoteLines: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if p := s.GetPrefs(); p.ReplyQuote != "lines" || p.ReplyQuoteLines != 4 {
+		t.Fatalf("round trip: %q / %d", p.ReplyQuote, p.ReplyQuoteLines)
+	}
+	if err := s.SavePrefs(Prefs{ReplyQuote: "none", ReplyQuoteLines: 4}); err != nil {
+		t.Fatal(err)
+	}
+	if p := s.GetPrefs(); p.ReplyQuote != "none" {
+		t.Fatalf("ReplyQuote = %q, want none", p.ReplyQuote)
+	}
+	// A hand-edited row naming something that isn't a choice falls back rather
+	// than reaching the compose path.
+	if err := s.setSetting("reply_quote", "everything"); err != nil {
+		t.Fatal(err)
+	}
+	if p := s.GetPrefs(); p.ReplyQuote != "all" {
+		t.Fatalf("junk value survived: %q", p.ReplyQuote)
+	}
+}
+
 func TestAIModelFor(t *testing.T) {
 	s := open(t)
 	// Nothing configured: every feature runs on the built-in default.

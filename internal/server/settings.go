@@ -117,6 +117,7 @@ func (s *Server) settingsData(w http.ResponseWriter, r *http.Request) map[string
 		"QAEditor":     qaEditorRows(prefs.QuickActions),
 		"RowActions":   store.AllRowActions,
 		"NotifyScopes": store.AllNotifyScopes,
+		"ReplyQuotes":  store.AllReplyQuotes,
 		"PushDevices":  pushDevices,
 		"VAPIDKey":     s.mail.VAPIDPublicKey(),
 		"Accents":      store.AllAccents,
@@ -330,6 +331,16 @@ func applyComposing(p *store.Prefs, r *http.Request) {
 	p.ComposeLayout = oneOf(r.PostFormValue("compose_layout"), "fullscreen", "popup", "modal")
 	p.ReplyLayout = oneOf(r.PostFormValue("reply_layout"), "popup", "fullscreen", "modal")
 	p.ComposeAutosave = r.PostFormValue("compose_autosave") != ""
+	p.ReplyQuote = store.ValidReplyQuote(r.PostFormValue("reply_quote"), "all")
+	// The line count is only read for the "lines" choice, but it is stored
+	// whatever is picked: switching back to "first few lines" should find the
+	// number you last typed, not the default.
+	p.ReplyQuoteLines = atoiDefault(r.PostFormValue("reply_quote_lines"), store.DefaultReplyQuoteLines)
+	if p.ReplyQuoteLines < 1 {
+		p.ReplyQuoteLines = 1
+	} else if p.ReplyQuoteLines > 200 {
+		p.ReplyQuoteLines = 200
+	}
 	switch p.UndoSendDelay = atoiDefault(r.PostFormValue("undo_send_delay"), 5); p.UndoSendDelay {
 	case 3, 5, 10:
 	default:

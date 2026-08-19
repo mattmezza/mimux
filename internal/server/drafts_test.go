@@ -276,7 +276,7 @@ func TestAdoptedDraftLeavesOneRow(t *testing.T) {
 	if err := s.store.ClearDraftDirty(d.ID, "", msg.FolderID, msg.UID, d.UpdatedAt); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.draftRows()
+	rows, err := s.draftRows("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestDraftRowsMergeLocalAndMailbox(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := s.draftRows()
+	rows, err := s.draftRows("")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -354,5 +354,194 @@ func TestDraftRowsMergeLocalAndMailbox(t *testing.T) {
 	}
 	if foreign != 1 {
 		t.Errorf("the other client's draft appears %d times, want once and read-only", foreign)
+	}
+}
+
+// draftsRouter mounts the drafts routes that need URL params.
+func draftsRouter(s *Server) http.Handler {
+	r := chi.NewRouter()
+	r.Get("/compose/draft/{id}/attachment/{aid}", s.handleDraftAttachment)
+	r.Post("/drafts/{id}/delete", s.handleDraftDelete)
+	r.Post("/drafts/message/{id}/delete", s.handleForeignDraftDelete)
+	return r
+}
+
+// TestForeignDraftDeleteRemovesTheMailboxRow: a draft written in another client
+// is deletable too. The copy on the server goes through Manager.DropDraft (no
+// account is connected here, so that half is covered in internal/mail); the
+// synced row goes at once, so the page stops listing it.
+func TestForeignDraftDeleteRemovesTheMailboxRow(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 7, "theirs@example.com", "delete me")
+
+	rec := httptest.NewRecorder()
+	draftsRouter(s).ServeHTTP(rec, httptest.NewRequest("POST",
+		"/drafts/message/"+strconv.FormatInt(msg.ID, 10)+"/delete", nil))
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want a redirect back to /drafts", rec.Code)
+	}
+	if got, _ := s.store.MessageByID(msg.ID); got != nil {
+		t.Errorf("the mailbox row survived the delete: %+v", got)
+	}
+	rows, err := s.draftRows("")
+	if err != nil || len(rows) != 0 {
+		t.Errorf("draftRows = %+v, %v, want the deleted draft gone", rows, err)
+	}
+}
+
+// TestDraftsPageDeletesEveryRow: both kinds of row carry a delete control, and
+// deleting confirms first — there is no undo for a draft.
+func TestDraftsPageDeletesEveryRow(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 8, "theirs@example.com", "from the phone")
+	d := &store.Draft{Account: "Personal", Subject: "written here", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts", nil))
+	body := rec.Body.String()
+	for _, want := range []string{
+		"/drafts/" + strconv.FormatInt(d.ID, 10) + "/delete",
+		"/drafts/message/" + strconv.FormatInt(msg.ID, 10) + "/delete",
+		"confirm(",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the drafts page is missing %q", want)
+		}
+	}
+}
+
+// TestDraftsPageOpensEveryRowForEditing is the edit-first rule: the row itself
+// opens compose — the local draft directly, the one from another client through
+// the adopt flow — and reading it is the secondary link.
+func TestDraftsPageOpensEveryRowForEditing(t *testing.T) {
+	s := testServer(t)
+	msg := seedForeignDraft(t, s, 9, "theirs@example.com", "from the phone")
+	d := &store.Draft{Account: "Personal", Subject: "written here", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts", nil))
+	body := rec.Body.String()
+	editForeign := `hx-get="/compose?adopt=` + strconv.FormatInt(msg.ID, 10) +
+		`"` + "\n" + `               hx-target="#compose-root" hx-swap="innerHTML" class="min-w-0 flex-1"`
+	if !strings.Contains(body, editForeign) {
+		t.Errorf("the foreign draft's own row does not open the editor:\n%s", body)
+	}
+	if !strings.Contains(body, `hx-get="/compose?draft=`+strconv.FormatInt(d.ID, 10)+`"`) {
+		t.Errorf("the local draft's row does not open compose")
+	}
+	// The read-only view is still reachable, just not the primary action.
+	if !strings.Contains(body, "/?t="+strconv.FormatInt(msg.ID, 10)+"&src=") {
+		t.Errorf("no way left to read a draft without adopting it")
+	}
+}
+
+// TestSidebarLinksEachAccountsDrafts: an account's Drafts folder is listed with
+// its other folders again, and opens that account's drafts view — the same
+// split as "All inboxes" over the per-account inboxes.
+func TestSidebarLinksEachAccountsDrafts(t *testing.T) {
+	s := testServer(t)
+	s.cfg.Accounts[0].Auth = "" // password account: the folder list renders
+	seedForeignDraft(t, s, 12, "theirs@example.com", "from the phone")
+
+	rec := httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts", nil))
+	if body := rec.Body.String(); !strings.Contains(body, `href="/drafts?account=Personal"`) {
+		t.Errorf("the sidebar does not link this account's Drafts folder:\n%s", body)
+	}
+}
+
+// TestDraftsPageLabelsAccountsAndFilters: the merged list says which account
+// each draft belongs to (the message list's own badge), and ?account= narrows
+// it to one — what an account's Drafts folder in the sidebar opens.
+func TestDraftsPageLabelsAccountsAndFilters(t *testing.T) {
+	s := testServer(t)
+	s.cfg.Accounts = append(s.cfg.Accounts, config.Account{Name: "Work", Email: "me@work.example"})
+	for _, ac := range []string{"Personal", "Work"} {
+		d := &store.Draft{Account: ac, Subject: ac + " draft", Kind: "new"}
+		if err := s.store.UpsertDraft(d); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts", nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, "account-badge") {
+		t.Errorf("the merged list carries no account badge")
+	}
+	for _, ac := range []string{"Personal", "Work"} {
+		if !strings.Contains(body, `title="`+ac+`"`) {
+			t.Errorf("no %s label on the merged list", ac)
+		}
+	}
+
+	rec = httptest.NewRecorder()
+	s.handleDraftsPage(rec, httptest.NewRequest("GET", "/drafts?account=Work", nil))
+	body = rec.Body.String()
+	if !strings.Contains(body, "Work draft") || strings.Contains(body, "Personal draft") {
+		t.Errorf("?account=Work shows the wrong drafts:\n%s", body)
+	}
+	// One account's own view: the badge would say the same thing on every row.
+	if strings.Contains(body, "account-badge") {
+		t.Errorf("the per-account view repeats the account on every row")
+	}
+}
+
+// TestDraftAttachmentDownloads: a file kept with a draft can be previewed and
+// downloaded from the compose window, bytes and filename intact.
+func TestDraftAttachmentDownloads(t *testing.T) {
+	s := testServer(t)
+	d := &store.Draft{Account: "Personal", Subject: "with a file", Kind: "new"}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	att := &store.DraftAttachment{Filename: "shot.png", ContentType: "image/png", Data: []byte("pngbytes")}
+	if err := s.store.AddDraftAttachment(d.ID, att); err != nil {
+		t.Fatal(err)
+	}
+	url := "/compose/draft/" + strconv.FormatInt(d.ID, 10) + "/attachment/" + strconv.FormatInt(att.ID, 10)
+
+	// The compose window offers both controls.
+	rec := httptest.NewRecorder()
+	s.handleComposeNew(rec, httptest.NewRequest("GET", "/compose?draft="+strconv.FormatInt(d.ID, 10), nil))
+	body := rec.Body.String()
+	if !strings.Contains(body, url+"?dl=1") || !strings.Contains(body, "previewAttachment(this, '"+url+"', 'image')") {
+		t.Errorf("compose offers no preview/download for the draft's file:\n%s", body)
+	}
+
+	rec = httptest.NewRecorder()
+	draftsRouter(s).ServeHTTP(rec, httptest.NewRequest("GET", url+"?dl=1", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "pngbytes" {
+		t.Fatalf("download = %d %q", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "image/png" {
+		t.Errorf("Content-Type = %q", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="shot.png"` {
+		t.Errorf("Content-Disposition = %q", cd)
+	}
+	// Without ?dl=1 it renders in place instead.
+	rec = httptest.NewRecorder()
+	draftsRouter(s).ServeHTTP(rec, httptest.NewRequest("GET", url, nil))
+	if cd := rec.Header().Get("Content-Disposition"); !strings.HasPrefix(cd, "inline;") {
+		t.Errorf("preview Content-Disposition = %q, want inline", cd)
+	}
+
+	// Another draft's id must not reach this file.
+	other := &store.Draft{Account: "Personal", Subject: "elsewhere", Kind: "new"}
+	if err := s.store.UpsertDraft(other); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	draftsRouter(s).ServeHTTP(rec, httptest.NewRequest("GET",
+		"/compose/draft/"+strconv.FormatInt(other.ID, 10)+"/attachment/"+strconv.FormatInt(att.ID, 10), nil))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("cross-draft attachment fetch = %d, want 404", rec.Code)
 	}
 }

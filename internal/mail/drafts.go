@@ -340,6 +340,12 @@ func partFilename(h emmail.PartHeader, dparams map[string]string) string {
 // to remove. Best-effort by design — the local row is going either way, and a
 // leftover copy is a stale draft, not lost mail.
 func (m *Manager) DropDraft(ctx context.Context, d *store.Draft) error {
+	return m.dropDraft(ctx, nil, d)
+}
+
+// dropDraft is DropDraft on the caller's own connection (see account.exec),
+// the same split pushDraft and adoptDraft have; nil c queues it for the worker.
+func (m *Manager) dropDraft(ctx context.Context, c *imapclient.Client, d *store.Draft) error {
 	if d == nil || d.UID == 0 || d.FolderID == 0 {
 		return nil
 	}
@@ -351,7 +357,7 @@ func (m *Manager) DropDraft(ctx context.Context, d *store.Draft) error {
 	if err != nil || f == nil {
 		return err
 	}
-	return a.submit(ctx, func(c *imapclient.Client) error {
+	return a.exec(ctx, c, func(c *imapclient.Client) error {
 		gone, err := dropRevision(c, f.Name, imap.UID(d.UID))
 		if err != nil {
 			return err

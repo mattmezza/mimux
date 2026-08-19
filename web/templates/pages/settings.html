@@ -321,6 +321,24 @@
                 </label>
               </div>
             </fieldset>
+            {{/* x-show, not :disabled, on the line count: a disabled input is
+                 never submitted, and the number would reset every time you
+                 saved with quoting set to anything but "first few lines". */}}
+            <fieldset class="space-y-2" x-data="{ quote: '{{.Prefs.ReplyQuote}}' }">
+              <legend class="text-sm text-zinc-200">When replying, quote the original</legend>
+              <p class="text-xs text-zinc-500">What the reply window opens with under your cursor. Forwards always carry the whole message.</p>
+              <div class="flex flex-wrap items-end gap-3">
+                <select name="reply_quote" x-model="quote"
+                  class="rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                  {{range $.ReplyQuotes}}<option value="{{.ID}}" {{if eq $.Prefs.ReplyQuote .ID}}selected{{end}}>{{.Label}}</option>{{end}}
+                </select>
+                <label class="block space-y-1" x-show="quote === 'lines'" x-cloak>
+                  <span class="text-xs text-zinc-400">Lines to keep</span>
+                  <input type="number" name="reply_quote_lines" min="1" max="200" value="{{.Prefs.ReplyQuoteLines}}"
+                    class="block w-24 rounded-md bg-zinc-800 border border-zinc-700 focus:border-indigo-500 px-2 py-1.5 text-sm text-zinc-100 focus:outline-none transition-colors duration-150">
+                </label>
+              </div>
+            </fieldset>
             <fieldset class="space-y-2">
               <legend class="text-sm text-zinc-200">Undo send</legend>
               <p class="text-xs text-zinc-500">Pressing Send holds the message this long so you can undo it before it leaves.</p>

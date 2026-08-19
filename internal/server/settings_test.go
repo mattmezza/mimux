@@ -173,6 +173,40 @@ func TestComposeAutosaveRoundTrip(t *testing.T) {
 	}
 }
 
+// TestReplyQuoteSectionSave: the quoting choice and its line count come off the
+// Composing form, and neither a hand-posted choice nor a nonsense line count
+// reaches the compose path.
+func TestReplyQuoteSectionSave(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+
+	if rec := postSettings(t, r, url.Values{
+		"section":           {"composing"},
+		"reply_quote":       {"lines"},
+		"reply_quote_lines": {"25"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("composing save = %d: %s", rec.Code, rec.Body.String())
+	}
+	if p := s.store.GetPrefs(); p.ReplyQuote != "lines" || p.ReplyQuoteLines != 25 {
+		t.Fatalf("did not round-trip: %q / %d", p.ReplyQuote, p.ReplyQuoteLines)
+	}
+
+	if rec := postSettings(t, r, url.Values{
+		"section":           {"composing"},
+		"reply_quote":       {"everything"},
+		"reply_quote_lines": {"0"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("composing save = %d: %s", rec.Code, rec.Body.String())
+	}
+	if p := s.store.GetPrefs(); p.ReplyQuote != "all" || p.ReplyQuoteLines != 1 {
+		t.Fatalf("junk not clamped: %q / %d", p.ReplyQuote, p.ReplyQuoteLines)
+	}
+
+	if body := renderSection(t, s, "composing"); !strings.Contains(body, `name="reply_quote"`) {
+		t.Error("the Composing page does not offer the quoting choice")
+	}
+}
+
 // TestUnknownSettingsSection: a made-up section is a 404, not a page that
 // renders nothing, and a made-up section on the save path is refused rather
 // than silently applying every section.

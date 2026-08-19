@@ -84,6 +84,14 @@ func (s *Server) handleAttachment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "attachment unavailable", http.StatusBadGateway)
 		return
 	}
+	serveAttachment(w, r, data, mediaType, filename)
+}
+
+// serveAttachment writes one attachment's bytes: inline by default (preview),
+// ?dl=1 as a download. Shared with the draft attachments served out of SQLite,
+// so a file kept with a draft is handed over under exactly the same headers as
+// one still living in a message.
+func serveAttachment(w http.ResponseWriter, r *http.Request, data []byte, mediaType, filename string) {
 	// Same extension fallback the Preview button gates on: a .pdf declared
 	// octet-stream would otherwise download instead of rendering in the viewer.
 	if mediaType == "" || strings.EqualFold(mediaType, "application/octet-stream") {
