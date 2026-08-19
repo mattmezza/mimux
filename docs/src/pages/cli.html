@@ -103,26 +103,100 @@ description: Every subcommand the mimux binary has — running the server, the -
   could reach.
 </p>
 
+<h3>Signing in</h3>
+
+<pre><code>$ mimux mail login https://mail.example.com
+Opened your browser to approve this login. If nothing happened, go to:
+https://mail.example.com/cli/auth?challenge=…&amp;name=cli+%40+laptop&amp;port=49711&amp;scopes=…&amp;state=…
+Waiting for the browser…
+Signed in to https://mail.example.com as "cli @ laptop" (mail:read mail:modify accounts:read).
+Saved to /home/you/.config/mimux/credentials.json</code></pre>
+
+<p>
+  The browser opens on an approval page inside your existing mimux session.
+  You name the token, tick what it may do — pre-ticked from what the command
+  asked for, but <strong>what you leave ticked is what it gets</strong> — pick
+  an expiry, and approve. The token travels back over a loopback port the CLI
+  is listening on and is written to
+  <code>$XDG_CONFIG_HOME/mimux/credentials.json</code> (
+  <code>~/Library/Application Support</code> on macOS), mode <code>0600</code>
+  in a <code>0700</code> directory. It is never printed, and never has to be
+  pasted anywhere.
+</p>
+
+<p>
+  Under the hood it is an authorization code with PKCE: the CLI generates a
+  verifier, sends only its SHA-256 in the URL, and presents the verifier when
+  it redeems the code. Another local process that raced for the loopback port
+  would hold a code it cannot spend. The code is good for one use and expires
+  in two minutes. The token it buys is an ordinary token from
+  <strong>Settings → API</strong> — listed there, revocable there.
+</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><code>--no-browser</code></td><td>Print the URL instead of opening it; the page shows a code to paste back at the <code>Code:</code> prompt. Also what happens automatically when no opener is found — the SSH case.</td></tr>
+    <tr><td><code>--scopes</code></td><td>What to pre-tick, space-separated. Default <code>mail:read mail:modify accounts:read</code>.</td></tr>
+    <tr><td><code>--label</code></td><td>The token's name. Defaults to <code>cli @ &lt;hostname&gt;</code>.</td></tr>
+    <tr><td><code>--insecure</code></td><td>Do not verify TLS certificates for this instance — for a self-signed cert on the LAN. Remembered, so it is not re-typed into a script, and every later command that uses that instance says so on stderr.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Pointed at a free build, it stops before opening anything: a free binary has
+  no <code>/api</code> for the CLI to talk to, and says so rather than walking
+  you through a login that could not have worked.
+</p>
+
+<h3>More than one mimux</h3>
+
+<pre><code>$ mimux mail login https://mail.example.com
+$ mimux mail login http://nas.lan:8083 --insecure
+$ mimux mail use https://mail.example.com    # commands now default here
+$ mimux mail use                             # list what is signed in
+$ mimux mail logout http://nas.lan:8083      # forget it locally</code></pre>
+
+<p>
+  <code>logout</code> removes the stored entry and nothing else — the token
+  still exists until you revoke it in Settings → API, which is the honest
+  thing for a local command to say. With exactly one instance signed in it
+  needs no argument; with more than one it asks which rather than guessing.
+</p>
+
 <h3>Configuration</h3>
+
+<p>
+  Where a command talks, first match wins: <code>--url</code>,
+  <code>MIMUX_URL</code>, the instance <code>use</code> pinned, the only
+  instance signed in, <code>http://localhost:8083</code>. Which token it
+  presents: <code>--token</code>, <code>MIMUX_TOKEN</code> (or
+  <code>MIMUX_API_TOKEN</code>), the stored entry for whichever instance that
+  turned out to be.
+</p>
 
 <div class="table-wrap">
 <table>
   <thead><tr><th>Variable</th><th>Flag</th><th>Default</th></tr></thead>
   <tbody>
     <tr><td><code>MIMUX_URL</code></td><td><code>--url</code></td><td><code>http://localhost:8083</code></td></tr>
-    <tr><td><code>MIMUX_TOKEN</code> (or <code>MIMUX_API_TOKEN</code>)</td><td><code>--token</code></td><td><em>required</em></td></tr>
+    <tr><td><code>MIMUX_TOKEN</code> (or <code>MIMUX_API_TOKEN</code>)</td><td><code>--token</code></td><td>from <code>mimux mail login</code></td></tr>
   </tbody>
 </table>
 </div>
 
 <p>
-  Flags win over the environment. The same two variables configure
-  <code>mimux mcp</code>, so one export serves both. With no token at all it
-  says where to get one rather than dumping a 401:
+  The environment is still there for CI and containers, where no browser is
+  going to open and no config directory survives the run. The same two
+  variables configure <code>mimux mcp</code>, so one export serves both. With
+  nothing stored and nothing exported, commands point at <code>login</code>
+  rather than dumping a 401:
 </p>
 
 <pre><code>$ mimux mail accounts
-mimux mail accounts: no API token — set MIMUX_TOKEN or pass --token. Mint one in Settings → API</code></pre>
+mimux mail accounts: not signed in — run `mimux mail login http://localhost:8083`, or set MIMUX_TOKEN to a token from Settings → API</code></pre>
 
 <pre><code>export MIMUX_URL=https://mail.example.com
 export MIMUX_TOKEN=mimux_pat_...</code></pre>
@@ -140,6 +214,9 @@ export MIMUX_TOKEN=mimux_pat_...</code></pre>
 <table>
   <thead><tr><th>Command</th><th>Scope</th><th>What it does</th></tr></thead>
   <tbody>
+    <tr><td><code>mimux mail login [&lt;url&gt;]</code></td><td>—</td><td>Approve a token in the browser and store it.</td></tr>
+    <tr><td><code>mimux mail logout [&lt;url&gt;]</code></td><td>—</td><td>Forget a stored token. Revoking it is a separate, deliberate act in Settings → API.</td></tr>
+    <tr><td><code>mimux mail use [&lt;url&gt;]</code></td><td>—</td><td>Make an instance the default, or list what is signed in.</td></tr>
     <tr><td><code>mimux mail whoami</code></td><td>—</td><td>The token's label and scopes.</td></tr>
     <tr><td><code>mimux mail accounts</code></td><td><code>accounts:read</code></td><td>Accounts with sync state, message and unread counts.</td></tr>
     <tr><td><code>mimux mail folders</code></td><td><code>mail:read</code></td><td>The folder tree per account, with folder ids.</td></tr>

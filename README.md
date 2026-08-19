@@ -41,9 +41,11 @@ agents can search, read, triage and draft (never send without a second,
 explicit step), a `mimux mail` CLI over the same API for shells, scripts and
 agents with no MCP client, and signed webhooks with retries and a delivery
 log. Machine
-access authenticates with scoped API tokens from **Settings → API**; a pro
-build runs 14 days without a key, and mail itself never stops working,
-licensed or not. Keys at [account.mimux.dev](https://account.mimux.dev).
+access authenticates with scoped API tokens from **Settings → API** —
+`mimux mail login <url>` gets one without pasting anything, by opening your
+browser to approve it. A pro build runs 14 days without a key, and mail itself
+never stops working, licensed or not. Keys at
+[account.mimux.dev](https://account.mimux.dev).
 
 ## Screenshots
 
