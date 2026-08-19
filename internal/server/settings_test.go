@@ -5,10 +5,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func settingsRouter(s *Server) http.Handler {
@@ -183,3 +187,57 @@ func TestSettingsPageGroupsAvatarControls(t *testing.T) {
 		}
 	}
 }
+
+// TestSyncedFoldersSaveRoundTrip: the Syncing page's per-account folder list
+// renders the discovered folders with the current choices ticked, and posting
+// it back stores exactly what was ticked. The inbox is checked and disabled, so
+// the browser never submits its checkbox — a hidden field carries it instead,
+// and the store ORs it back in regardless.
+func TestSyncedFoldersSaveRoundTrip(t *testing.T) {
+	var inbox, sent, archive int64
+	s := serverWith(t, nil, func(st *store.Store) {
+		if err := st.UpsertAccount(config.Account{Name: "work", Provider: "gmail", Email: "me@gmail.com", Auth: "password", Password: "x"}); err != nil {
+			t.Fatal(err)
+		}
+		inbox, _ = st.UpsertFolder("work", "INBOX", "inbox", 0)
+		sent, _ = st.UpsertFolder("work", "Sent", "sent", 1)
+		archive, _ = st.UpsertFolder("work", "Archive", "archive", 3)
+	})
+	r := settingsRouter(s)
+
+	body := renderSection(t, s, "syncing")
+	if !strings.Contains(body, "Folders synced continuously") {
+		t.Fatal("the syncing page does not offer the folder list")
+	}
+	for _, want := range []string{
+		`name="sync_folder:work" value="` + itoa(archive) + `"`,
+		`name="sync_folder:work" value="` + itoa(sent) + `" checked`,
+		`type="hidden" name="sync_folder:work" value="` + itoa(inbox) + `"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rendered page is missing %q", want)
+		}
+	}
+
+	// The user unticks Sent and ticks Archive. The inbox rides the hidden field.
+	if rec := postSettings(t, r, url.Values{
+		"section":           {"syncing"},
+		"sync_folder:work":  {itoa(inbox), itoa(archive)},
+		"sync_interval_min": {"5"},
+	}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("syncing save = %d: %s", rec.Code, rec.Body.String())
+	}
+	got, err := s.store.SyncedFolders("work")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, f := range got {
+		names = append(names, f.Name)
+	}
+	if len(names) != 2 || names[0] != "INBOX" || names[1] != "Archive" {
+		t.Errorf("synced set = %v, want [INBOX Archive]", names)
+	}
+}
+
+func itoa(n int64) string { return strconv.FormatInt(n, 10) }

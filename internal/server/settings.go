@@ -98,6 +98,13 @@ func (s *Server) settingsData(w http.ResponseWriter, r *http.Request) map[string
 	pushDevices, _ := s.store.ListPushSubs()
 	apiTokens, _ := s.store.ListAPITokens()
 	webhooks, _ := s.webhookViews()
+	// Every account's folders, for the "Folders synced continuously" checkbox
+	// list. Empty until an account has connected once — folders are discovered by
+	// the first IMAP LIST, not configured.
+	accountFolders := map[string][]store.Folder{}
+	for _, a := range s.accounts() {
+		accountFolders[a.Name], _ = s.store.ListFolders(a.Name)
+	}
 	return map[string]any{
 		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
 		"Sections":     settingsSections,
@@ -117,17 +124,18 @@ func (s *Server) settingsData(w http.ResponseWriter, r *http.Request) map[string
 		"AvatarShapes": avatarShapes,
 		// Resolved mark colour, so the colour input always has a value even
 		// when icon_accent is blank ("inherit the app accent").
-		"IconMark":      iconMark(s.store.GetAppConfig()),
-		"Signatures":    sigs,
-		"Templates":     tpls,
-		"APITokens":     apiTokens,
-		"APIScopes":     store.APIScopes,
-		"Webhooks":      webhooks,
-		"WebhookEvents": store.WebhookEvents,
-		"Licence":       s.licenceView(),
-		"Identities":    s.identityLinks(),
-		"DBSize":        s.dbSizeHuman(),
-		"MessageCount":  msgCount,
+		"IconMark":       iconMark(s.store.GetAppConfig()),
+		"Signatures":     sigs,
+		"Templates":      tpls,
+		"APITokens":      apiTokens,
+		"APIScopes":      store.APIScopes,
+		"Webhooks":       webhooks,
+		"WebhookEvents":  store.WebhookEvents,
+		"Licence":        s.licenceView(),
+		"Identities":     s.identityLinks(),
+		"DBSize":         s.dbSizeHuman(),
+		"MessageCount":   msgCount,
+		"AccountFolders": accountFolders,
 	}
 }
 
@@ -244,6 +252,14 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 			syncMonths := parseOverride(r.PostFormValue("sync_months:"+a.Name), 0)
 			bodyCache := parseOverride(r.PostFormValue("body_cache:"+a.Name), 0)
 			if err := s.store.SetAccountSyncOverrides(a.Name, interval, maxPerSync, syncMonths, bodyCache); err != nil {
+				http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
+				return
+			}
+			// Which folders the steady loop keeps re-reading. A checkbox list, so
+			// an absent field is a real "no" — same as every other checkbox on
+			// this page. The inbox rides along as a hidden field (its box is
+			// checked and disabled, and a disabled control is never submitted).
+			if err := s.store.SetSyncedFolders(a.Name, postedInt64s(r, "sync_folder:"+a.Name)); err != nil {
 				http.Error(w, "Couldn't save settings — please try again.", http.StatusInternalServerError)
 				return
 			}
@@ -412,6 +428,18 @@ func qaEditorRows(pref string) []map[string]string {
 		}
 	}
 	return rows
+}
+
+// postedInt64s reads a repeated form field as ids, dropping anything that isn't
+// one. r.ParseForm has already run.
+func postedInt64s(r *http.Request, field string) []int64 {
+	var out []int64
+	for _, v := range r.PostForm[field] {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 func atoiDefault(s string, def int) int {

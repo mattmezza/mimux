@@ -572,6 +572,30 @@
                       class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                   </label>
                 </div>
+                {{$folders := index $.AccountFolders .Name}}
+                {{if $folders}}
+                {{$acct := .Name}}
+                <fieldset class="space-y-2 pt-2 border-t border-zinc-800">
+                  <legend class="text-xs text-zinc-400">Folders synced continuously</legend>
+                  <p class="text-xs text-zinc-500">Everything else is refreshed when the connection is re-established. Each extra folder costs a round of IMAP traffic per sync cycle, and an archive-type folder that keeps a copy of everything (Gmail's All Mail) can double your event traffic.</p>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                    {{range $folders}}
+                    <label class="flex items-center gap-2 py-1 text-sm text-zinc-200">
+                      {{if eq .SpecialUse "inbox"}}
+                      <input type="checkbox" checked disabled
+                        class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500 opacity-60">
+                      <input type="hidden" name="sync_folder:{{$acct}}" value="{{.ID}}">
+                      <span class="text-zinc-400">{{.Name}} — always</span>
+                      {{else}}
+                      <input type="checkbox" name="sync_folder:{{$acct}}" value="{{.ID}}" {{if .Sync}}checked{{end}}
+                        class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                      <span>{{.Name}}</span>
+                      {{end}}
+                    </label>
+                    {{end}}
+                  </div>
+                </fieldset>
+                {{end}}
               </div>
               {{end}}
             </div>
