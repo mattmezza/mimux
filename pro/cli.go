@@ -100,6 +100,17 @@ var cliCommands = []cliCommand{
 	{"send", "", "mail:send", "Send a message now (-dry-run previews it).", cliSend},
 }
 
+// CLIVerbs lists mimux mail's verb names, for cmd/mimux's `mimux completion`
+// registration hook (main.go's mailVerbs var) — the free build never imports
+// this package, so it fills that hook itself from cli.go's init().
+func CLIVerbs() []string {
+	verbs := make([]string, len(cliCommands))
+	for i, cmd := range cliCommands {
+		verbs[i] = cmd.name
+	}
+	return verbs
+}
+
 // RunCLI is the `mimux mail` subcommand. Returns a process exit code: 0 fine,
 // 1 the operation failed, 2 wrong usage.
 func RunCLI(args []string) int {

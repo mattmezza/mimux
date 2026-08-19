@@ -8,4 +8,7 @@ package main
 // REST API. Pro-only like the API it consumes; see pro/cli.go.
 import "github.com/mattmezza/mimux/pro"
 
-func init() { subcommands["mail"] = pro.RunCLI }
+func init() {
+	subcommands["mail"] = pro.RunCLI
+	mailVerbs = pro.CLIVerbs()
+}
