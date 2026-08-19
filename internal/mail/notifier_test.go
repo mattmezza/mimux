@@ -185,3 +185,29 @@ func assertQuiet(t *testing.T, got chan [3]string) {
 	case <-time.After(150 * time.Millisecond):
 	}
 }
+
+// TestOnlyInboxMailBuzzes is a regression pin, not a new rule. The steady loop
+// now re-reads Sent, Drafts and whatever else the account selected on every
+// cycle, so mail lands in those folders within a minute of being written
+// elsewhere instead of on the next reconnect. The one thing standing between
+// that and your phone buzzing every time you send something from your laptop is
+// flushNotify's inbox-only filter. Nothing here fires: not the Sent copy, not
+// the draft, not the filed archive copy.
+func TestOnlyInboxMailBuzzes(t *testing.T) {
+	m := testManager(t)
+	got := ntfyCapture(t, m)
+	if _, err := m.st.UpsertFolder("A", "INBOX", "inbox", 0); err != nil {
+		t.Fatal(err)
+	}
+	sent, _ := m.st.UpsertFolder("A", "Sent", "sent", 1)
+	drafts, _ := m.st.UpsertFolder("A", "Drafts", "drafts", 2)
+	archive, _ := m.st.UpsertFolder("A", "Archive", "archive", 3)
+	ids := []int64{
+		seedInbox(t, m, sent, "A", 1, "Me", "Sent from my phone", false),
+		seedInbox(t, m, drafts, "A", 2, "Me", "Half-written", false),
+		seedInbox(t, m, archive, "A", 3, "Alice", "Filed by a server rule", false),
+	}
+	startNotifier(t, m)
+	signal(m, ids...)
+	assertQuiet(t, got)
+}

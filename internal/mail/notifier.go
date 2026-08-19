@@ -82,7 +82,10 @@ func (m *Manager) notifyLoop(ctx context.Context, events <-chan Event, window ti
 // day old) already ran in signalNewMessage, which is what keeps a first sync or
 // a UIDVALIDITY re-fetch silent. What is left is notification policy, and it
 // belongs here: inbox only — or your own outgoing mail buzzes as it syncs back
-// into Sent, and Gmail's All Mail copy buzzes a second time — and nothing
+// into Sent, and Gmail's All Mail copy buzzes a second time. That filter is
+// load-bearing now that the steady loop re-reads the whole selected folder set
+// every cycle rather than only the inbox: the Sent copy turns up within the
+// minute, not on the next reconnect. See TestOnlyInboxMailBuzzes. And nothing
 // already read, which means read somewhere else, or read here in the minute
 // this window was open.
 func (m *Manager) flushNotify(ids map[int64]struct{}) {
