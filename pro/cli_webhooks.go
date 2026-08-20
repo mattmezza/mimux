@@ -55,7 +55,7 @@ const execTimeout = 60 * time.Second
 // entry today; the table is here so the next one is a line rather than a
 // re-shape of the dispatch.
 var webhookSubcommands = []cliCommand{
-	{"listen", "-forward-to <url> | -execute <program>", "webhooks:manage", "Stream live events to a local URL (signed like production), or run a program per event with the payload on stdin.", cliWebhooksListen},
+	{"listen", "-forward-to <url> | -execute <command>", "webhooks:manage", "Stream live events to a local URL (signed like production), or run a shell command per event with the payload on stdin.", cliWebhooksListen},
 }
 
 func cliWebhooks(c *cliClient, args []string) error {
@@ -89,7 +89,7 @@ func webhookSubverbs() []string {
 func cliWebhooksListen(c *cliClient, args []string) error {
 	fs := c.flags("webhooks listen")
 	forward := fs.String("forward-to", "", "local URL to POST each event to")
-	program := fs.String("execute", "", "program to run per event, payload on stdin")
+	program := fs.String("execute", "", "shell command to run per event, payload on stdin")
 	events := fs.String("events", "", "only these events, comma-separated (default: every event)")
 	if _, err := parseFlags(fs, args); err != nil {
 		return err
@@ -286,19 +286,20 @@ func (c *cliClient) deliver(ctx context.Context, to, secret string, ev liveEvent
 	c.printf("%-18s %-6d %5dms\n", ev.Event, res.StatusCode, ms)
 }
 
-// execute runs one streamed event through a program: payload on stdin, event
+// execute runs one streamed event through a command: payload on stdin, event
 // type and delivery id in the environment, stdout/stderr flowing straight to
-// this command's own. Direct exec, no shell — a payload is attacker-influenced
-// text and must never be interpolated into anything.
+// this command's own. Via `sh -c`, so `-execute 'jq .'` and pipes work — safe,
+// because the command string is the operator's own argv, and event data only
+// ever reaches the process on stdin, never interpolated into the command line.
 //
 // Serial on purpose: the server's drop accounting is the backpressure, so a
 // slow script just shows up as the dropped counter. Same no-retry stance as
 // deliver — a non-zero exit is printed, not retried.
-func (c *cliClient) execute(ctx context.Context, program string, ev liveEvent) {
+func (c *cliClient) execute(ctx context.Context, command string, ev liveEvent) {
 	started := time.Now()
 	tctx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(tctx, program)
+	cmd := exec.CommandContext(tctx, "/bin/sh", "-c", command)
 	cmd.Stdin = bytes.NewReader(ev.Payload)
 	cmd.Stdout = c.out
 	cmd.Stderr = c.errw

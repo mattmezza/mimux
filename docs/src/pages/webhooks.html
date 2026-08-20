@@ -311,17 +311,19 @@ message.updated    200       9ms</code></pre>
 </div>
 
 <p>
-  Instead of a URL, <code>-execute</code> runs a program once per event —
+  Instead of a URL, <code>-execute</code> runs a command once per event —
   no receiver to write at all:
 </p>
 
 <pre><code>mimux mail webhooks listen -events message.received -execute ./notify.sh</code></pre>
 
 <p>
-  The payload arrives on the program's <strong>stdin</strong> — never as an
+  The payload arrives on the command's <strong>stdin</strong> — never as an
   argument — with <code>MIMUX_EVENT</code> and <code>MIMUX_DELIVERY_ID</code>
-  in its environment. The program is executed directly, not through a shell,
-  and its stdout and stderr flow straight to yours. Runs are serial, one event
+  in its environment. The command runs through <code>sh -c</code>, so
+  <code>-execute 'jq .'</code> and pipes work; event data still only ever
+  reaches it on stdin, never interpolated into the command line. Its stdout
+  and stderr flow straight to yours. Runs are serial, one event
   at a time, and each is killed after 60 seconds — a slow script shows up as
   the dropped counter, not as a wedged stream. No signing secret is minted in
   this mode: HMAC proves who sent an HTTP request, and a process the command

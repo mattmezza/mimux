@@ -325,6 +325,26 @@ func TestCLIWebhooksListenExecutes(t *testing.T) {
 	}
 }
 
+// -execute takes a whole shell command line — `-execute 'jq .'` — not just a
+// program name, so arguments, redirects and pipes work.
+func TestCLIWebhooksExecuteShellCommand(t *testing.T) {
+	sink := filepath.Join(t.TempDir(), "got")
+	var out, errw bytes.Buffer
+	c := &cliClient{out: &out, errw: &errw}
+	c.execute(context.Background(), "cat > "+sink,
+		liveEvent{Event: "message.received", ID: "x1", Payload: json.RawMessage(`{"a":1}`)})
+	got, err := os.ReadFile(sink)
+	if err != nil {
+		t.Fatalf("the command never ran: %v", err)
+	}
+	if string(got) != `{"a":1}` {
+		t.Errorf("command saw %q on stdin", got)
+	}
+	if !strings.Contains(out.String(), "exit 0") {
+		t.Errorf("no per-event line printed:\n%s", out.String())
+	}
+}
+
 // A refusal that will not heal — a rejected token, a lapsed licence — must stop
 // rather than reconnect every few seconds forever.
 func TestCLIWebhooksListenStopsOnRefusal(t *testing.T) {
