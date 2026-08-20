@@ -168,6 +168,27 @@ func TestPreviewPrefsRenderVars(t *testing.T) {
 	}
 }
 
+// TestSidebarFirstAccountCTALinksAccountsSection: with no accounts
+// configured, the sidebar "Add your first account" CTA must deep-link to the
+// path-based /settings/accounts section. Regression: the old /settings#accounts
+// fragment is dropped when the bare /settings route 303s to the default
+// section (appearance), so the user landed on the wrong tab.
+func TestSidebarFirstAccountCTALinksAccountsSection(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	rec := httptest.NewRecorder()
+	s.handleInbox(rec, httptest.NewRequest(http.MethodGet, "/", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `href="/settings/accounts"`) {
+		t.Errorf("no-accounts sidebar CTA does not point at /settings/accounts; body:\n%s", body)
+	}
+	if strings.Contains(body, `href="/settings#accounts"`) {
+		t.Errorf("stale /settings#accounts fragment deep link still present")
+	}
+}
+
 // TestEventsOpensWithSyncState pins the SSE contract the spinner rides on: the
 // stream states the aggregate sync flag the moment it opens, so a browser that
 // just reconnected (holding a page rendered who-knows-when) is corrected
