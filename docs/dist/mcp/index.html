@@ -93,18 +93,17 @@ Authorization: Bearer mimux_pat_...</code></pre>
   "mcpServers": {
     "mimux": {
       "command": "mimux",
-      "args": ["mcp"],
-      "env": {
-        "MIMUX_URL": "http://localhost:8083",
-        "MIMUX_TOKEN": "mimux_pat_..."
-      }
+      "args": ["mcp"]
     }
   }
 }</code></pre>
 
 <p>
-  <code>MIMUX_URL</code> defaults to <code>http://localhost:8083</code>;
-  <code>MIMUX_TOKEN</code> is required. The bridge mirrors whatever the remote
+  No <code>env</code> block is needed once you have run
+  <code>mimux mail login</code>: the bridge reads the same stored credentials.
+  Where nothing was stored — CI, containers — set <code>MIMUX_URL</code>
+  (default <code>http://localhost:8083</code>) and <code>MIMUX_TOKEN</code> in
+  the <code>env</code> map instead. The bridge mirrors whatever the remote
   session exposes — tools and resources, schemas passed through untouched — so
   it never drifts from the HTTP endpoint. See <a href="../cli/">Command
   line</a>.

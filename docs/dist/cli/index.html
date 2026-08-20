@@ -286,8 +286,8 @@ $ mimux mail logout http://nas.lan:8083      # forget it locally</code></pre>
 
 <p>
   The environment is still there for CI and containers, where no browser is
-  going to open and no config directory survives the run. The same two
-  variables configure <code>mimux mcp</code>, so one export serves both. With
+  going to open and no config directory survives the run. <code>mimux mcp</code>
+  reads the same store and the same two variables, so a login serves both. With
   nothing stored and nothing exported, commands point at <code>login</code>
   rather than dumping a 401:
 </p>
@@ -565,18 +565,25 @@ mimux mail star: this token is missing the mail:modify scope — tick it in Sett
 <table>
   <thead><tr><th>Variable</th><th>Default</th><th>Description</th></tr></thead>
   <tbody>
-    <tr><td><code>MIMUX_URL</code></td><td><code>http://localhost:8083</code></td><td>Base URL of the running mimux.</td></tr>
-    <tr><td><code>MIMUX_TOKEN</code></td><td><em>required</em></td><td>An API token from Settings → API.</td></tr>
+    <tr><td><code>MIMUX_URL</code></td><td>what <code>login</code> stored, else <code>http://localhost:8083</code></td><td>Base URL of the running mimux.</td></tr>
+    <tr><td><code>MIMUX_TOKEN</code> (or <code>MIMUX_API_TOKEN</code>)</td><td>what <code>login</code> stored for that URL</td><td>An API token from Settings → API.</td></tr>
   </tbody>
 </table>
 </div>
 
-<pre><code>MIMUX_URL=http://localhost:8083 MIMUX_TOKEN=mimux_pat_... mimux mcp</code></pre>
+<p>
+  If you have run <code>mimux mail login</code>, the bridge already has
+  everything it needs — the config block is just the command:
+</p>
+
+<pre><code>mimux mcp
+# or, for CI and containers where nothing was stored:
+MIMUX_URL=http://localhost:8083 MIMUX_TOKEN=mimux_pat_... mimux mcp</code></pre>
 
 <p>
-  With no token it prints
-  <code>mimux mcp: set MIMUX_TOKEN to an API token from Settings → API</code>
-  and exits <code>1</code>. Two environment variables and a command is exactly
+  With nothing stored and nothing exported it prints
+  <code>mimux mcp: not signed in — run `mimux mail login …`</code>
+  and exits <code>1</code>. A command plus an optional env map is exactly
   the shape of an MCP client's config block — see
   <a href="../mcp/">MCP server</a> for one.
 </p>

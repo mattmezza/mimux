@@ -30,6 +30,8 @@ mimux mail whoami
 - Config precedence: `--url` > `MIMUX_URL` > pinned `use` default > only
   signed-in instance > `http://localhost:8083`. Token: `--token` >
   `MIMUX_TOKEN`/`MIMUX_API_TOKEN` > the stored credential for that instance.
+  `mimux mcp` (the stdio MCP bridge) resolves both the same way, so a
+  `mimux mail login` is enough for it too — no env block required.
 
 ## Core workflows (verified against a live instance)
 

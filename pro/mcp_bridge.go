@@ -5,6 +5,7 @@
 package pro
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"net/http"
@@ -21,26 +22,38 @@ import (
 // server is up, which is the whole point: stdio-only MCP clients (editors,
 // desktop apps) get the same tools the HTTP endpoint serves.
 //
-// Configuration is two env vars, because an MCP client's config block is
-// exactly a command plus an env map:
+// Configuration is the same as `mimux mail`'s: whatever `login` stored for the
+// instance, overridden by the env vars an MCP client's config block can set,
+// because that block is exactly a command plus an env map:
 //
 //	MIMUX_URL   base URL of the running mimux (default http://localhost:8083)
-//	MIMUX_TOKEN an API token from Settings → API (required)
+//	MIMUX_TOKEN an API token from Settings → API (MIMUX_API_TOKEN also read)
+
+// bridgeTarget resolves which mimux to talk to and with what, exactly the way
+// newCLIClient plus applyCreds do for `mimux mail`: the environment first, then
+// whatever `login` stored for that instance.
+func bridgeTarget() (url, token string, insecure bool) {
+	store, _ := loadCreds() // a broken store just means "not logged in" here
+	url = normalizeURL(cmp.Or(os.Getenv("MIMUX_URL"), storedBase(store), cliDefaultURL))
+	e := store.Instances[url]
+	return url, cmp.Or(os.Getenv("MIMUX_TOKEN"), os.Getenv("MIMUX_API_TOKEN"), e.Token), e.Insecure
+}
 
 // RunMCPBridge is the `mimux mcp` subcommand. Returns a process exit code.
 func RunMCPBridge(_ []string) int {
-	url := os.Getenv("MIMUX_URL")
-	if url == "" {
-		url = "http://localhost:8083"
-	}
-	token := os.Getenv("MIMUX_TOKEN")
+	url, token, insecure := bridgeTarget()
 	if token == "" {
-		fmt.Fprintln(os.Stderr, "mimux mcp: set MIMUX_TOKEN to an API token from Settings → API")
+		fmt.Fprintln(os.Stderr, "mimux mcp: not signed in — run `mimux mail login "+url+"`, or set MIMUX_TOKEN to a token from Settings → API")
 		return 1
+	}
+	auth := bearerTransport{token: token}
+	if insecure {
+		fmt.Fprintf(os.Stderr, "warning: TLS certificates are not verified for %s (logged in with --insecure)\n", url)
+		auth.base = insecureClient(&http.Client{}).Transport
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := runBridge(ctx, url, token); err != nil && ctx.Err() == nil {
+	if err := runBridge(ctx, url, &http.Client{Transport: auth}); err != nil && ctx.Err() == nil {
 		fmt.Fprintln(os.Stderr, "mimux mcp:", err)
 		return 1
 	}
@@ -48,19 +61,25 @@ func RunMCPBridge(_ []string) int {
 }
 
 // bearerTransport adds the Authorization header to every forwarded request.
-type bearerTransport struct{ token string }
+type bearerTransport struct {
+	token string
+	base  http.RoundTripper // nil means http.DefaultTransport
+}
 
 func (t bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("Authorization", "Bearer "+t.token)
+	if t.base != nil {
+		return t.base.RoundTrip(r)
+	}
 	return http.DefaultTransport.RoundTrip(r)
 }
 
-func runBridge(ctx context.Context, url, token string) error {
+func runBridge(ctx context.Context, url string, hc *http.Client) error {
 	client := mcp.NewClient(&mcp.Implementation{Name: "mimux-stdio-bridge"}, nil)
 	session, err := client.Connect(ctx, &mcp.StreamableClientTransport{
 		Endpoint:   url + "/api/mcp",
-		HTTPClient: &http.Client{Transport: bearerTransport{token: token}},
+		HTTPClient: hc,
 		// The remote is stateless: a standalone GET stream would just 405.
 		DisableStandaloneSSE: true,
 	}, nil)

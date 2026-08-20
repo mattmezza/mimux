@@ -368,3 +368,27 @@ func TestMCPBridgeProxy(t *testing.T) {
 		t.Fatalf("proxied resource: %v %v", rr, err)
 	}
 }
+
+// The bridge reads the same credential store `mimux mail login` writes: an MCP
+// client config that is just `command: mimux, args: [mcp]` has to work.
+func TestBridgeTargetUsesStoredLogin(t *testing.T) {
+	_, _ = newLoginBox(t, "")
+	if err := saveCreds(credentials{Default: "https://a.example", Instances: map[string]credEntry{
+		"https://a.example": {Token: "stored", Insecure: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	url, token, insecure := bridgeTarget()
+	if url != "https://a.example" || token != "stored" || !insecure {
+		t.Fatalf("stored login: %q %q %v", url, token, insecure)
+	}
+	// The environment still wins, and an instance with no stored entry gets no token.
+	t.Setenv("MIMUX_URL", "https://b.example/")
+	if url, token, insecure = bridgeTarget(); url != "https://b.example" || token != "" || insecure {
+		t.Fatalf("env override: %q %q %v", url, token, insecure)
+	}
+	t.Setenv("MIMUX_TOKEN", "env")
+	if _, token, _ = bridgeTarget(); token != "env" {
+		t.Fatalf("MIMUX_TOKEN = %q", token)
+	}
+}
