@@ -363,6 +363,26 @@ message.updated    200       9ms</code></pre>
 </div>
 
 <p>
+  Instead of a URL, <code>-execute</code> runs a program once per event —
+  no receiver to write at all:
+</p>
+
+<pre><code>mimux mail webhooks listen -events message.received -execute ./notify.sh</code></pre>
+
+<p>
+  The payload arrives on the program's <strong>stdin</strong> — never as an
+  argument — with <code>MIMUX_EVENT</code> and <code>MIMUX_DELIVERY_ID</code>
+  in its environment. The program is executed directly, not through a shell,
+  and its stdout and stderr flow straight to yours. Runs are serial, one event
+  at a time, and each is killed after 60 seconds — a slow script shows up as
+  the dropped counter, not as a wedged stream. No signing secret is minted in
+  this mode: HMAC proves who sent an HTTP request, and a process the command
+  spawns itself has nothing to prove. Everything else is the same — nothing is
+  queued while it is not connected, and a non-zero exit is printed with its
+  status and elapsed time, never retried.
+</p>
+
+<p>
   Forwards are <strong>not retried</strong>. There is no ladder and no backoff
   here: a non-2xx from your receiver is printed with its status and how long it
   took, and the next event follows. A receiver you are watching does not need a

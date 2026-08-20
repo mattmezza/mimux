@@ -138,7 +138,9 @@ tokens from Settings → API:
   receiver's own answer (first 2KB) and let you replay one with the same
   delivery id. For local development, `mimux mail webhooks listen -forward-to
   http://localhost:3000/hooks` streams live events to your laptop, signed the
-  same way — nothing is queued while no listener is connected.
+  same way, and `-execute ./script.sh` instead runs a program per event with
+  the JSON payload on stdin and `MIMUX_EVENT`/`MIMUX_DELIVERY_ID` in the
+  environment — nothing is queued while no listener is connected.
 - **GraphQL endpoint**: on the roadmap; part of pro when it ships, same price.
 - **Guardrails by architecture**: agents draft, but sending is a separate,
   explicit call (two-step send); moving to trash needs an extra confirmation;

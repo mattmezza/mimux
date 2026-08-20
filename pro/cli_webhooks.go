@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"time"
 
 	"github.com/mattmezza/mimux/internal/auth"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // `mimux mail webhooks listen` — the local half of webhooks. It holds the
@@ -45,11 +47,15 @@ const listenBackoff = 3 * time.Second
 // calls a webhook secret, and half the people running this have seen it before.
 const whsecPrefix = "whsec_"
 
+// execTimeout bounds one -execute run. A script that hangs must not wedge the
+// loop forever; anything slower than this is not an event handler.
+const execTimeout = 60 * time.Second
+
 // webhookSubcommands is the second level of `mimux mail webhooks <verb>`. One
 // entry today; the table is here so the next one is a line rather than a
 // re-shape of the dispatch.
 var webhookSubcommands = []cliCommand{
-	{"listen", "-forward-to <url>", "webhooks:manage", "Stream live events to a local URL, signed like production.", cliWebhooksListen},
+	{"listen", "-forward-to <url> | -execute <program>", "webhooks:manage", "Stream live events to a local URL (signed like production), or run a program per event with the payload on stdin.", cliWebhooksListen},
 }
 
 func cliWebhooks(c *cliClient, args []string) error {
@@ -82,40 +88,76 @@ func webhookSubverbs() []string {
 
 func cliWebhooksListen(c *cliClient, args []string) error {
 	fs := c.flags("webhooks listen")
-	forward := fs.String("forward-to", "", "local URL to POST each event to (required)")
+	forward := fs.String("forward-to", "", "local URL to POST each event to")
+	program := fs.String("execute", "", "program to run per event, payload on stdin")
 	events := fs.String("events", "", "only these events, comma-separated (default: every event)")
 	if _, err := parseFlags(fs, args); err != nil {
 		return err
 	}
-	if *forward == "" {
-		return usageError{"-forward-to is required, e.g. -forward-to http://localhost:3000/hooks/mimux"}
+	if (*forward == "") == (*program == "") {
+		return usageError{"exactly one of -forward-to or -execute is required, e.g. -forward-to http://localhost:3000/hooks/mimux"}
 	}
-	if !strings.HasPrefix(*forward, "http://") && !strings.HasPrefix(*forward, "https://") {
+	if *forward != "" && !strings.HasPrefix(*forward, "http://") && !strings.HasPrefix(*forward, "https://") {
 		return usageError{"-forward-to wants an absolute http:// or https:// URL"}
+	}
+	filter := splitList(*events)
+	if err := checkEventNames(filter); err != nil {
+		return err
 	}
 	c.applyCreds()
 	if strings.TrimSpace(c.token) == "" {
 		return errors.New("not signed in — run `mimux mail login " + strings.TrimSuffix(c.base, "/") + "`, or set MIMUX_TOKEN to a token from Settings → API")
 	}
 
-	// A fresh secret per run, never stored and never sent to the server: this
-	// stream is signed by whoever is forwarding, and nothing else ever needs to
-	// know it. Put it in the receiver's config for as long as this runs.
-	secret := whsecPrefix + auth.NewToken()
-	filter := splitList(*events)
 	which := "every event"
 	if len(filter) > 0 {
 		which = strings.Join(filter, ", ")
 	}
-	c.printf("listening for: %s — forwarding to %s\n", which, *forward)
-	c.printf("signing secret: %s\n", secret)
-	c.printf("Verify it exactly as you verify production: HMAC-SHA256 over \"<t>.<body>\".\n")
+	var do func(context.Context, liveEvent)
+	if *program != "" {
+		// No secret in this mode: HMAC proves who sent an HTTP request, and a
+		// process this command spawns itself has nothing to prove.
+		c.printf("listening for: %s — executing %s per event (payload on stdin)\n", which, *program)
+		do = func(ctx context.Context, ev liveEvent) { c.execute(ctx, *program, ev) }
+	} else {
+		// A fresh secret per run, never stored and never sent to the server: this
+		// stream is signed by whoever is forwarding, and nothing else ever needs to
+		// know it. Put it in the receiver's config for as long as this runs.
+		secret := whsecPrefix + auth.NewToken()
+		c.printf("listening for: %s — forwarding to %s\n", which, *forward)
+		c.printf("signing secret: %s\n", secret)
+		c.printf("Verify it exactly as you verify production: HMAC-SHA256 over \"<t>.<body>\".\n")
+		do = func(ctx context.Context, ev liveEvent) { c.deliver(ctx, *forward, secret, ev) }
+	}
 	c.printf("Nothing is queued while this is not connected — events that fire meanwhile are lost.\n")
 	c.printf("Ctrl-C to stop.\n\n")
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	return c.listenLoop(ctx, *forward, filter, secret)
+	return c.listenLoop(ctx, filter, do)
+}
+
+// checkEventNames rejects a typo before the stream opens: the server would
+// silently filter it out (see store.ValidWebhookEvents) and the listener would
+// just sit there receiving nothing.
+func checkEventNames(events []string) error {
+	valid := make([]string, len(store.WebhookEvents))
+	for i, w := range store.WebhookEvents {
+		valid[i] = w.ID
+	}
+	for _, e := range events {
+		known := false
+		for _, v := range valid {
+			if v == e {
+				known = true
+				break
+			}
+		}
+		if !known {
+			return usageError{"unknown event " + strconv.Quote(e) + " (want: " + strings.Join(valid, ", ") + ")"}
+		}
+	}
+	return nil
 }
 
 // listenLoop keeps one stream open, reconnecting after a pause when it drops. A
@@ -123,9 +165,9 @@ func cliWebhooksListen(c *cliClient, args []string) error {
 // out, and picking it back up is what anyone watching wants; a refusal that
 // will not heal on its own (a rejected token, a lapsed licence, a missing
 // scope) stops instead of retrying it every few seconds forever.
-func (c *cliClient) listenLoop(ctx context.Context, forward string, events []string, secret string) error {
+func (c *cliClient) listenLoop(ctx context.Context, events []string, do func(context.Context, liveEvent)) error {
 	for {
-		retry, err := c.stream(ctx, forward, events, secret)
+		retry, err := c.stream(ctx, events, do)
 		if ctx.Err() != nil {
 			c.printf("\nstopped\n")
 			return nil
@@ -147,9 +189,10 @@ func (c *cliClient) listenLoop(ctx context.Context, forward string, events []str
 	}
 }
 
-// stream opens one connection and forwards until it ends. The bool says whether
+// stream opens one connection and hands each event to do — a forward or an
+// exec, the loop does not care — until it ends. The bool says whether
 // reconnecting is worth trying.
-func (c *cliClient) stream(ctx context.Context, forward string, events []string, secret string) (bool, error) {
+func (c *cliClient) stream(ctx context.Context, events []string, do func(context.Context, liveEvent)) (bool, error) {
 	path := "/api/v1/webhooks/listen"
 	if len(events) > 0 {
 		path += "?events=" + url.QueryEscape(strings.Join(events, ","))
@@ -194,7 +237,7 @@ func (c *cliClient) stream(ctx context.Context, forward string, events []string,
 			c.printf("… %d event(s) dropped: this listener fell behind\n", ev.Dropped-dropped)
 			dropped = ev.Dropped
 		}
-		c.deliver(ctx, forward, secret, ev)
+		do(ctx, ev)
 	}
 }
 
@@ -241,4 +284,39 @@ func (c *cliClient) deliver(ctx context.Context, to, secret string, ev liveEvent
 	defer func() { _ = res.Body.Close() }()
 	_, _ = io.Copy(io.Discard, io.LimitReader(res.Body, 4<<10)) // so the connection is reused
 	c.printf("%-18s %-6d %5dms\n", ev.Event, res.StatusCode, ms)
+}
+
+// execute runs one streamed event through a program: payload on stdin, event
+// type and delivery id in the environment, stdout/stderr flowing straight to
+// this command's own. Direct exec, no shell — a payload is attacker-influenced
+// text and must never be interpolated into anything.
+//
+// Serial on purpose: the server's drop accounting is the backpressure, so a
+// slow script just shows up as the dropped counter. Same no-retry stance as
+// deliver — a non-zero exit is printed, not retried.
+func (c *cliClient) execute(ctx context.Context, program string, ev liveEvent) {
+	started := time.Now()
+	tctx, cancel := context.WithTimeout(ctx, execTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(tctx, program)
+	cmd.Stdin = bytes.NewReader(ev.Payload)
+	cmd.Stdout = c.out
+	cmd.Stderr = c.errw
+	cmd.Env = append(os.Environ(), "MIMUX_EVENT="+ev.Event, "MIMUX_DELIVERY_ID="+ev.ID)
+	err := cmd.Run()
+	ms := time.Since(started).Milliseconds()
+	switch {
+	case ctx.Err() != nil: // Ctrl-C mid-run, not the script's fault
+	case err == nil:
+		c.printf("%-18s %-6s %5dms\n", ev.Event, "exit 0", ms)
+	case tctx.Err() != nil:
+		c.printf("%-18s %-6s %5dms  killed after %s\n", ev.Event, "-", ms, execTimeout)
+	default:
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			c.printf("%-18s %-6s %5dms\n", ev.Event, fmt.Sprintf("exit %d", ee.ExitCode()), ms)
+			return
+		}
+		c.printf("%-18s %-6s %5dms  %v\n", ev.Event, "-", ms, err)
+	}
 }

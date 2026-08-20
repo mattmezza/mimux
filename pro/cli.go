@@ -98,7 +98,7 @@ var cliCommands = []cliCommand{
 	{"move", "<id> <folder-id|archive|spam|trash>", "mail:modify", "Move a message.", cliMove},
 	{"draft", "", "mail:send", "Save a draft — nothing is sent.", cliDraft},
 	{"send", "", "mail:send", "Send a message now (-dry-run previews it).", cliSend},
-	{"webhooks", "<subcommand>", "webhooks:manage", "Webhook tools; `listen` forwards live events to a local URL.", cliWebhooks},
+	{"webhooks", "<subcommand>", "webhooks:manage", "Webhook tools; `listen` forwards live events to a local URL or program.", cliWebhooks},
 }
 
 // CLIVerbs lists mimux mail's verb names, for cmd/mimux's `mimux completion`

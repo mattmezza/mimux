@@ -11,6 +11,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -243,7 +245,8 @@ func TestCLIWebhooksListenForwards(t *testing.T) {
 	var out, errw bytes.Buffer
 	c := &cliClient{base: up.URL, token: "mimux_pat_test", out: &out, errw: &errw, http: rx.Client()}
 	done := make(chan error, 1)
-	go func() { done <- c.listenLoop(context.Background(), rx.URL, []string{"message.received"}, secret) }()
+	do := func(ctx context.Context, ev liveEvent) { c.deliver(ctx, rx.URL, secret, ev) }
+	go func() { done <- c.listenLoop(context.Background(), []string{"message.received"}, do) }()
 
 	select {
 	case err := <-done:
@@ -277,6 +280,51 @@ func TestCLIWebhooksListenForwards(t *testing.T) {
 	}
 }
 
+// Exec mode: the payload arrives on stdin — never as an argument — and the
+// event type and delivery id in the environment.
+func TestCLIWebhooksListenExecutes(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hook.sh")
+	sink := filepath.Join(dir, "got")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\n{ printf '%s %s ' \"$MIMUX_EVENT\" \"$MIMUX_DELIVERY_ID\"; cat; } > "+sink+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	const payload = `{"id":"abc123","event":"message.received","data":{"subject":"hi"}}`
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		enc := json.NewEncoder(w)
+		_ = enc.Encode(liveEvent{
+			Type: "event", Event: "message.received", ID: "abc123",
+			Payload: json.RawMessage(payload),
+		})
+		_ = enc.Encode(liveEvent{Type: "error", Message: "that is all"})
+	}))
+	defer up.Close()
+
+	var out, errw bytes.Buffer
+	c := &cliClient{base: up.URL, token: "mimux_pat_test", out: &out, errw: &errw, http: up.Client()}
+	do := func(ctx context.Context, ev liveEvent) { c.execute(ctx, script, ev) }
+	done := make(chan error, 1)
+	go func() { done <- c.listenLoop(context.Background(), nil, do) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the stream never ended")
+	}
+
+	got, err := os.ReadFile(sink)
+	if err != nil {
+		t.Fatalf("the script never ran: %v", err)
+	}
+	if want := "message.received abc123 " + payload; string(got) != want {
+		t.Errorf("script saw %q, want %q", got, want)
+	}
+	if !strings.Contains(out.String(), "message.received") || !strings.Contains(out.String(), "exit 0") {
+		t.Errorf("no per-event line printed:\n%s", out.String())
+	}
+}
+
 // A refusal that will not heal — a rejected token, a lapsed licence — must stop
 // rather than reconnect every few seconds forever.
 func TestCLIWebhooksListenStopsOnRefusal(t *testing.T) {
@@ -287,7 +335,8 @@ func TestCLIWebhooksListenStopsOnRefusal(t *testing.T) {
 	var out, errw bytes.Buffer
 	c := &cliClient{base: up.URL, token: "mimux_pat_test", out: &out, errw: &errw, http: up.Client()}
 	done := make(chan error, 1)
-	go func() { done <- c.listenLoop(context.Background(), "http://127.0.0.1:1", nil, "whsec_x") }()
+	do := func(ctx context.Context, ev liveEvent) { c.deliver(ctx, "http://127.0.0.1:1", "whsec_x", ev) }
+	go func() { done <- c.listenLoop(context.Background(), nil, do) }()
 	select {
 	case err := <-done:
 		if err == nil || !strings.Contains(err.Error(), "licence") {
@@ -300,10 +349,20 @@ func TestCLIWebhooksListenStopsOnRefusal(t *testing.T) {
 
 func TestCLIWebhooksUsage(t *testing.T) {
 	nope := func(w http.ResponseWriter, _ *http.Request) { t.Error("a usage error should not reach the API") }
-	for _, args := range [][]string{{"webhooks"}, {"webhooks", "nonesuch"}, {"webhooks", "listen"}, {"webhooks", "listen", "-forward-to", "ftp://x"}} {
+	for _, args := range [][]string{
+		{"webhooks"}, {"webhooks", "nonesuch"}, {"webhooks", "listen"},
+		{"webhooks", "listen", "-forward-to", "ftp://x"},
+		{"webhooks", "listen", "-forward-to", "http://x", "-execute", "/bin/true"}, // one or the other, not both
+	} {
 		if code, _, _ := cliRun(t, nope, "", args...); code != 2 {
 			t.Errorf("%v exited %d, want 2", args, code)
 		}
+	}
+	// A typo'd event name must fail here, not stream forever receiving nothing —
+	// and the message has to name the valid ones.
+	code, _, errOut := cliRun(t, nope, "", "webhooks", "listen", "-execute", "/bin/true", "-events", "message.nope")
+	if code != 2 || !strings.Contains(errOut, "message.nope") || !strings.Contains(errOut, "message.received") {
+		t.Errorf("unknown event = %d:\n%s", code, errOut)
 	}
 	if code, out, _ := cliRun(t, nope, "", "webhooks", "help"); code != 0 || !strings.Contains(out, "listen") {
 		t.Errorf("webhooks help = %d:\n%s", code, out)

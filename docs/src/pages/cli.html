@@ -273,7 +273,7 @@ export MIMUX_TOKEN=mimux_pat_...</code></pre>
     <tr><td><code>mimux mail move &lt;id&gt; &lt;dest&gt;</code></td><td><code>mail:modify</code></td><td>A folder id, or <code>archive</code>/<code>spam</code>/<code>trash</code>.</td></tr>
     <tr><td><code>mimux mail draft</code></td><td><code>mail:send</code></td><td>Save a draft. Nothing is sent.</td></tr>
     <tr><td><code>mimux mail send</code></td><td><code>mail:send</code></td><td>Send now, or <code>-dry-run</code> to preview.</td></tr>
-    <tr><td><code>mimux mail webhooks listen</code></td><td><code>webhooks:manage</code></td><td>Stream live webhook events to a local URL, signed like production — see <a href="../webhooks/">Webhooks</a>.</td></tr>
+    <tr><td><code>mimux mail webhooks listen</code></td><td><code>webhooks:manage</code></td><td>Stream live webhook events to a local URL (<code>-forward-to</code>, signed like production) or run a program per event (<code>-execute</code>, payload on stdin) — see <a href="../webhooks/">Webhooks</a>.</td></tr>
   </tbody>
 </table>
 </div>
