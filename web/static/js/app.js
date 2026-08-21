@@ -458,7 +458,11 @@ function updateViewTitle() {
     return;
   }
   const list = document.getElementById("list-title");
-  document.title = `${list ? list.textContent.trim() : "Inbox"} — mimux`;
+  // List view: carry over any "(N) " unread badge already in the title —
+  // this fires on every list swap, refreshUnreadTitle doesn't, and a bare
+  // overwrite here would drop the badge until the next unread fetch.
+  const badge = (document.title.match(/^\(\d+\)\s+/) || [""])[0];
+  document.title = `${badge}${list ? list.textContent.trim() : "Inbox"} — mimux`;
 }
 document.addEventListener("htmx:afterSettle", (e) => {
   if (!e.target || !["message-list", "reading-pane", "compose-root"].includes(e.target.id)) return;
