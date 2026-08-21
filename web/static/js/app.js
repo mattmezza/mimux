@@ -794,6 +794,10 @@ window.removeRowAnimated = removeRowAnimated;
 function closeReadingPane() {
   const rp = document.getElementById("reading-pane");
   if (rp) rp.innerHTML = '<p id="reading-pane-empty">Select a message to read it here.</p>';
+  // Plain innerHTML, not a swap, so htmx:afterSettle never fires: restore the
+  // title ourselves, then the unread badge it doesn't carry (see refreshUnreadTitle).
+  updateViewTitle();
+  refreshUnreadTitle();
   // Opening a thread pushes ?t=<id>&src=<src> (bookmarkable); drop it now so a
   // refresh on the list reloads the list, not the closed message.
   const p = new URLSearchParams(location.search);
