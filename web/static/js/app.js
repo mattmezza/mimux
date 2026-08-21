@@ -472,12 +472,45 @@ document.addEventListener("htmx:afterSettle", (e) => {
 // #compose-root with plain innerHTML, not a swap. Same function, both paths.
 window.updateViewTitle = updateViewTitle;
 
-// --- unread count in tab title ---
+// --- unread count: tab title, favicon dot, OS app badge ---
+// Plain href, captured once before anything swaps it — the dot href travels
+// with the element itself via data-dot-href (base.html), surviving the clone
+// below, but there's nowhere left to read the plain one back from once it's
+// been replaced.
+const faviconPlainHref = document.querySelector('link[rel="icon"]')?.getAttribute("href") || "";
+// Chrome sometimes ignores a mutated link.href, so swap the element itself
+// rather than its href attribute.
+function setFavicon(unread) {
+  const cur = document.querySelector('link[rel="icon"]');
+  if (!cur) return;
+  const want = unread ? cur.dataset.dotHref : faviconPlainHref;
+  if (!want || cur.getAttribute("href") === want) return;
+  const next = cur.cloneNode(true);
+  next.setAttribute("href", want);
+  cur.replaceWith(next);
+}
+
+// Installed-PWA dock/taskbar badge — absent on Safari/Firefox, and it throws
+// in some contexts even where present, so feature-detect and swallow.
+function setAppBadgeCount(n) {
+  if (!("setAppBadge" in navigator)) return;
+  try {
+    const p = n > 0 ? navigator.setAppBadge(n) : navigator.clearAppBadge();
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) { /* ignore */ }
+}
+
 async function refreshUnreadTitle() {
   let n = 0;
   try { n = parseInt(await (await fetch("/unread")).text(), 10) || 0; } catch (e) { return; }
-  // List views only (task: tab-spotting a message needs its subject clean,
-  // not "(3) Subject"): skip the prefix while a message/thread is open.
+  // Favicon dot and OS badge track unread mail regardless of what's on
+  // screen — mail read is still unread while you're looking at something
+  // else, unlike the tab title below.
+  setFavicon(n > 0);
+  setAppBadgeCount(n);
+  // Title prefix: list views only (task: tab-spotting a message needs its
+  // subject clean, not "(3) Subject"): skip the prefix while a message/thread
+  // is open.
   if (document.querySelector("#reading-pane #message-detail")) return;
   const base = document.title.replace(/^\(\d+\)\s+/, "");
   document.title = n > 0 ? `(${n}) ${base}` : base;

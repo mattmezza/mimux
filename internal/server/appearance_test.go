@@ -89,10 +89,34 @@ func TestIconEndpoint(t *testing.T) {
 		t.Errorf("badge must be the bare mark in opaque white; body:\n%s", badge)
 	}
 
+	// The unread dot overlays the plain mark (rect + envelope + leaf all still
+	// present) with a ring-then-dot pair, and the version query survives
+	// alongside ?p=dot exactly like it does for the other variants.
+	_, dot := get(t, h, "/icon.svg?v=abc123&p=dot")
+	wellFormedXML(t, dot)
+	if !strings.Contains(dot, `fill="#101010"`) || !strings.Contains(dot, `fill="#ff0000"`) ||
+		!strings.Contains(dot, `fill="#00ff00"`) {
+		t.Errorf("dot variant must keep the plain icon underneath; body:\n%s", dot)
+	}
+	if !strings.Contains(dot, `cx="25" cy="7" r="6.2" fill="#101010"`) ||
+		!strings.Contains(dot, `cx="25" cy="7" r="4.4" fill="#ef4444"`) {
+		t.Errorf("dot variant missing the ring+dot overlay; body:\n%s", dot)
+	}
+	if strings.Contains(mask, "circle") || strings.Contains(body, "circle") {
+		t.Errorf("plain and maskable variants must be unaffected by the dot addition")
+	}
+
 	// Query overrides drive the Settings preview, through the same gate.
 	_, prev := get(t, h, "/icon.svg?accent=%23123456&bg=transparent&shape=square")
 	if !strings.Contains(prev, "#123456") || strings.Contains(prev, "<rect") {
 		t.Errorf("preview override not applied; body:\n%s", prev)
+	}
+
+	// A transparent icon has no plate for the ring to mirror; it falls back to
+	// the app's own chrome colour instead of leaving the ring invisible.
+	_, transDot := get(t, h, "/icon.svg?bg=transparent&p=dot")
+	if !strings.Contains(transDot, `r="6.2" fill="#18181b"`) {
+		t.Errorf("transparent dot variant should fall back to the app chrome ring colour; body:\n%s", transDot)
 	}
 	// ...and a hostile one never reaches the output.
 	_, evil := get(t, h, `/icon.svg?leaf=%22%2F%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E`)

@@ -31,7 +31,9 @@
        <head>, so the accent is right on first paint instead of flashing. */}}
   {{with .AccentCSS}}<style>{{.}}</style>{{end}}
   <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="{{.IconURL}}" type="image/svg+xml">
+  {{/* data-dot-href: app.js swaps the favicon here while unread mail is
+       pending — both URLs keep their ?v= so cache-busting still works. */}}
+  <link rel="icon" href="{{.IconURL}}" data-dot-href="{{.IconDotURL}}" type="image/svg+xml">
   {{/* iOS home screen only takes PNG, so it keeps the default palette. */}}
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script defer src="/static/js/htmx.min.js"></script>

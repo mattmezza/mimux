@@ -25,10 +25,22 @@ var iconTmpl = svgtmpl.Must(svgtmpl.New("icon").Parse(
 		`<g transform="translate(16 16) scale({{.Scale}}) translate(-16 -16)">` +
 		`<path fill="{{.Accent}}" fill-rule="evenodd" d="M7 13h18a3 3 0 0 1 3 3v9a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3ZM7 13l9 8.5 9-8.5Z"/>` +
 		`<path fill="{{.Leaf}}" d="M16 17c-1.2-6.8 2.4-12.6 9-12.6.9 7-3 12.6-9 12.6Z"/>` +
-		`</g></svg>`))
+		`</g>` +
+		`{{if .Dot}}<circle cx="25" cy="7" r="6.2" fill="{{.RingColor}}"/><circle cx="25" cy="7" r="4.4" fill="{{.DotColor}}"/>{{end}}` +
+		`</svg>`))
 
 // iconView is the whole parameter surface of the mark.
-type iconView struct{ BG, Accent, Leaf, RX, Scale string }
+type iconView struct {
+	BG, Accent, Leaf, RX, Scale string
+	// Dot overlays a small unread indicator (top-right, over the leaf's
+	// corner) for the browser-tab favicon. RingColor is a plate painted
+	// first, in the icon's own background colour, so the dot reads as sitting
+	// on top of the mark instead of merging into it; DotColor is fixed (not
+	// user-configurable like Accent/Leaf) so it stays recognisable as the
+	// universal "unread" red regardless of the chosen palette.
+	Dot                 bool
+	RingColor, DotColor string
+}
 
 // iconRX maps the shape choice onto the background rect's corner radius.
 func iconRX(shape string) string {
@@ -58,8 +70,9 @@ func iconMark(c store.AppConfig) string {
 // handleIcon renders the app icon as SVG from the stored colours. The URL
 // carries ?v=<IconVersion> so it can be cached forever and still change the
 // instant the user picks new colours. ?p=maskable renders the Android
-// adaptive-icon variant, and the bg/accent/leaf/shape query overrides drive the
-// live preview in Settings (same validation gate as the stored values).
+// adaptive-icon variant, ?p=dot overlays an unread indicator for the browser
+// tab, and the bg/accent/leaf/shape query overrides drive the live preview in
+// Settings (same validation gate as the stored values).
 func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
 	c := s.store.GetAppConfig()
 	q := r.URL.Query()
@@ -96,6 +109,18 @@ func (s *Server) handleIcon(w http.ResponseWriter, r *http.Request) {
 		// Colour-independent by construction, so the immutable cache below is
 		// still honest without a ?v= on the URL.
 		v.BG, v.Accent, v.Leaf = "", "#fff", "#fff"
+	case "dot":
+		// The browser-tab favicon with an unread dot. RingColor mirrors the
+		// icon's own plate so the dot looks cut into it; a transparent icon has
+		// no plate to mirror, so fall back to the app's own chrome colour
+		// (matches manifest background_color) rather than leaving the ring
+		// invisible.
+		v.Dot, v.DotColor = true, "#ef4444"
+		if v.BG != "" {
+			v.RingColor = v.BG
+		} else {
+			v.RingColor = "#18181b"
+		}
 	}
 	w.Header().Set("Content-Type", "image/svg+xml; charset=utf-8")
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
@@ -198,6 +223,7 @@ func accentCSS(accent string) template.CSS {
 func (s *Server) appearanceData(data map[string]any) {
 	c := s.store.GetAppConfig()
 	data["IconURL"] = iconURL(c, "")
+	data["IconDotURL"] = iconURL(c, "dot")
 	data["AccentCSS"] = accentCSS(c.Accent)
 }
 
