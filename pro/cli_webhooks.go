@@ -303,7 +303,10 @@ func (c *cliClient) execute(ctx context.Context, command string, ev liveEvent) {
 	cmd.Stdin = bytes.NewReader(ev.Payload)
 	cmd.Stdout = c.out
 	cmd.Stderr = c.errw
-	cmd.Env = append(os.Environ(), "MIMUX_EVENT="+ev.Event, "MIMUX_DELIVERY_ID="+ev.ID)
+	// MIMUX_URL so a `mimux mail read` inside the script talks to the instance we
+	// are listening to, not to whatever localhost the child would default to.
+	cmd.Env = append(os.Environ(),
+		"MIMUX_EVENT="+ev.Event, "MIMUX_DELIVERY_ID="+ev.ID, "MIMUX_URL="+c.base)
 	err := cmd.Run()
 	ms := time.Since(started).Milliseconds()
 	switch {
