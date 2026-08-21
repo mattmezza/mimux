@@ -2,12 +2,14 @@
 package mail
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/gob"
 	"io"
 	"mime/quotedprintable"
+	"net/textproto"
 	"strings"
 
 	"github.com/emersion/go-message"
@@ -31,6 +33,10 @@ type messageBody struct {
 	// headers (unparsed) so ParseListUnsubscribe can run at render time.
 	listUnsubscribe     string
 	listUnsubscribePost string
+	// headers is the message's whole header block, verbatim (see headerBlock).
+	// The warmer's full fetch fills it for free on the inbox and Drafts, so most
+	// messages answer Headers with no extra IMAP at all.
+	headers string
 }
 
 // bodyDTO is the exported, gob-encodable form of messageBody used to persist a
@@ -44,6 +50,7 @@ type bodyDTO struct {
 	Calendar            []byte
 	ListUnsubscribe     string
 	ListUnsubscribePost string
+	Headers             string
 }
 
 type inlineDTO struct {
@@ -57,6 +64,7 @@ func encodeBody(b *messageBody) ([]byte, error) {
 		HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{},
 		Calendar:        b.calendar,
 		ListUnsubscribe: b.listUnsubscribe, ListUnsubscribePost: b.listUnsubscribePost,
+		Headers: b.headers,
 	}
 	for k, v := range b.inline {
 		dto.Inline[k] = inlineDTO{Mime: v.mime, Data: v.data}
@@ -78,6 +86,7 @@ func decodeBody(blob []byte) (*messageBody, error) {
 		htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{},
 		calendar:        dto.Calendar,
 		listUnsubscribe: dto.ListUnsubscribe, listUnsubscribePost: dto.ListUnsubscribePost,
+		headers: dto.Headers,
 	}
 	for k, v := range dto.Inline {
 		b.inline[k] = inlinePart{mime: v.Mime, data: v.Data}
@@ -144,6 +153,57 @@ func (m *Manager) QuoteSource(ctx context.Context, msg *store.Message) (text, ht
 	return strings.TrimSpace(text), htmlBody, nil
 }
 
+// Headers returns the message's raw header block and its parsed form.
+func (m *Manager) Headers(ctx context.Context, msg *store.Message) (raw string, parsed map[string][]string, err error) {
+	b, err := m.parsedBody(ctx, msg, false)
+	if err != nil {
+		return "", nil, err
+	}
+	raw = b.headers
+	if raw == "" {
+		// A blob cached before headers were stored — no real message has none, so
+		// empty is an unambiguous sentinel. Patch it with a header-only fetch
+		// rather than pulling the whole message back over IMAP.
+		hdr, ferr := m.fetchHeaders(ctx, msg)
+		if ferr != nil {
+			return "", nil, ferr
+		}
+		raw = string(hdr)
+		// A copy, not a write through the pointer: the LRU hands the same
+		// *messageBody to everyone, and render reads it concurrently.
+		patched := *b
+		patched.headers = raw
+		if blob, err := encodeBody(&patched); err == nil {
+			_ = m.st.SaveMessageBody(msg.ID, blob) // best-effort cache
+		}
+		m.bodies.put(msg.ID, &patched)
+	}
+	return raw, parseHeaders(raw), nil
+}
+
+// headerBlock returns a message's header block: everything up to and including
+// the blank line that ends it. Stored raw rather than as a parsed map because
+// parsing is not reversible — folding, field order and repeated Received: lines
+// are all lost — and the raw form is what the API hands back.
+func headerBlock(raw []byte) string {
+	if i := bytes.Index(raw, []byte("\r\n\r\n")); i >= 0 {
+		return string(raw[:i+4])
+	}
+	if i := bytes.Index(raw, []byte("\n\n")); i >= 0 {
+		return string(raw[:i+2])
+	}
+	return string(raw) // no body at all: it is all header
+}
+
+// parseHeaders parses a header block into canonicalised keys, keeping repeated
+// fields as multiple values. A malformed line costs the fields after it, not
+// the whole call — ReadMIMEHeader returns what it managed to read.
+func parseHeaders(raw string) map[string][]string {
+	r := strings.NewReader(strings.TrimRight(raw, "\r\n") + "\r\n\r\n") // terminator ReadMIMEHeader insists on
+	h, _ := textproto.NewReader(bufio.NewReader(r)).ReadMIMEHeader()
+	return h
+}
+
 // parseBody parses a full RFC 822 message into its text/HTML parts and inline
 // (cid) attachments. It is tolerant of malformed parts — a bad part is skipped,
 // never fatal.
@@ -158,6 +218,7 @@ func parseBody(raw []byte) *messageBody {
 	}
 	b.listUnsubscribe = ent.Header.Get("List-Unsubscribe")
 	b.listUnsubscribePost = ent.Header.Get("List-Unsubscribe-Post")
+	b.headers = headerBlock(raw)
 	_ = ent.Walk(func(_ []int, part *message.Entity, perr error) error {
 		if perr != nil && !message.IsUnknownCharset(perr) && !message.IsUnknownEncoding(perr) {
 			return nil // skip unreadable part, keep walking siblings

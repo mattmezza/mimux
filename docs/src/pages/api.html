@@ -152,6 +152,9 @@ GET /v1/messages?account=work&amp;unread=true          # mail:read
 # one message, with body and attachment list
 GET /v1/messages/{id}?body=both                     # mail:read
 
+# the message's own headers: raw, parsed, or both
+GET /v1/messages/{id}?headers=both                  # mail:read
+
 # an attachment by index
 GET /v1/messages/{id}/attachments/{n}               # mail:read</code></pre>
 
@@ -161,6 +164,17 @@ GET /v1/messages/{id}/attachments/{n}               # mail:read</code></pre>
   inbox/sent/drafts/archive/spam/trash. Account names come from
   <code>GET /v1/accounts</code>, which also reports live sync state and unread
   counts — worth checking before you trust freshness.
+</p>
+
+<p>
+  <code>headers</code> is opt-in and separate from <code>body</code>:
+  <code>raw</code> is the header block exactly as it arrived — folding, field
+  order and every repeated <code>Received:</code> line intact — and
+  <code>parsed</code> is the same block as field name → list of values, so a
+  chain stays a chain. Ask for it when the routing is the question
+  (deliverability, SPF/DKIM results, where a message actually came from); it is
+  bulk otherwise. Like the body, it degrades rather than fails:
+  <code>headers_error</code> instead of <code>headers</code>.
 </p>
 
 <h3>Triage</h3>

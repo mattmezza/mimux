@@ -12,9 +12,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -606,6 +608,7 @@ func oneLine(s string) string {
 func cliRead(c *cliClient, args []string) error {
 	fs := c.flags("read")
 	html := fs.Bool("html", false, "the sanitised HTML body instead of plain text")
+	headers := fs.String("headers", "", "also print the message headers: raw, parsed or both")
 	rest, err := parseFlags(fs, args)
 	if err != nil {
 		return err
@@ -618,7 +621,11 @@ func cliRead(c *cliClient, args []string) error {
 	if *html {
 		form = "html"
 	}
-	raw, err := c.get("/api/v1/messages/" + strconv.FormatInt(id, 10) + "?body=" + form)
+	q := "?body=" + form
+	if *headers != "" {
+		q += "&headers=" + url.QueryEscape(*headers)
+	}
+	raw, err := c.get("/api/v1/messages/" + strconv.FormatInt(id, 10) + q)
 	if err != nil {
 		return err
 	}
@@ -628,8 +635,13 @@ func cliRead(c *cliClient, args []string) error {
 			Text string `json:"text"`
 			HTML string `json:"html"`
 		} `json:"body"`
-		BodyError   string `json:"body_error"`
-		Attachments []struct {
+		BodyError string `json:"body_error"`
+		Headers   struct {
+			Raw    string              `json:"raw"`
+			Parsed map[string][]string `json:"parsed"`
+		} `json:"headers"`
+		HeadersError string `json:"headers_error"`
+		Attachments  []struct {
 			Index     int    `json:"index"`
 			Filename  string `json:"filename"`
 			MediaType string `json:"media_type"`
@@ -655,6 +667,17 @@ func cliRead(c *cliClient, args []string) error {
 		}
 		for _, at := range msg.Attachments {
 			c.printf("attach:   [%d] %s (%s, %d bytes)\n", at.Index, at.Filename, at.MediaType, at.Size)
+		}
+		if msg.HeadersError != "" {
+			c.printf("%s\n", msg.HeadersError)
+		}
+		if raw := strings.TrimRight(msg.Headers.Raw, "\r\n"); raw != "" {
+			c.printf("\n%s\n", raw)
+		}
+		for _, k := range slices.Sorted(maps.Keys(msg.Headers.Parsed)) {
+			for _, v := range msg.Headers.Parsed[k] {
+				c.printf("%s: %s\n", k, v)
+			}
 		}
 		_, _ = fmt.Fprintln(c.out)
 		if msg.BodyError != "" {

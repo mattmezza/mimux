@@ -178,6 +178,23 @@
   </p>
 </div>
 
+<p>
+  Which is a fetch the payload already tells you how to make: <code>data.id</code>
+  is the mimux message id, so a receiver reads whatever it needs over an
+  authenticated, scoped call it makes itself — the content never rides on the
+  delivery.
+</p>
+
+<pre><code>GET /v1/messages/{id}?body=text        # the body
+GET /v1/messages/{id}?headers=both     # the raw header block and its parsed form</code></pre>
+
+<p>
+  Inside a <code>webhooks listen -execute</code> script the same two lines are
+  <code>mimux mail read $ID</code> and <code>mimux mail read -headers both $ID</code>:
+  the child process inherits <code>MIMUX_URL</code> from the listener, so it
+  talks to the instance you are listening to.
+</p>
+
 <h2>The delivery</h2>
 
 <pre><code>POST /your/url
@@ -371,8 +388,9 @@ message.updated    200       9ms</code></pre>
 
 <p>
   The payload arrives on the command's <strong>stdin</strong> — never as an
-  argument — with <code>MIMUX_EVENT</code> and <code>MIMUX_DELIVERY_ID</code>
-  in its environment. The command runs through <code>sh -c</code>, so
+  argument — with <code>MIMUX_EVENT</code>, <code>MIMUX_DELIVERY_ID</code> and
+  <code>MIMUX_URL</code> (the instance being listened to, so a
+  <code>mimux mail read</code> in the script reaches it) in its environment. The command runs through <code>sh -c</code>, so
   <code>-execute 'jq .'</code> and pipes work; event data still only ever
   reaches it on stdin, never interpolated into the command line. Its stdout
   and stderr flow straight to yours. Runs are serial, one event

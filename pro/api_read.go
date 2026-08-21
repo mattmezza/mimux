@@ -284,8 +284,10 @@ func (f listFilter) match(m store.Message) bool {
 
 // handleGetMessage returns one full message. ?body=text|html|both picks the
 // body forms (default text); the HTML form is the same sanitized document the
-// reading pane renders. A body that can't be fetched (account offline) doesn't
-// fail the request — metadata still returns, with body_error set.
+// reading pane renders. ?headers=raw|parsed|both adds the message's own header
+// block, opt-in because a full Received: chain is bulk nobody asked for. Neither
+// failing to fetch (account offline) fails the request — metadata still
+// returns, with body_error / headers_error set.
 func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	msg := a.messageOr404(w, r)
 	if msg == nil {
@@ -299,10 +301,19 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "invalid_request", "body must be text, html or both.")
 		return
 	}
+	wantHeaders := r.URL.Query().Get("headers")
+	if wantHeaders != "" && wantHeaders != "raw" && wantHeaders != "parsed" && wantHeaders != "both" {
+		apiError(w, http.StatusBadRequest, "invalid_request", "headers must be raw, parsed or both.")
+		return
+	}
 
 	type bodyJSON struct {
 		Text string `json:"text,omitempty"`
 		HTML string `json:"html,omitempty"`
+	}
+	type headersJSON struct {
+		Raw    string              `json:"raw,omitempty"`
+		Parsed map[string][]string `json:"parsed,omitempty"`
 	}
 	type attachmentJSON struct {
 		Index     int    `json:"index"`
@@ -312,9 +323,11 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	out := struct {
 		messageJSON
-		Body        *bodyJSON        `json:"body,omitempty"`
-		BodyError   string           `json:"body_error,omitempty"`
-		Attachments []attachmentJSON `json:"attachments"`
+		Body         *bodyJSON        `json:"body,omitempty"`
+		BodyError    string           `json:"body_error,omitempty"`
+		Headers      *headersJSON     `json:"headers,omitempty"`
+		HeadersError string           `json:"headers_error,omitempty"`
+		Attachments  []attachmentJSON `json:"attachments"`
 	}{messageJSON: toMessageJSON(*msg), Attachments: []attachmentJSON{}}
 
 	var body bodyJSON
@@ -335,6 +348,22 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		out.BodyError = "Couldn't fetch the body — the account may be offline."
 	} else {
 		out.Body = &body
+	}
+
+	if wantHeaders != "" {
+		raw, parsed, err := a.mail.Headers(r.Context(), msg)
+		if err != nil {
+			out.HeadersError = "Couldn't fetch the headers — the account may be offline."
+		} else {
+			var headers headersJSON
+			if wantHeaders == "raw" || wantHeaders == "both" {
+				headers.Raw = raw
+			}
+			if wantHeaders == "parsed" || wantHeaders == "both" {
+				headers.Parsed = parsed
+			}
+			out.Headers = &headers
+		}
 	}
 
 	if msg.HasAttachment {

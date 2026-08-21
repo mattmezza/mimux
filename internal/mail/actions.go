@@ -59,10 +59,22 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 	return m.fetchRawOn(ctx, nil, msg)
 }
 
+// fetchHeaders fetches only the header block — what patching a body blob cached
+// before headers were stored needs, without dragging the whole message back.
+func (m *Manager) fetchHeaders(ctx context.Context, msg *store.Message) ([]byte, error) {
+	return m.fetchSectionOn(ctx, nil, msg,
+		&imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, Peek: true})
+}
+
 // fetchRawOn is fetchRaw on a connection the caller already holds (see
 // account.exec); nil c queues it as a read-only command for the worker, which
 // is what an HTTP handler wants.
 func (m *Manager) fetchRawOn(ctx context.Context, conn *imapclient.Client, msg *store.Message) ([]byte, error) {
+	return m.fetchSectionOn(ctx, conn, msg, &imap.FetchItemBodySection{Peek: true})
+}
+
+// fetchSectionOn fetches one BODY section of a message.
+func (m *Manager) fetchSectionOn(ctx context.Context, conn *imapclient.Client, msg *store.Message, section *imap.FetchItemBodySection) ([]byte, error) {
 	a := m.accounts[msg.Account]
 	if a == nil {
 		return nil, fmt.Errorf("unknown account %q", msg.Account)
@@ -79,7 +91,7 @@ func (m *Manager) fetchRawOn(ctx context.Context, conn *imapclient.Client, msg *
 		set := imap.UIDSet{}
 		set.AddNum(imap.UID(msg.UID))
 		data, err := c.Fetch(set, &imap.FetchOptions{
-			BodySection: []*imap.FetchItemBodySection{{Peek: true}},
+			BodySection: []*imap.FetchItemBodySection{section},
 		}).Collect()
 		if err != nil {
 			return err

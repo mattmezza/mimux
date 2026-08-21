@@ -77,10 +77,12 @@ func buildMCP(a *api, tok *store.APIToken) *mcp.Server {
 		}, a.mcpSearch)
 		mcp.AddTool(s, &mcp.Tool{
 			Name: "read_message",
-			Description: "Read one message by id: headers, flags, labels, attachment list and the body as plain text " +
-				"(format=html returns sanitised HTML instead). A long body is returned in chunks: when `truncated` " +
-				"is true, call again with `offset` set to `next_offset` for the next chunk — never assume a " +
-				"truncated body is complete.",
+			Description: "Read one message by id: sender, recipients, subject, date, flags, labels, attachment list " +
+				"and the body as plain text (format=html returns sanitised HTML instead). A long body is returned " +
+				"in chunks: when `truncated` is true, call again with `offset` set to `next_offset` for the next " +
+				"chunk — never assume a truncated body is complete. Set `headers` only when the raw message headers " +
+				"themselves are the question (deliverability, routing, a Received: chain): they are long, and left " +
+				"out otherwise.",
 		}, a.mcpReadMessage)
 	}
 
@@ -224,9 +226,10 @@ func (a *api) mcpSearch(ctx context.Context, _ *mcp.CallToolRequest, in searchAr
 }
 
 type readMessageArgs struct {
-	ID     int64  `json:"id" jsonschema:"the message id"`
-	Format string `json:"format,omitempty" jsonschema:"text (default) or html"`
-	Offset int    `json:"offset,omitempty" jsonschema:"body continuation offset from a previous truncated read"`
+	ID      int64  `json:"id" jsonschema:"the message id"`
+	Format  string `json:"format,omitempty" jsonschema:"text (default) or html"`
+	Offset  int    `json:"offset,omitempty" jsonschema:"body continuation offset from a previous truncated read"`
+	Headers string `json:"headers,omitempty" jsonschema:"raw, parsed or both to include the message headers; omitted by default"`
 }
 
 func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in readMessageArgs) (*mcp.CallToolResult, any, error) {
@@ -243,13 +246,19 @@ func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in rea
 	default:
 		return nil, nil, fmt.Errorf("format must be text or html")
 	}
+	if in.Headers != "" && in.Headers != "raw" && in.Headers != "parsed" && in.Headers != "both" {
+		return nil, nil, fmt.Errorf("headers must be raw, parsed or both")
+	}
 	out := struct {
 		messageJSON
-		Body        string           `json:"body"`
-		BodyError   string           `json:"body_error,omitempty"`
-		Truncated   bool             `json:"truncated,omitempty"`
-		NextOffset  int              `json:"next_offset,omitempty"`
-		Attachments []map[string]any `json:"attachments,omitempty"`
+		Body          string              `json:"body"`
+		BodyError     string              `json:"body_error,omitempty"`
+		Truncated     bool                `json:"truncated,omitempty"`
+		NextOffset    int                 `json:"next_offset,omitempty"`
+		HeadersRaw    string              `json:"headers_raw,omitempty"`
+		HeadersParsed map[string][]string `json:"headers_parsed,omitempty"`
+		HeadersError  string              `json:"headers_error,omitempty"`
+		Attachments   []map[string]any    `json:"attachments,omitempty"`
 	}{messageJSON: toMessageJSON(*msg)}
 	if err != nil {
 		out.BodyError = "Couldn't fetch the body — the account may be offline."
@@ -265,6 +274,19 @@ func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in rea
 			out.Truncated, out.NextOffset = true, end
 		}
 		out.Body = string(runes[in.Offset:end])
+	}
+	if in.Headers != "" {
+		raw, parsed, herr := a.mail.Headers(ctx, msg)
+		switch {
+		case herr != nil:
+			out.HeadersError = "Couldn't fetch the headers — the account may be offline."
+		case in.Headers == "parsed":
+			out.HeadersParsed = parsed
+		case in.Headers == "raw":
+			out.HeadersRaw = raw
+		default:
+			out.HeadersRaw, out.HeadersParsed = raw, parsed
+		}
 	}
 	if msg.HasAttachment {
 		if atts, aerr := a.mail.Attachments(ctx, msg); aerr == nil {

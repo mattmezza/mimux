@@ -344,7 +344,7 @@
         "tags": ["Messages"],
         "operationId": "getMessage",
         "summary": "Get one message",
-        "description": "Full metadata plus the body forms you ask for, plus the attachment manifest.\n\nThe body is fetched from IMAP (through the client's body cache). If that fails — the account is offline, the message is gone from the server — the request still succeeds: `body` is omitted and `body_error` explains. That is deliberate, so an agent can always read metadata even while sync is broken.\n\nThe `html` form is the same sanitized document the reading pane renders, with one difference: external images are left in place, because the caller is a machine reading JSON rather than a browser that would leak a read receipt. Active content is still stripped.\n\n`attachments` is always present, `[]` when the message has none — or when listing them failed, which is not reported separately.\n\n`thread_id` and `thread_size` are not set on this endpoint.\n\n**Scope: `mail:read`.**",
+        "description": "Full metadata plus the body forms you ask for, plus the attachment manifest.\n\nThe body is fetched from IMAP (through the client's body cache). If that fails — the account is offline, the message is gone from the server — the request still succeeds: `body` is omitted and `body_error` explains. That is deliberate, so an agent can always read metadata even while sync is broken.\n\nThe `html` form is the same sanitized document the reading pane renders, with one difference: external images are left in place, because the caller is a machine reading JSON rather than a browser that would leak a read receipt. Active content is still stripped.\n\n`?headers=` adds the message's own header block — `raw` is the bytes exactly as they arrived (folding, field order and every repeated `Received:` intact), `parsed` is the same block as canonicalised name → list of values, `both` is both. It is opt-in because a full `Received:` chain is bulk nobody asked for, and it degrades the same way the body does: `headers_error` instead of `headers`.\n\n`attachments` is always present, `[]` when the message has none — or when listing them failed, which is not reported separately.\n\n`thread_id` and `thread_size` are not set on this endpoint.\n\n**Scope: `mail:read`.**",
         "x-required-scope": "mail:read",
         "parameters": [
           {
@@ -352,6 +352,12 @@
             "in": "query",
             "description": "Which body forms to include.",
             "schema": { "type": "string", "enum": ["text", "html", "both"], "default": "text" }
+          },
+          {
+            "name": "headers",
+            "in": "query",
+            "description": "Which header forms to include. Omit for none.",
+            "schema": { "type": "string", "enum": ["raw", "parsed", "both"] }
           }
         ],
         "responses": {
@@ -1889,6 +1895,25 @@
               "body_error": {
                 "type": "string",
                 "description": "Present instead of `body` when the body could not be fetched, typically because the account is offline. The request still succeeds with 200 and full metadata."
+              },
+              "headers": {
+                "type": "object",
+                "description": "Present only when `headers` was asked for and the fetch succeeded. Which sub-fields appear depends on the `headers` query parameter.",
+                "properties": {
+                  "raw": {
+                    "type": "string",
+                    "description": "The header block verbatim, up to and including the blank line that ends it. Line folding, field order and repeated fields are all as they arrived."
+                  },
+                  "parsed": {
+                    "type": "object",
+                    "description": "The same block parsed: canonicalised field name → every value it appeared with, in order, so a `Received:` chain stays a chain.",
+                    "additionalProperties": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              },
+              "headers_error": {
+                "type": "string",
+                "description": "Present instead of `headers` when they could not be fetched, typically because the account is offline. The request still succeeds with 200."
               },
               "attachments": {
                 "type": "array",
