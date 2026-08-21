@@ -119,6 +119,11 @@ func iconURL(c store.AppConfig, purpose string) string {
 // reach; the PNGs stay listed, in the default palette, for installers that
 // won't rasterize SVG (iOS, and Chrome's WebAPK minting on older Android).
 // Settings says so out loud rather than pretending otherwise.
+//
+// protocol_handlers is unconditional, deliberately: browsers re-read the
+// manifest on their own lazy schedule, so a pref gating it would take effect
+// whenever the browser felt like it. Listing the handler only offers it —
+// nothing is registered until the user asks, from Settings → Composing.
 var manifestTmpl = svgtmpl.Must(svgtmpl.New("manifest").Parse(`{
   "name": "mimux",
   "short_name": "mimux",
@@ -132,6 +137,9 @@ var manifestTmpl = svgtmpl.Must(svgtmpl.New("manifest").Parse(`{
     { "src": "{{.Maskable}}", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" },
     { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
     { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ],
+  "protocol_handlers": [
+    { "protocol": "mailto", "url": "/compose?mailto=%s" }
   ]
 }
 `))

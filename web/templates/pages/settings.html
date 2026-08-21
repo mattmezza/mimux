@@ -388,6 +388,51 @@
               </label>
               <p class="text-xs text-zinc-500 ml-6">Saves a couple of seconds after you stop typing. The Save button still works.</p>
             </div>
+            {{/* mailto: links. There is no API to ask a browser whether we are
+                 already its mail handler, so this is two actions and an honest
+                 caption — never a toggle pretending to know. Registering needs
+                 a click (a user gesture) and throws on an insecure origin, so
+                 the error is shown rather than swallowed. Firefox implements
+                 register but not unregister; where it is missing, say where to
+                 undo it instead of offering a dead button. */}}
+            <fieldset class="space-y-2 pt-4 border-t border-zinc-800" x-data="{
+                   supported: typeof navigator.registerProtocolHandler === 'function',
+                   canUnregister: typeof navigator.unregisterProtocolHandler === 'function',
+                   msg: '',
+                   handle(off) {
+                     this.msg = '';
+                     try {
+                       navigator[off ? 'unregisterProtocolHandler' : 'registerProtocolHandler']('mailto', '/compose?mailto=%s');
+                       this.msg = off ? 'Asked this browser to stop opening mailto: links here.'
+                                      : 'Asked this browser to open mailto: links in mimux — confirm the prompt if it appears.';
+                     } catch (e) {
+                       this.msg = 'This browser refused: ' + e.message;
+                     }
+                   }
+                 }" x-show="supported" x-cloak>
+              <legend class="text-sm text-zinc-200">Email links (mailto:)</legend>
+              <p class="text-xs text-zinc-500">
+                Ask this browser to open <code>mailto:</code> links from other sites in mimux, with the
+                recipient, subject and body filled in. Per browser, per device, and the browser has the
+                last word — it may ask you to confirm, or ignore the request until you have used mimux a
+                few times. Needs HTTPS.
+              </p>
+              <div class="flex flex-wrap items-center gap-3">
+                <button type="button" @click="handle(false)"
+                  class="rounded-md bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-sm font-medium text-white transition-colors duration-150">
+                  Use mimux for email links
+                </button>
+                <button type="button" x-show="canUnregister" @click="handle(true)"
+                  class="rounded-md border border-zinc-700 hover:bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 transition-colors duration-150">
+                  Stop using mimux
+                </button>
+              </div>
+              <p class="text-xs text-zinc-500" x-show="!canUnregister">
+                This browser can't undo it from here — remove mimux under its own applications or
+                handlers settings.
+              </p>
+              <p class="text-xs text-zinc-400" x-show="msg" x-text="msg" x-cloak></p>
+            </fieldset>
           </section>
           {{end}}
 

@@ -160,6 +160,11 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 			s.prefillReply(r.Context(), &view, orig, r.URL.Query().Get("mode"), prefs)
 		}
 	}
+	// A mailto: link, handed over by the OS/browser (see protocol_handlers in
+	// the manifest). Still a plain new message, so it keeps Kind "new".
+	if m := r.URL.Query().Get("mailto"); m != "" {
+		mailtoPrefill(&view, m)
+	}
 	// Layout depends on the final Kind, so resolve it after the reply prefill.
 	view.Layout = layoutForKind(prefs, view.Kind)
 	// Fresh open (new/reply/forward): the client auto-inserts the linked signature.
@@ -218,6 +223,36 @@ func (s *Server) adoptAndOpen(w http.ResponseWriter, r *http.Request, view compo
 		return
 	}
 	s.renderDraft(w, view, prefs, d)
+}
+
+// mailtoPrefill fills view's address, subject and body fields from a mailto:
+// URI. It fails soft everywhere — a scheme that isn't mailto, an unparseable
+// string, a header outside the safelist — because any page on the web can link
+// a mailto:, so the worst a hostile one may cost is a blank compose window.
+// RFC 6068 allows arbitrary headers; honouring them would let that same page
+// dictate mail headers, hence the five fields read below and nothing else.
+func mailtoPrefill(view *composeView, raw string) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || !strings.EqualFold(u.Scheme, "mailto") {
+		return
+	}
+	// mailto: is opaque, not hierarchical: the recipients sit in Opaque (still
+	// percent-encoded), not Path, and may be absent — "mailto:?to=a@b" is legal.
+	// Both halves are one To list.
+	to, _ := url.PathUnescape(u.Opaque)
+	// RFC 6068 has no "+ means space" rule — that is form encoding, and applying
+	// it here would eat the plus out of every foo+tag@bar.com address.
+	q, _ := url.ParseQuery(strings.ReplaceAll(u.RawQuery, "+", "%2B"))
+	view.To = joinAddrList(append(mail.SplitAddrList(to), mail.SplitAddrList(q.Get("to"))...))
+	view.Cc, view.Bcc = q.Get("cc"), q.Get("bcc")
+	view.Subject = q.Get("subject")
+	view.Body = q.Get("body")
+	if view.Mode == "html" {
+		// The body is text/plain by definition, and the WYSIWYG editor renders
+		// whatever it is handed as markup (composeHTML) — escape it here so it
+		// arrives as the text it is, newlines included.
+		view.Body = strings.ReplaceAll(htmlEsc(view.Body), "\n", "<br>")
+	}
 }
 
 // prefillReply fills the To/Cc/Subject/Body/threading fields of view for a

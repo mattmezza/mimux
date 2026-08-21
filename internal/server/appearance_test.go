@@ -114,6 +114,11 @@ func TestManifestVersionedIcon(t *testing.T) {
 	if !strings.Contains(body, `"/icon.svg?v=`+ver+`&p=maskable"`) || !strings.Contains(body, `"maskable"`) {
 		t.Errorf("manifest missing maskable variant; body:\n%s", body)
 	}
+	// Offering to handle mailto: is what lets Settings register the handler at
+	// all — a browser only registers what the manifest already lists.
+	if !strings.Contains(body, `{ "protocol": "mailto", "url": "/compose?mailto=%s" }`) {
+		t.Errorf("manifest missing the mailto protocol handler; body:\n%s", body)
+	}
 
 	c := s.store.GetAppConfig()
 	c.IconLeaf = "#000000"
