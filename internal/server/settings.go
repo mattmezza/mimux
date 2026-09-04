@@ -81,7 +81,7 @@ func (s *Server) handleSettingsSection(w http.ResponseWriter, r *http.Request) {
 	data := s.settingsData(w, r)
 	data["Section"] = sec.ID
 	data["Page"] = *sec
-	s.render(w, "settings", data)
+	s.renderRequest(w, r, "settings", data)
 }
 
 // settingsData is the settings page's model. Built whole rather than per
