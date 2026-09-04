@@ -34,6 +34,8 @@ var templateFuncs = template.FuncMap{
 	"acctLabel":      acctLabel,
 	"relTime":        relTime,
 	"absTime":        absTime,
+	"dayLabel":       dayLabel,
+	"dayKey":         dayKey,
 	"untilTime":      untilTime,
 	"outSnippet":     outSnippet,
 	"folderLabel":    store.FolderLabel,
@@ -273,6 +275,25 @@ func (s *Server) fillList(data map[string]any, folder *store.Folder, unified boo
 		}
 	}
 	data["Threads"] = threads
+	type dayGroup struct {
+		Key     string
+		Label   string
+		Threads []mail.Thread
+	}
+	groups := []dayGroup{}
+	if prefs, ok := data["Prefs"].(store.Prefs); ok && prefs.DaySeparators {
+		for _, thread := range threads {
+			key := dayKey(thread.Latest)
+			if len(groups) == 0 || groups[len(groups)-1].Key != key {
+				groups = append(groups, dayGroup{Key: key, Label: dayLabel(thread.Latest)})
+			}
+			groups[len(groups)-1].Threads = append(groups[len(groups)-1].Threads, thread)
+		}
+	}
+	data["DayGroups"] = groups
+	if len(groups) > 0 {
+		data["LastDay"] = groups[len(groups)-1].Key
+	}
 	data["HasMessages"] = len(msgs) > 0
 	// A thread row shows its LATEST message only, so that's all a draft badge
 	// needs to cover here — a draft buried earlier in a thread surfaces when
@@ -351,6 +372,7 @@ func (s *Server) handleFolder(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 	data := map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)}
 	s.fillList(data, f, false, before)
+	data["PreviousDay"] = r.URL.Query().Get("previous_day")
 	s.renderPartial(w, listTemplate(before), data)
 }
 
@@ -359,6 +381,7 @@ func (s *Server) handleUnified(w http.ResponseWriter, r *http.Request) {
 	before := r.URL.Query().Get("before")
 	data := map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)}
 	s.fillList(data, nil, true, before)
+	data["PreviousDay"] = r.URL.Query().Get("previous_day")
 	s.renderPartial(w, listTemplate(before), data)
 }
 
@@ -1149,6 +1172,31 @@ func absTime(t time.Time) string {
 		return ""
 	}
 	return t.Local().Format("Mon, 2 Jan 2006, 15:04")
+}
+
+func dayKey(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Local().Format("2006-01-02")
+}
+
+func dayLabel(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	t = t.Local()
+	now := time.Now().Local()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+	switch day {
+	case today:
+		return "Today"
+	case today.AddDate(0, 0, -1):
+		return "Yesterday"
+	default:
+		return t.Format("2 Jan")
+	}
 }
 
 func relTime(t time.Time) string {

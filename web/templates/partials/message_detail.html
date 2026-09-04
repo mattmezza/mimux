@@ -106,10 +106,10 @@
 <div id="ext-banner-{{.ID}}" class="shrink-0 flex items-center gap-3 px-4 py-2 bg-amber-500/10 border-b border-amber-500/20 text-xs text-amber-300">
   <span>External images blocked for your privacy.</span>
   <button class="underline hover:text-amber-200"
-    onclick="this.closest('{{.Scope}}').querySelector('iframe').src='/messages/{{.ID}}/body?ext=1';this.closest('#ext-banner-{{.ID}}').remove()">Load once</button>
+    onclick="loadBody(this.closest('{{.Scope}}').querySelector('iframe'),'/messages/{{.ID}}/body?ext=1');this.closest('#ext-banner-{{.ID}}').remove()">Load once</button>
   <button class="underline hover:text-amber-200"
     hx-post="/messages/{{.ID}}/allow-sender" hx-swap="none"
-    hx-on::after-request="this.closest('{{.Scope}}').querySelector('iframe').src='/messages/{{.ID}}/body?ext=1';document.getElementById('ext-banner-{{.ID}}')?.remove()">Always allow from this sender</button>
+    hx-on::after-request="loadBody(this.closest('{{.Scope}}').querySelector('iframe'),'/messages/{{.ID}}/body?ext=1');document.getElementById('ext-banner-{{.ID}}')?.remove()">Always allow from this sender</button>
 </div>
 {{end}}
 
@@ -195,7 +195,7 @@
 </button>
 {{else if eq .ID "refetch"}}
 <button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"
-  onclick="var f=document.getElementById('body-frame');f.src='/messages/{{$m.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')"
+  onclick="var f=document.getElementById('body-frame');loadBody(f,'/messages/{{$m.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':''))"
   class="{{$btn}} hover:text-sky-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
   {{if $menu}}<span>Re-fetch from server</span>{{end}}
