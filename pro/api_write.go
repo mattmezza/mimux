@@ -263,6 +263,60 @@ func (a *api) handleCreateDraft(w http.ResponseWriter, r *http.Request) {
 	writeJSONStatus(w, http.StatusCreated, toDraftJSON(*d))
 }
 
+// handleForwardEML creates a reviewable draft with the exact source message as
+// an attachment. It deliberately does not send: API/CLI/MCP all keep the same
+// approval boundary as the web compose window.
+func (a *api) handleForwardEML(w http.ResponseWriter, r *http.Request) {
+	orig := a.messageOr404(w, r)
+	if orig == nil {
+		return
+	}
+	var req struct {
+		To      []string `json:"to"`
+		Cc      []string `json:"cc"`
+		Bcc     []string `json:"bcc"`
+		Body    string   `json:"body"`
+		Account string   `json:"account"`
+	}
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	raw, err := a.mail.Raw(r.Context(), orig)
+	if err != nil {
+		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the raw message — the account may be offline.")
+		return
+	}
+	account := req.Account
+	if account == "" {
+		account = orig.Account
+	}
+	knownAccount := false
+	for _, ac := range a.deps.Cfg.Accounts {
+		if ac.Name == account {
+			knownAccount = true
+			break
+		}
+	}
+	if !knownAccount {
+		apiError(w, http.StatusBadRequest, "invalid_request", "No configured account named "+account+".")
+		return
+	}
+	d := &store.Draft{Account: account, To: strings.Join(req.To, ", "), Cc: strings.Join(req.Cc, ", "), Bcc: strings.Join(req.Bcc, ", "),
+		Subject: mail.PrefixSubject("forward", orig.Subject), Body: req.Body, Mode: "plain", Kind: "forward"}
+	if err := a.store.UpsertDraft(d); err != nil {
+		apiError(w, http.StatusInternalServerError, "internal", "Couldn't save the draft.")
+		return
+	}
+	att := &store.DraftAttachment{Filename: mail.MessageFilename(orig.Subject, orig.ID), ContentType: "message/rfc822", Data: raw}
+	if len(raw) > maxAttachTotal || a.store.AddDraftAttachment(d.ID, att) != nil {
+		_ = a.store.DeleteDraft(d.ID)
+		apiError(w, http.StatusBadRequest, "invalid_request", "The message is too large to attach.")
+		return
+	}
+	a.publishDraft(d)
+	writeJSONStatus(w, http.StatusCreated, map[string]any{"draft": toDraftJSON(*d), "attachment": map[string]any{"filename": att.Filename, "content_type": att.ContentType, "size": len(raw)}, "note": "Draft saved, NOT sent. Review it and send explicitly."})
+}
+
 // handleUpdateDraft merges the provided fields into an existing draft; absent
 // fields keep their stored value.
 func (a *api) handleUpdateDraft(w http.ResponseWriter, r *http.Request) {

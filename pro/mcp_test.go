@@ -97,8 +97,8 @@ func TestMCPToolsFollowScopes(t *testing.T) {
 	}
 
 	all, _, _ := mcpSession(t, "mail:read mail:send mail:modify accounts:read")
-	if n := toolNames(t, all); len(n) != 9 {
-		t.Errorf("full-scope token should expose 9 tools, got %d: %v", len(n), n)
+	if n := toolNames(t, all); len(n) != 11 {
+		t.Errorf("full-scope token should expose 11 tools, got %d: %v", len(n), n)
 	}
 }
 

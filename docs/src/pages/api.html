@@ -155,6 +155,13 @@ GET /v1/messages/{id}?body=both                     # mail:read
 # the message's own headers: raw, parsed, or both
 GET /v1/messages/{id}?headers=both                  # mail:read
 
+# dedicated source endpoints
+GET /v1/messages/{id}/headers                       # mail:read
+GET /v1/messages/{id}/raw                           # mail:read, message/rfc822
+
+# create a reviewable draft with the original attached; never sends
+POST /v1/messages/{id}/forward-eml                  # mail:send
+
 # an attachment by index
 GET /v1/messages/{id}/attachments/{n}               # mail:read</code></pre>
 

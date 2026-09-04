@@ -53,6 +53,7 @@
       <div class="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 sm:px-6 space-y-3">
       <input type="hidden" name="csrf_token" value="{{.CSRF}}">
       <input type="hidden" id="compose-draft-id" name="draft_id" value="{{.DraftID}}">
+      <input type="hidden" id="compose-forward-eml-id" name="forward_eml_id" value="{{.ForwardEMLID}}">
       <input type="hidden" name="kind" value="{{.Kind}}">
       <input type="hidden" name="layout" value="{{.Layout}}">
       {{/* No hidden "mode": the format selector in the toolbar row carries it. */}}
@@ -161,6 +162,7 @@
         {{/* Files already kept with the saved draft. Server-rendered, and
              re-rendered out of band by every save and every removal, so this
              row always shows what the draft actually holds. */}}
+        {{if .ForwardEMLID}}<div id="compose-pending-forward-eml" class="mt-2 rounded-md border border-indigo-500/30 bg-indigo-500/10 px-2 py-1.5 text-xs text-indigo-200" data-pending-forward-eml>Attached on save or send: {{.ForwardEMLName}}</div>{{end}}
         {{template "compose_attachments" (dict "DraftID" .DraftID "Attachments" .Attachments)}}
 
         {{/* Attachment list: one chip per file picked but not yet saved,

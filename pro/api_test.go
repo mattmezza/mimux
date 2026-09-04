@@ -639,10 +639,11 @@ func TestScopesPerRouteGroup(t *testing.T) {
 	cases := []struct {
 		method, path string
 	}{
-		{http.MethodGet, "/v1/accounts"},       // accounts:read
-		{http.MethodPost, "/v1/messages/send"}, // mail:send
-		{http.MethodPatch, "/v1/messages/1"},   // mail:modify
-		{http.MethodPost, "/v1/filters"},       // mail:modify
+		{http.MethodGet, "/v1/accounts"},                // accounts:read
+		{http.MethodPost, "/v1/messages/send"},          // mail:send
+		{http.MethodPost, "/v1/messages/1/forward-eml"}, // mail:send
+		{http.MethodPatch, "/v1/messages/1"},            // mail:modify
+		{http.MethodPost, "/v1/filters"},                // mail:modify
 	}
 	for _, c := range cases {
 		r := httptest.NewRequest(c.method, c.path, strings.NewReader("{}"))

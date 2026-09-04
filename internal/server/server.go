@@ -253,6 +253,8 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/messages/{id}", s.handleMessage)
 		r.Get("/messages/{id}/body", s.handleMessageBody)
 		r.Get("/messages/{id}/attachments", s.handleAttachments)
+		r.Get("/messages/{id}/headers", s.handleMessageHeaders)
+		r.Get("/messages/{id}/raw", s.handleMessageRaw)
 		r.Get("/messages/{id}/ext-banner", s.handleExtBanner)
 		r.Get("/messages/{id}/attachment/{part}", s.handleAttachment)
 		r.Get("/messages/{id}/invite", s.handleInvite)
