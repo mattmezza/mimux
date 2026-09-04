@@ -78,6 +78,19 @@ func TestSanitizeSrcsetNeutralized(t *testing.T) {
 	}
 }
 
+func TestRenderBodyDocumentHasViewportMeta(t *testing.T) {
+	// Without a viewport meta the iframe document falls back to a 980px layout
+	// viewport on mobile, which anchors pinch-to-zoom at the top-left corner
+	// instead of the center of the pinch (issue #52).
+	want := `<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes">`
+	for _, plain := range []bool{false, true} {
+		out := renderBodyDocument("<p>hi</p>", plain)
+		if !strings.Contains(out, want) {
+			t.Errorf("body document (plain=%v) must declare a mobile viewport: %s", plain, out)
+		}
+	}
+}
+
 func TestSanitizeResolvesCID(t *testing.T) {
 	inline := map[string]inlinePart{"logo": {mime: "image/png", data: []byte{1, 2, 3}}}
 	out, _ := sanitizeHTML(`<img src="cid:logo">`, inline, false)
