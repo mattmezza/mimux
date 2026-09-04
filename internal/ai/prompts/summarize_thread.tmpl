@@ -1,0 +1,21 @@
+Here is an email conversation, oldest message first:
+
+{{.Body}}
+{{if .Truncated}}
+[The conversation was cut off here — only part of it is shown.]
+{{end}}
+The reader owns these email addresses:{{range .OwnerEmails}} {{.}}{{end}}. Refer to messages from those addresses as "Me" and address the reader as "you". Identify everyone else by sender name or email.
+
+Summarize the whole conversation as {{.Level}}. For a one-line summary, combine the most important state and next action in one sentence. Otherwise use these clearly labelled sections, omitting only a section that genuinely has no items:
+Key points
+- Who said what, with every point labelled by its author
+Decisions
+- What was decided and by whom
+Action items
+- Owner: action
+Status / next steps
+- Who needs to reply or act next, explicitly distinguishing you from others
+
+Keep dates, amounts, commitments, and necessary links. Drop greetings, signatures, disclaimers, and marketing filler. Never invent facts or ownership.
+{{if eq .Language "auto"}}Write in the same language as the conversation.{{else}}Write in {{.Language}}.{{end}}
+Output only the summary — no preamble or closing remark.

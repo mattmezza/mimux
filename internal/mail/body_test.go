@@ -2,8 +2,13 @@
 package mail
 
 import (
+	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 func crlf(s string) string { return strings.ReplaceAll(s, "\n", "\r\n") }
@@ -27,6 +32,64 @@ Content-Type: text/html; charset=utf-8
 	b := parseBody([]byte(raw))
 	if !strings.Contains(b.htmlContent, "rich body") {
 		t.Errorf("html missing: %q", b.htmlContent)
+	}
+}
+
+func TestArticleTextDistillsNewsletterAndPersists(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "mail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = st.Close() }()
+	m := NewManager(&config.Config{}, st)
+	folderID, err := st.UpsertFolder("A", "INBOX", "inbox", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := &store.Message{Account: "A", FolderID: folderID, UID: 1, MessageID: "newsletter@example.com"}
+	if err := st.UpsertMessage(msg); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := st.ListMessages(folderID, 1)
+	if err != nil || len(stored) != 1 {
+		t.Fatalf("stored message: %v, %v", stored, err)
+	}
+	msg = &stored[0]
+	b := &messageBody{
+		textContent: "Please view this email in HTML in your browser.",
+		htmlContent: `<html><body><nav>` + strings.Repeat("Menu Link ", 100) + `</nav><main><h1>Quarterly launch</h1><p>The launch is scheduled for Friday. Alice owns the rollout checklist and Bob will approve the budget.</p><p>This is the second substantial paragraph explaining the customer migration and the deadline.</p></main><footer>` + strings.Repeat("Social Legal ", 100) + `</footer></body></html>`,
+		inline:      map[string]inlinePart{},
+	}
+	m.bodies.put(msg.ID, b)
+	got, err := m.ArticleText(context.Background(), msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Quarterly launch", "scheduled for Friday", "Alice owns"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("ArticleText missing %q: %q", want, got)
+		}
+	}
+	if strings.Count(got, "Menu Link") > 5 || strings.Count(got, "Social Legal") > 5 {
+		t.Errorf("newsletter chrome was not distilled: %q", got)
+	}
+	blob, ok, err := st.GetMessageBody(msg.ID)
+	if err != nil || !ok {
+		t.Fatalf("persisted body: ok=%v err=%v", ok, err)
+	}
+	persisted, err := decodeBody(blob)
+	if err != nil || !persisted.articleReady || persisted.articleText != got {
+		t.Fatalf("persisted article = ready:%v text:%q err:%v", persisted.articleReady, persisted.articleText, err)
+	}
+}
+
+func TestArticleTextKeepsRealPlainText(t *testing.T) {
+	plain := strings.Repeat("A concise but genuine plain text update. ", 8)
+	if !usefulPlainAlternative(plain) {
+		t.Fatal("substantive plain text rejected")
+	}
+	if usefulPlainAlternative("Please view this email in HTML in your browser.") {
+		t.Fatal("HTML placeholder accepted")
 	}
 }
 
