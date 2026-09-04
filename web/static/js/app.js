@@ -1536,12 +1536,38 @@ window.setSendMode = setSendMode;
 function needsAttachmentReminder(form) {
   const files = form.querySelector('input[type=file][name="attachments"]');
   if (files && files.files && files.files.length) return false;
+  // Saved uploads have no file input on reopen, and original-forward chips
+  // stay metadata-only until send. Either one still counts as attached.
+  if (form.querySelector('#compose-attachments [data-attachment]')) return false;
+  if (form.querySelector('input[name="forward_attachment"]:checked')) return false;
   const subject = form.querySelector('[name="subject"]')?.value || "";
   const body = form.querySelector('textarea[name="body"]')?.value || "";
   // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
   const text = (subject + " " + body).replace(/<[^>]+>/g, " ");
   return attachKeywords.test(text);
 }
+
+function updateForwardAttachment(chip, included) {
+  if (!chip) return;
+  const box = chip.querySelector('input[name="forward_attachment"]');
+  const btn = chip.querySelector("button[data-filename]");
+  const filename = btn?.dataset.filename || chip.querySelector("[data-forward-name]")?.textContent || "attachment";
+  if (box) box.checked = included;
+  chip.classList.toggle("opacity-60", !included);
+  chip.querySelector("[data-forward-name]")?.classList.toggle("line-through", !included);
+  if (btn) {
+    btn.querySelector("[data-forward-action]").textContent = included ? "Remove" : "Include";
+    btn.setAttribute("aria-label", `${included ? "Remove" : "Include"} original attachment ${filename}`);
+    btn.title = `${included ? "Remove" : "Include"} original attachment`;
+  }
+  const status = document.getElementById("forward-attachment-status");
+  if (status) status.textContent = `${filename} ${included ? "included" : "excluded"} from the forward.`;
+}
+window.onForwardAttachmentCheck = function (box) { updateForwardAttachment(box.closest("[data-forward-attachment]"), box.checked); };
+window.toggleForwardAttachment = function (btn) {
+  const chip = btn.closest("[data-forward-attachment]");
+  updateForwardAttachment(chip, !chip.querySelector('input[name="forward_attachment"]').checked);
+};
 
 // Handles the 204 from POST /compose: close compose, then show the right toast
 // (Undo for delayed send, a confirmation for scheduled send). Non-204 responses
