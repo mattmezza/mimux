@@ -44,6 +44,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 # licence file for code that isn't there is the kind of tidy that misleads.
 # LICENSING.md is the map: which path is under which licence.
 RUN mkdir -p /licences && cp LICENSE LICENSING.md /licences/ && \
+    cp web/static/js/pdfjs-LICENSE.txt /licences/LICENSE.pdfjs && \
     case "${BUILD_TAGS}" in *pro*) cp pro/LICENSE /licences/LICENSE.pro ;; esac
 
 # Stage 3: Final image (per target arch — ca-certs, the binary, the licences).

@@ -173,7 +173,7 @@
 </button>
 {{else if eq .ID "refetch"}}
 <button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"
-  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)f.src='/messages/{{$latest.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')"
+  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)loadBody(f,'/messages/{{$latest.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':''))"
   class="{{$btn}} hover:text-sky-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
   {{if $menu}}<span>Re-fetch from server</span>{{end}}
@@ -258,7 +258,7 @@
 </button>
 {{else if eq .ID "refetch"}}
 <button type="button" title="Re-fetch from server" aria-label="Re-fetch message from server"
-  onclick="var f=this.closest('[data-thread-body]').querySelector('iframe');f.src='/messages/{{$m.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':'')"
+  onclick="var f=this.closest('[data-thread-body]').querySelector('iframe');loadBody(f,'/messages/{{$m.ID}}/body?refresh=1'+(f.src.indexOf('ext=1')>-1?'&ext=1':''))"
   class="{{$btn}} hover:text-sky-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99"/></svg>
 </button>

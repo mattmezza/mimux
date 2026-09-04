@@ -29,6 +29,7 @@ type Prefs struct {
 	ShowAccountBadge    bool              // show account-name badge on list rows (default true)
 	ShowAttachMarker    bool              // show attachment marker on list rows (default true)
 	ShowListLabels      bool              // show labels on message-list rows (default false)
+	DaySeparators       bool              // group message-list rows by local received day (default true)
 	ShowFavicon         bool              // use sender-domain favicon as avatar (default false)
 	HideAvatarMobile    bool              // hide sender avatar/favicon on mobile only (default false)
 	AvatarShape         string            // sender-avatar corner style: circle|rounded|square (default circle)
@@ -236,6 +237,7 @@ func defaultPrefs() Prefs {
 		ShowAccountBadge:    true,
 		ShowAttachMarker:    true,
 		ShowListLabels:      false,
+		DaySeparators:       true,
 		ShowFavicon:         false,
 		HideAvatarMobile:    false,
 		AvatarShape:         "circle",
@@ -353,6 +355,9 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("show_list_labels"); ok {
 		p.ShowListLabels = v == "1"
 	}
+	if v, ok := s.getSetting("day_separators"); ok {
+		p.DaySeparators = v == "1"
+	}
 	if v, ok := s.getSetting("show_favicon"); ok {
 		p.ShowFavicon = v == "1"
 	}
@@ -466,6 +471,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"show_account_badge":    boolStr(p.ShowAccountBadge),
 		"show_attach_marker":    boolStr(p.ShowAttachMarker),
 		"show_list_labels":      boolStr(p.ShowListLabels),
+		"day_separators":        boolStr(p.DaySeparators),
 		"show_favicon":          boolStr(p.ShowFavicon),
 		"hide_avatar_mobile":    boolStr(p.HideAvatarMobile),
 		"avatar_shape":          p.AvatarShape,

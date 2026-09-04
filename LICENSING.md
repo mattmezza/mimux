@@ -5,8 +5,9 @@ displays a single licence badge derived from the root `LICENSE` file, so that
 badge reads **AGPL-3.0** — but it does not describe the whole tree. This file
 does.
 
-Copyright on every part of this repository is held by **Matteo Merola**. That
-single fact is what makes the arrangement below work; see
+Copyright on mimux's original code is held by **Matteo Merola**. Vendored
+third-party components retain their own copyrights and licences as listed
+below. The first fact is what makes the arrangement below work; see
 [Why this is not a licence violation](#why-this-is-not-a-licence-violation).
 
 ## What is under which licence
@@ -14,6 +15,7 @@ single fact is what makes the arrangement below work; see
 | Path | Licence | What it is |
 |------|---------|------------|
 | `cmd/`, `internal/`, `web/` | **AGPL-3.0-only** | The mimux mail client. The whole thing. |
+| `web/static/js/pdf*.mjs` | **Apache-2.0** (`web/static/js/pdfjs-LICENSE.txt`) | Mozilla pdf.js 6.2.108, vendored for cross-browser attachment previews. |
 | `pro/` | **Elastic Licence 2.0** (`pro/LICENSE`) | The commercial automation layer: REST API, MCP server, webhooks, licence enforcement. |
 | `account/` | **Elastic Licence 2.0** (`account/LICENSE`) | The licence-selling service at account.mimux.dev. Runs only on the maintainer's infrastructure, never distributed; public so you can verify there is no phone-home. |
 | `docs/` | **AGPL-3.0-only** | The documentation site at docs.mimux.dev. Prose pages plus the API reference, which is rendered from `pro/openapi.json`. |

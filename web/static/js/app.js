@@ -1,5 +1,20 @@
 // mimux app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
 
+// Replace stale reading-pane content as soon as a message request starts.
+// Templates live outside the htmx swap target, so this keeps working after
+// every message/thread response replaces the pane's inner HTML.
+document.addEventListener("htmx:beforeRequest", (e) => {
+  if (e.detail?.target?.id !== "reading-pane") return;
+  const path = e.detail.requestConfig?.path || "";
+  const template = document.getElementById(path.startsWith("/t/") ? "reading-skeleton-thread" : "reading-skeleton-single");
+  if (template && /^\/(?:messages|t)\//.test(path)) e.detail.target.replaceChildren(template.content.cloneNode(true));
+});
+document.addEventListener("htmx:afterRequest", (e) => {
+  const pane = e.detail?.target;
+  if (pane?.id !== "reading-pane" || !e.detail.failed || !pane.querySelector("[data-reading-skeleton]")) return;
+  pane.innerHTML = '<div role="alert" class="m-auto p-6 text-center text-sm text-red-300">Couldn\'t load this message. Please try again.</div>';
+});
+
 // The active quick filter, read from its canonical DOM reflection (the
 // :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.
 function activeFilter() {
@@ -606,10 +621,11 @@ document.addEventListener("htmx:afterSettle", (e) => {
 document.addEventListener("htmx:afterSettle", (e) => {
   if (!e.target?.closest?.("#message-list-items")) return;
   const seen = new Set();
-  document.querySelectorAll("#message-list-items > li[id]").forEach((li) => {
+  document.querySelectorAll("#message-list-items li[id]").forEach((li) => {
     if (seen.has(li.id)) li.remove();
     else seen.add(li.id);
   });
+  document.querySelectorAll("#message-list-items [data-day-group]").forEach(cleanupDayGroup);
 });
 document.addEventListener("htmx:afterSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
@@ -782,10 +798,24 @@ function moveSelected(path, label) {
 // Fade + slide a row out, then drop it (see .row-removing in app.css).
 function removeRowAnimated(el) {
   if (!el) return;
+  const group = el.closest("[data-day-group]");
+  const root = !el.hasAttribute("data-mid") && el.id?.startsWith("msg-") ? el.id.slice(4) : "";
+  const sub = root ? document.getElementById(`sub-${root}`) : null;
   el.classList.add("row-removing");
-  setTimeout(() => el.remove(), 200);
+  setTimeout(() => {
+    el.remove();
+    sub?.remove();
+    cleanupDayGroup(group);
+  }, 200);
 }
 window.removeRowAnimated = removeRowAnimated;
+
+// Date wrappers are presentation only. Never leave a separator (or an
+// hx-preserved sub-row container) behind without a top-level conversation.
+function cleanupDayGroup(group) {
+  if (!group?.matches?.("[data-day-group]")) return;
+  if (!group.querySelector(":scope > ul > li[data-message-row]")) group.remove();
+}
 
 // Reset the reading pane back to its empty placeholder — used by back
 // buttons, Escape (mobile), and after archive/delete/spam. Keeping the
@@ -1068,16 +1098,176 @@ window.toggleThreadMessage = toggleThreadMessage;
 // --- attachments: inline preview (image/pdf/text) without downloading. The
 // attachment endpoint is same-origin and served under a locked-down CSP, so
 // embedding it here is safe. Toggles the preview panel; loads it only once. ---
-window.previewAttachment = function (btn, url, kind) {
+function stopPDFPreview(holder) {
+  const state = holder?._pdfPreview;
+  if (!state) return;
+  state.cancelled = true;
+  state.observer?.disconnect();
+  state.renderTasks.forEach((task) => { try { task.cancel(); } catch (_) {} });
+  state.renderTasks.clear();
+  state.loadingTask?.destroy();
+  holder._pdfPreview = null;
+  delete holder.dataset.loaded;
+  holder.removeAttribute("aria-busy");
+  holder.replaceChildren();
+}
+
+document.addEventListener("htmx:beforeCleanupElement", (event) => {
+  const root = event.detail?.elt || event.target;
+  if (!(root instanceof Element)) return;
+  if (root.matches?.("[data-preview]")) stopPDFPreview(root);
+  root.querySelectorAll?.("[data-preview]").forEach(stopPDFPreview);
+});
+
+async function startPDFPreview(holder, url) {
+  // Even a small, hostile PDF can advertise thousands of pages or enormous
+  // media boxes. Keep both DOM and raster memory bounded; pages outside the
+  // scroll viewport are placeholders and old canvases are evicted.
+  const MAX_PAGES = 100, MAX_CANVASES = 6, MAX_PIXELS = 12_000_000, MAX_EDGE = 4096;
+  const state = { cancelled: false, active: 0, queue: [], queued: new Set(), renderTasks: new Map(), rendered: new Map() };
+  holder._pdfPreview = state;
+  const pdfjs = await import("/static/js/pdf.min.mjs");
+  if (state.cancelled) return;
+  pdfjs.GlobalWorkerOptions.workerSrc = "/static/js/pdf.worker.min.mjs";
+  state.loadingTask = pdfjs.getDocument({ url });
+  const pdf = await state.loadingTask.promise;
+  state.pdf = pdf;
+  if (state.cancelled) return;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "mb-2 flex items-center justify-between gap-3 text-[11px] text-zinc-400";
+  const status = document.createElement("span");
+  status.textContent = `${pdf.numPages} page${pdf.numPages === 1 ? "" : "s"}${pdf.numPages > MAX_PAGES ? `; preview limited to ${MAX_PAGES}` : ""}`;
+  const native = document.createElement("a");
+  native.href = url;
+  native.target = "_blank";
+  native.rel = "noopener";
+  native.className = "shrink-0 underline text-indigo-300 hover:text-indigo-200";
+  native.textContent = "Open in accessible PDF viewer";
+  native.setAttribute("aria-label", "Open PDF in the browser viewer for searchable text, links, and assistive technology");
+  toolbar.append(status, native);
+
+  const pages = document.createElement("div");
+  pages.className = "space-y-3 max-h-[32rem] overflow-auto rounded bg-zinc-800/50 p-2";
+  pages.setAttribute("aria-label", `Visual preview of ${Math.min(pdf.numPages, MAX_PAGES)} PDF pages`);
+  const count = Math.min(pdf.numPages, MAX_PAGES);
+  for (let number = 1; number <= count; number++) {
+    const slot = document.createElement("div");
+    slot.dataset.pdfPage = String(number);
+    slot.className = "min-h-64 flex items-center justify-center bg-zinc-800 text-zinc-500 text-xs";
+    slot.setAttribute("aria-label", `PDF page ${number} visual preview`);
+    slot.textContent = `Page ${number}`;
+    pages.appendChild(slot);
+  }
+  holder.replaceChildren(toolbar, pages);
+  holder.removeAttribute("aria-busy");
+
+  const evict = () => {
+    while (state.rendered.size > MAX_CANVASES) {
+      const candidate = [...state.rendered].find(([slot]) => slot.dataset.visible !== "1") || state.rendered.entries().next().value;
+      const [slot, page] = candidate;
+      page.cleanup();
+      state.rendered.delete(slot);
+      slot.replaceChildren(`Page ${slot.dataset.pdfPage}`);
+      slot.classList.add("min-h-64");
+    }
+  };
+  const pump = () => {
+    while (!state.cancelled && state.active < 2 && state.queue.length) {
+      const slot = state.queue.shift();
+      state.queued.delete(slot);
+      if (!slot.isConnected || slot.dataset.visible !== "1" || state.rendered.has(slot)) continue;
+      state.active++;
+      let loadedPage = null;
+      (async () => {
+        const number = Number(slot.dataset.pdfPage);
+        const page = loadedPage = await pdf.getPage(number);
+        if (state.cancelled || slot.dataset.visible !== "1") { page.cleanup(); return; }
+        const natural = page.getViewport({ scale: 1 });
+        const available = Math.max(1, pages.clientWidth - 16);
+        const cssScale = Math.min(2, available / natural.width, MAX_EDGE / natural.height);
+        const viewport = page.getViewport({ scale: cssScale });
+        let ratio = Math.min(window.devicePixelRatio || 1, 2);
+        ratio = Math.min(ratio, MAX_EDGE / viewport.width, MAX_EDGE / viewport.height,
+          Math.sqrt(MAX_PIXELS / (viewport.width * viewport.height)));
+        ratio = Math.max(0.1, ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+        canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.className = "block max-w-full h-auto mx-auto bg-white shadow-sm";
+        canvas.setAttribute("aria-hidden", "true");
+        slot.replaceChildren(canvas);
+        slot.classList.remove("min-h-64");
+        const task = page.render({ canvasContext: canvas.getContext("2d"), viewport,
+          transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] });
+        state.renderTasks.set(slot, task);
+        await task.promise;
+        state.renderTasks.delete(slot);
+        if (!state.cancelled) { state.rendered.set(slot, page); evict(); }
+        else page.cleanup();
+      })().catch((err) => {
+        state.renderTasks.delete(slot);
+        loadedPage?.cleanup();
+        if (!state.cancelled && err?.name !== "RenderingCancelledException") console.error("PDF page preview failed", err);
+      }).finally(() => { state.active--; pump(); });
+    }
+  };
+  state.observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const slot = entry.target;
+      slot.dataset.visible = entry.isIntersecting ? "1" : "0";
+      if (entry.isIntersecting && !state.rendered.has(slot) && !state.queued.has(slot)) {
+        state.queued.add(slot); state.queue.push(slot);
+      } else if (!entry.isIntersecting) {
+        const task = state.renderTasks.get(slot);
+        if (task) { try { task.cancel(); } catch (_) {} }
+      }
+    });
+    evict(); pump();
+  }, { root: pages, rootMargin: "320px 0px" });
+  pages.querySelectorAll("[data-pdf-page]").forEach((slot) => state.observer.observe(slot));
+}
+
+window.previewAttachment = async function (btn, url, kind) {
   const holder = btn.closest("[data-attachment]")?.querySelector("[data-preview]");
   if (!holder) return;
-  if (holder.dataset.loaded) { holder.classList.toggle("hidden"); return; }
+  if (holder.dataset.loaded) {
+    if (kind === "pdf" && !holder.classList.contains("hidden")) {
+      stopPDFPreview(holder);
+      holder.classList.add("hidden");
+      return;
+    }
+    holder.classList.toggle("hidden"); return;
+  }
   holder.dataset.loaded = "1";
   holder.classList.remove("hidden");
   // Fetching the part means a live IMAP round-trip, so show the same spinner
   // the list header uses until the element fires load (or errors).
   holder.setAttribute("aria-busy", "true");
   holder.innerHTML = `<span data-preview-spinner role="status" class="flex items-center gap-1.5 text-[11px] text-zinc-500"><svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg>Loading preview…</span>`;
+  if (kind === "pdf") {
+    try {
+      await startPDFPreview(holder, url);
+    } catch (err) {
+      if (holder._pdfPreview?.cancelled || !holder.dataset.loaded) return;
+      console.error("PDF preview failed", err);
+      holder.removeAttribute("aria-busy");
+      holder.replaceChildren();
+      const alert = document.createElement("div");
+      alert.role = "alert";
+      alert.className = "text-xs text-red-300";
+      alert.append("This PDF could not be previewed. ");
+      const download = document.createElement("a");
+      download.className = "underline hover:text-red-200";
+      download.href = url + (url.includes("?") ? "&" : "?") + "dl=1";
+      download.textContent = "Download it instead";
+      alert.append(download, ".");
+      holder.append(alert);
+    }
+    return;
+  }
   const el = document.createElement(kind === "image" ? "img" : "iframe");
   if (kind === "image") { el.alt = ""; el.className = "max-h-96 max-w-full rounded hidden"; }
   else { el.title = "Attachment preview"; el.className = "w-full h-96 rounded border-0 bg-white hidden"; }
@@ -1092,6 +1282,14 @@ window.previewAttachment = function (btn, url, kind) {
   el.addEventListener("error", done);
   el.src = url;
   holder.appendChild(el);
+};
+
+// Reload an already-displayed message body without adding a nested iframe
+// history entry. Otherwise browser Back visits stale translated/image-blocked
+// body states before it can return the mobile reading pane to the list.
+window.loadBody = function (frame, url) {
+  if (!frame || !url) return;
+  if (frame.contentWindow) frame.contentWindow.location.replace(url);
 };
 
 // --- per-message dark/light: email bodies render light by default (many
@@ -1789,6 +1987,34 @@ function setRowRead(row) {
   // Brief highlight so the state change is noticeable when it fires on a delay.
   row.classList.add("read-flash");
   setTimeout(() => row.classList.remove("read-flash"), 700);
+
+  if (!row.hasAttribute("data-mid") && row.querySelector(".thread-toggle") && activeFilter() === "unread") {
+    const root = row.id.startsWith("msg-") ? row.id.slice(4) : "";
+    const sub = root && document.getElementById(`sub-${root}`);
+    sub?.classList.add("hidden");
+    const toggle = row.querySelector(".thread-toggle");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.firstElementChild?.classList.remove("rotate-90");
+  }
+
+  // A sub-row carries one message's state while its parent carries the
+  // conversation aggregate. Once the final unread sub-row is cleared, update
+  // that aggregate too. Under the Unread filter, collapse it at the same time
+  // so preserved sub-rows never float beneath a hidden thread header.
+  if (row.hasAttribute("data-mid")) {
+    const sub = row.closest('li[id^="sub-"]');
+    if (sub && !sub.querySelector('li[data-mid][data-unread]')) {
+      const root = sub.id.slice(4);
+      const parent = document.getElementById(`msg-${root}`);
+      if (parent?.hasAttribute("data-unread")) setRowRead(parent);
+      if (parent && activeFilter() === "unread") {
+        sub.classList.add("hidden");
+        const toggle = parent.querySelector(".thread-toggle");
+        toggle?.setAttribute("aria-expanded", "false");
+        toggle?.firstElementChild?.classList.remove("rotate-90");
+      }
+    }
+  }
 }
 
 // Inverse of markRowRead: flip a row back to unread in place (re-add the dot,

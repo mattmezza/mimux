@@ -18,6 +18,9 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	if p.ShowListLabels {
 		t.Fatalf("ShowListLabels should default off: %+v", p)
 	}
+	if !p.DaySeparators {
+		t.Fatalf("DaySeparators should default on: %+v", p)
+	}
 	if p.AvatarShape != "circle" {
 		t.Fatalf("AvatarShape should default to circle: %+v", p)
 	}
@@ -40,6 +43,7 @@ func TestPrefsRoundTrip(t *testing.T) {
 		PreviewMobileLines:  5,
 		ShowAvatar:          false,
 		ShowListLabels:      true,
+		DaySeparators:       true,
 		AvatarShape:         "square",
 		AccountColors:       map[string]string{"work": "#6366f1", "personal": "#22c55e"},
 	}
@@ -49,7 +53,7 @@ func TestPrefsRoundTrip(t *testing.T) {
 	got := s.GetPrefs()
 	if got.MarkReadDelay != want.MarkReadDelay || got.SyncIntervalMin != want.SyncIntervalMin ||
 		got.ShowAvatar != want.ShowAvatar ||
-		got.ShowListLabels != want.ShowListLabels || got.AvatarShape != want.AvatarShape {
+		got.ShowListLabels != want.ShowListLabels || got.DaySeparators != want.DaySeparators || got.AvatarShape != want.AvatarShape {
 		t.Fatalf("scalars mismatch: got %+v want %+v", got, want)
 	}
 	if got.PreviewDesktop != want.PreviewDesktop || got.PreviewDesktopLines != want.PreviewDesktopLines ||
