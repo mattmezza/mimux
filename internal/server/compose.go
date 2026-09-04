@@ -1018,7 +1018,7 @@ func (s *Server) handleDraftsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("drafts: scheduled", "err", err)
 	}
-	s.render(w, "drafts", map[string]any{
+	s.renderRequest(w, r, "drafts", map[string]any{
 		"CSRF":      auth.EnsureCSRF(w, r, s.secure),
 		"Sidebar":   s.sidebarData(),
 		"Drafts":    drafts,

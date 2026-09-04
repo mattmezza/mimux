@@ -63,10 +63,11 @@ type Config struct {
 }
 
 type Server struct {
-	Host    string
-	Port    int
-	BaseURL string
-	Secret  string
+	Host            string
+	Port            int
+	BaseURL         string
+	BaseURLExplicit bool // true when MIMUX_BASE_URL was supplied
+	Secret          string
 }
 
 type DB struct {
@@ -224,6 +225,7 @@ func Load() (*Config, error) {
 	}
 	if v := Env("BASE_URL"); v != "" {
 		cfg.Server.BaseURL = v
+		cfg.Server.BaseURLExplicit = true
 	} else {
 		cfg.Server.BaseURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
 	}

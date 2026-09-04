@@ -227,7 +227,7 @@ func (s *Server) handleWebhookDeliveries(w http.ResponseWriter, r *http.Request)
 	if page < pages {
 		data["NextURL"] = deliveriesURL(ep.ID, f, page+1)
 	}
-	s.render(w, "deliveries", data)
+	s.renderRequest(w, r, "deliveries", data)
 }
 
 // deliveriesURL rebuilds this screen's own URL with one page number changed —

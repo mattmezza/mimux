@@ -135,6 +135,17 @@ func (s *Server) render(w http.ResponseWriter, page string, data map[string]any)
 	}
 }
 
+// renderRequest renders a full page with request-aware public metadata. The
+// configured base URL wins behind reverse proxies; otherwise the browser-facing
+// request origin is more accurate than the localhost bootstrap default.
+func (s *Server) renderRequest(w http.ResponseWriter, r *http.Request, page string, data map[string]any) {
+	if data == nil {
+		data = make(map[string]any)
+	}
+	data["OGOrigin"] = s.publicOrigin(r)
+	s.render(w, page, data)
+}
+
 // pageData is what base.html needs from every full page. Split out of render
 // because the filters router owns its own template set and used to render
 // without any of it — no custom accent, no app icon, no sync spinner.
@@ -147,6 +158,31 @@ func (s *Server) pageData(data map[string]any) {
 	// paint instead of waiting for the first SSE event.
 	data["Syncing"] = s.mail.AnySyncing()
 	s.appearanceData(data)
+	if _, ok := data["OGOrigin"]; !ok {
+		data["OGOrigin"] = cleanOrigin(s.cfg.Server.BaseURL)
+	}
+}
+
+func (s *Server) publicOrigin(r *http.Request) string {
+	if s.cfg.Server.BaseURLExplicit {
+		return cleanOrigin(s.cfg.Server.BaseURL)
+	}
+	scheme := "http"
+	if r.TLS != nil || strings.EqualFold(r.Header.Get("X-Forwarded-Proto"), "https") {
+		scheme = "https"
+	}
+	if host := strings.TrimSpace(r.Host); host != "" {
+		return scheme + "://" + host
+	}
+	return cleanOrigin(s.cfg.Server.BaseURL)
+}
+
+func cleanOrigin(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return strings.TrimRight(raw, "/")
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 // filtersPageData is pageData plus the vocabulary the filters form offers:
@@ -375,7 +411,7 @@ func (s *Server) handleSetupForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/login", http.StatusSeeOther)
 		return
 	}
-	s.render(w, "setup", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)})
+	s.renderRequest(w, r, "setup", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure)})
 }
 
 func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
@@ -385,7 +421,7 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 	}
 	username, password := r.PostFormValue("username"), r.PostFormValue("password")
 	if username == "" || len(password) < 8 {
-		s.render(w, "setup", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure), "Error": "Username required; password must be at least 8 characters."})
+		s.renderRequest(w, r, "setup", map[string]any{"CSRF": auth.EnsureCSRF(w, r, s.secure), "Error": "Username required; password must be at least 8 characters."})
 		return
 	}
 	hash, err := auth.HashPassword(password)
@@ -405,7 +441,7 @@ func (s *Server) handleLoginForm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/setup", http.StatusSeeOther)
 		return
 	}
-	s.render(w, "login", map[string]any{
+	s.renderRequest(w, r, "login", map[string]any{
 		"CSRF": auth.EnsureCSRF(w, r, s.secure),
 		"Next": safeNext(r.URL.Query().Get("next")),
 	})
@@ -420,7 +456,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if u == nil || !auth.VerifyPassword(password, u.PasswordHash) {
-		s.render(w, "login", map[string]any{
+		s.renderRequest(w, r, "login", map[string]any{
 			"CSRF":  auth.EnsureCSRF(w, r, s.secure),
 			"Next":  next,
 			"Error": "Wrong username or password.",
@@ -483,7 +519,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 		if id, err := strconv.ParseInt(fid, 10, 64); err == nil {
 			if f, _ := s.store.FolderByID(id); f != nil {
 				s.fillList(data, f, false, "")
-				s.render(w, "inbox", data)
+				s.renderRequest(w, r, "inbox", data)
 				return
 			}
 		}
@@ -495,7 +531,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	} else if current, _ := s.store.FirstInbox(); current != nil {
 		s.fillList(data, current, false, "")
 	}
-	s.render(w, "inbox", data)
+	s.renderRequest(w, r, "inbox", data)
 }
 
 // handleEvents is the SSE stream: it relays sync-status, new-mail and toast
