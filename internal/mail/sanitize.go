@@ -225,7 +225,10 @@ func renderBodyDocument(fragment string, plain bool) string {
 	// base target=_blank: links/buttons in email must open in a new tab, not
 	// navigate the sandboxed iframe (which just breaks). Modern browsers imply
 	// rel=noopener for target=_blank, so no reverse-tabnabbing exposure.
-	return `<!doctype html><html><head><meta charset="utf-8"><base target="_blank">
+	// viewport meta: without it the iframe document falls back to a 980px layout
+	// viewport on mobile, and pinch-to-zoom anchors at the top-left corner
+	// instead of the center of the pinch (issue #52). Applies to plain text too.
+	return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=yes"><base target="_blank">
 <style>
   :root { color-scheme: light; }
   html, body { margin: 0; padding: 12px; }
