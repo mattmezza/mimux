@@ -50,6 +50,8 @@ func (a *api) mount(r chi.Router) {
 		r.Get("/folders", a.handleFolders)
 		r.Get("/messages", a.handleListMessages)
 		r.Get("/messages/{id}", a.handleGetMessage)
+		r.Get("/messages/{id}/headers", a.handleMessageHeaders)
+		r.Get("/messages/{id}/raw", a.handleRawMessage)
 		r.Get("/messages/{id}/attachments/{n}", a.handleAttachment)
 		r.Post("/messages/search", a.handleSearch)
 		r.Get("/search/jobs/{id}", a.handleSearchJob)
@@ -60,6 +62,7 @@ func (a *api) mount(r chi.Router) {
 		r.Use(requireScope("mail:send"))
 		r.Post("/messages/send", a.idem.wrap(a.handleSend))
 		r.Post("/drafts", a.idem.wrap(a.handleCreateDraft))
+		r.Post("/messages/{id}/forward-eml", a.idem.wrap(a.handleForwardEML))
 		r.Patch("/drafts/{id}", a.handleUpdateDraft)
 	})
 

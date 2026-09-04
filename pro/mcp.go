@@ -6,6 +6,7 @@ package pro
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -84,6 +85,7 @@ func buildMCP(a *api, tok *store.APIToken) *mcp.Server {
 				"themselves are the question (deliverability, routing, a Received: chain): they are long, and left " +
 				"out otherwise.",
 		}, a.mcpReadMessage)
+		mcp.AddTool(s, &mcp.Tool{Name: "get_raw_message", Description: "Fetch the exact RFC 822 message as base64, including headers, MIME body and attachments."}, a.mcpRawMessage)
 	}
 
 	if tok.HasScope("mail:modify") {
@@ -119,6 +121,7 @@ func buildMCP(a *api, tok *store.APIToken) *mcp.Server {
 				"This is the only tool that sends mail. Only call it after the human has seen the draft_reply " +
 				"preview and approved it.",
 		}, a.mcpSendDraft)
+		mcp.AddTool(s, &mcp.Tool{Name: "draft_forward_as_eml", Description: "Create a reviewable draft with a message attached verbatim as .eml. NOTHING IS SENT; show the preview and use send_draft only after approval."}, a.mcpDraftForwardEML)
 	}
 
 	if tok.HasScope("mail:read") {
@@ -300,6 +303,22 @@ func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in rea
 	return structured(out)
 }
 
+type rawMessageArgs struct {
+	ID int64 `json:"id" jsonschema:"the message id"`
+}
+
+func (a *api) mcpRawMessage(ctx context.Context, _ *mcp.CallToolRequest, in rawMessageArgs) (*mcp.CallToolResult, any, error) {
+	msg, err := a.store.MessageByID(in.ID)
+	if err != nil || msg == nil {
+		return nil, nil, fmt.Errorf("no message with id %d", in.ID)
+	}
+	raw, err := a.mail.Raw(ctx, msg)
+	if err != nil {
+		return nil, nil, fmt.Errorf("couldn't fetch raw message: %w", err)
+	}
+	return structured(map[string]any{"id": msg.ID, "filename": mail.MessageFilename(msg.Subject, msg.ID), "content_type": "message/rfc822", "data": base64.StdEncoding.EncodeToString(raw)})
+}
+
 // --- modify tools ---
 
 type flagArgs struct {
@@ -453,6 +472,37 @@ type sendDraftArgs struct {
 	DraftID int64 `json:"draft_id" jsonschema:"the draft id from draft_reply"`
 }
 
+type draftForwardEMLArgs struct {
+	ID   int64    `json:"id" jsonschema:"the original message id"`
+	To   []string `json:"to,omitempty" jsonschema:"recipient addresses; may be added later in the web draft"`
+	Body string   `json:"body,omitempty" jsonschema:"optional note above the attachment"`
+}
+
+func (a *api) mcpDraftForwardEML(ctx context.Context, _ *mcp.CallToolRequest, in draftForwardEMLArgs) (*mcp.CallToolResult, any, error) {
+	orig, err := a.store.MessageByID(in.ID)
+	if err != nil || orig == nil {
+		return nil, nil, fmt.Errorf("no message with id %d", in.ID)
+	}
+	raw, err := a.mail.Raw(ctx, orig)
+	if err != nil {
+		return nil, nil, fmt.Errorf("couldn't fetch raw message: %w", err)
+	}
+	if len(raw) > maxAttachTotal {
+		return nil, nil, fmt.Errorf("message exceeds the %dMB attachment limit", maxAttachTotal>>20)
+	}
+	d := &store.Draft{Account: orig.Account, To: strings.Join(in.To, ", "), Subject: mail.PrefixSubject("forward", orig.Subject), Body: in.Body, Mode: "plain", Kind: "forward"}
+	if err := a.store.UpsertDraft(d); err != nil {
+		return nil, nil, fmt.Errorf("couldn't save draft: %w", err)
+	}
+	att := &store.DraftAttachment{Filename: mail.MessageFilename(orig.Subject, orig.ID), ContentType: "message/rfc822", Data: raw}
+	if err := a.store.AddDraftAttachment(d.ID, att); err != nil {
+		_ = a.store.DeleteDraft(d.ID)
+		return nil, nil, fmt.Errorf("couldn't attach message: %w", err)
+	}
+	a.publishDraft(d)
+	return structured(map[string]any{"draft_id": d.ID, "account": d.Account, "to": in.To, "subject": d.Subject, "body": d.Body, "attachment": att.Filename, "note": "Draft saved, NOT sent. Show this preview to the human; send with send_draft only after approval."})
+}
+
 func (a *api) mcpSendDraft(ctx context.Context, _ *mcp.CallToolRequest, in sendDraftArgs) (*mcp.CallToolResult, any, error) {
 	d, err := a.store.DraftByID(in.DraftID)
 	if err != nil || d == nil {
@@ -468,6 +518,13 @@ func (a *api) mcpSendDraft(ctx context.Context, _ *mcp.CallToolRequest, in sendD
 	in2 := mail.ComposeInput{
 		To: mail.SplitAddrList(d.To), Cc: mail.SplitAddrList(d.Cc), Bcc: mail.SplitAddrList(d.Bcc),
 		Subject: d.Subject, Body: d.Body, Mode: d.Mode, From: a.selfAddress(account),
+	}
+	if kept, kerr := a.store.DraftAttachments(d.ID); kerr != nil {
+		return nil, nil, fmt.Errorf("couldn't read draft attachments: %w", kerr)
+	} else {
+		for _, at := range kept {
+			in2.Attachments = append(in2.Attachments, mail.OutAttachment{Filename: at.Filename, ContentType: at.ContentType, Data: at.Data})
+		}
 	}
 	if len(in2.To) == 0 {
 		return nil, nil, fmt.Errorf("draft has no recipients")

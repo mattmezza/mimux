@@ -4,6 +4,27 @@
      buttons). select-text keeps the old select-and-copy working too. */}}
 {{define "copy_addr"}}<button type="button" data-copy-addr="{{.}}" title="Copy address" class="select-text hover:text-indigo-300 hover:underline decoration-dotted underline-offset-2">{{.}}</button>{{end}}
 
+{{define "qa_source"}}
+{{$m := .M}}{{$btn := .Btn}}{{$ic := .Icon}}{{$menu := .Menu}}
+{{if eq .ID "headers"}}
+<button type="button" title="View full message headers" aria-label="View full message headers"
+  hx-get="/messages/{{$m.ID}}/headers" hx-target="#source-modal-root" hx-swap="innerHTML"
+  class="{{$btn}} hover:text-sky-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 6.75h15M4.5 12h15m-15 5.25h9"/></svg>{{if $menu}}<span>View headers</span>{{end}}
+</button>
+{{else if eq .ID "download-eml"}}
+<a title="Download as .eml" aria-label="Download message as .eml" href="/messages/{{$m.ID}}/raw" download class="{{$btn}} hover:text-sky-300">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg>{{if $menu}}<span>Download .eml</span>{{end}}
+</a>
+{{else if eq .ID "forward-eml"}}
+<button type="button" title="Forward as .eml" aria-label="Forward message as an attached .eml"
+  hx-get="/compose?reply={{$m.ID}}&mode=forward-eml" hx-target="#compose-root" hx-swap="innerHTML"
+  class="{{$btn}} hover:text-zinc-100">
+  <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 4h5v5M19 4l-7 7M5 7v12h12v-5"/></svg>{{if $menu}}<span>Forward as .eml</span>{{end}}
+</button>
+{{end}}
+{{end}}
+
 {{define "message_detail"}}
 {{$m := .Msg}}
 <div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
@@ -147,6 +168,8 @@
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H8a6 6 0 0 0-6 6v3"/></svg>
   {{if $menu}}<span>Forward</span>{{end}}
 </button>
+{{else if or (eq .ID "headers") (eq .ID "download-eml") (eq .ID "forward-eml")}}
+{{template "qa_source" (dict "ID" .ID "M" $m "Btn" $btn "Icon" $ic "Menu" $menu)}}
 {{else if eq .ID "archive"}}
 <button title="Archive (e)" aria-label="Archive" hx-post="/messages/{{$m.ID}}/archive" hx-swap="none"
   {{/* after-request fires for failures too (4xx/5xx/network) — only tear the row
