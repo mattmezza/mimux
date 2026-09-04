@@ -27,6 +27,41 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	if p.SwipeLeftAction != "none" || p.SwipeRightAction != "unread" {
 		t.Fatalf("unexpected swipe defaults: SwipeLeftAction=%q, SwipeRightAction=%q", p.SwipeLeftAction, p.SwipeRightAction)
 	}
+	if p.Keybindings["next"] != "j" || p.Keybindings["goto_inbox"] != "g i" || p.Keybindings["goto_account_9"] != "9" {
+		t.Fatalf("unexpected keybinding defaults: %+v", p.Keybindings)
+	}
+}
+
+func TestKeybindingsRoundTripAndInvalidImportFallback(t *testing.T) {
+	s := open(t)
+	p := s.GetPrefs()
+	p.Keybindings["archive"] = "x"
+	if err := s.SavePrefs(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetPrefs().Keybindings["archive"]; got != "x" {
+		t.Fatalf("archive = %q", got)
+	}
+	if err := s.setSetting("keybindings", `{"archive":"Enter","unknown":"z"}`); err != nil {
+		t.Fatal(err)
+	}
+	got := s.GetPrefs().Keybindings
+	if got["archive"] != "e" || got["unknown"] != "" {
+		t.Fatalf("invalid imported bindings survived: %+v", got)
+	}
+}
+
+func TestValidateKeybinding(t *testing.T) {
+	for _, valid := range []string{"x", "X", "?", "Space", "g i"} {
+		if err := ValidateKeybinding(valid); err != nil {
+			t.Errorf("%q: %v", valid, err)
+		}
+	}
+	for _, invalid := range []string{"", "Enter", "Tab", "ArrowUp", "Ctrl+x", "g i x", " "} {
+		if err := ValidateKeybinding(invalid); err == nil {
+			t.Errorf("%q unexpectedly valid", invalid)
+		}
+	}
 }
 
 func TestPrefsRoundTrip(t *testing.T) {
