@@ -22,7 +22,7 @@
   <form id="settings-subform" hidden></form>
 
   <form method="post" action="/settings" hx-post="/settings" hx-swap="none"
-        hx-on::after-request="if (event.detail.successful) { toast('Settings saved'); } else { toast(&quot;Couldn't save settings — please try again.&quot;); }"
+        hx-on::after-request="if (event.detail.successful) { toast('Settings saved'); } else { toast((event.detail.xhr.responseText || &quot;Couldn't save settings — please try again.&quot;).trim()); }"
         class="flex-1 min-h-0 flex flex-col">
     <input type="hidden" name="csrf_token" value="{{.CSRF}}">
     {{/* Which section's fields this post carries. Everything else in Prefs and
@@ -292,6 +292,40 @@
                 class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
               <span class="text-sm text-zinc-200">Remember light/dark choice per message</span>
             </label>
+          </section>
+          {{end}}
+
+          {{if eq .Section "keybindings"}}
+          <section class="space-y-5">
+            <div class="space-y-1">
+              <h2 class="text-sm font-semibold text-zinc-100">Keybindings</h2>
+              <p class="text-xs text-zinc-500">Click a shortcut, then press its new key. Sequence actions record two keys. Changes apply after saving and reloading.</p>
+            </div>
+            <div class="rounded-lg border border-zinc-800 bg-zinc-800/30 p-3 text-xs text-zinc-400 space-y-1">
+              <p><strong class="text-zinc-300">Reserved:</strong> Escape, Enter, Tab, arrow keys, and Ctrl/Command/Alt combinations stay with the browser and accessibility controls.</p>
+              <p>Shortcuts never fire while you type in search, compose, or another input. Keep j/k/h/l for familiar navigation if you can; put archive and delete where your hand naturally reaches.</p>
+              <p>Go-to shortcuts are two-key sequences such as <kbd class="rounded bg-zinc-700 px-1">g</kbd> <kbd class="rounded bg-zinc-700 px-1">i</kbd>.</p>
+            </div>
+            <div id="keybinding-error" role="alert" aria-live="polite" class="hidden rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-300"></div>
+            <div class="divide-y divide-zinc-800 rounded-lg border border-zinc-800">
+              {{$category := ""}}{{range .KeybindingActions}}
+              {{if ne .Category $category}}<div class="bg-zinc-800/50 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{{.Category}}</div>{{$category = .Category}}{{end}}
+              <div class="flex items-center gap-3 p-3" data-keybinding-row>
+                <div class="min-w-0 flex-1">
+                  <label for="binding-{{.ID}}" class="block text-sm text-zinc-200">{{.Label}}</label>
+                  <p class="text-xs text-zinc-500">{{.Description}}</p>
+                </div>
+                <input id="binding-{{.ID}}" name="binding:{{.ID}}" readonly value="{{index $.Prefs.Keybindings .ID}}"
+                  data-keybinding-input data-label="{{.Label}}" data-default="{{.Binding}}" data-sequence="{{if .Sequence}}1{{else}}0{{end}}"
+                  onclick="beginKeyRecording(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();beginKeyRecording(this)}"
+                  aria-describedby="keybinding-instructions" class="w-24 cursor-pointer rounded-md bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-center font-mono text-sm text-zinc-100 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500">
+                <button type="button" onclick="resetKeybinding(this.closest('[data-keybinding-row]').querySelector('[data-keybinding-input]'))"
+                  class="shrink-0 rounded-md px-2 py-1.5 text-xs text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100" aria-label="Reset {{.Label}}">Reset</button>
+              </div>
+              {{end}}
+            </div>
+            <p id="keybinding-instructions" class="sr-only">Activate a shortcut field and press a printable key. For a sequence, press two printable keys. Escape cancels recording.</p>
+            <button type="button" onclick="resetAllKeybindings()" class="rounded-md border border-zinc-700 px-3 py-2 text-sm text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100">Reset all to defaults</button>
           </section>
           {{end}}
 

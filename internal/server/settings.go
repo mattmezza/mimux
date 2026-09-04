@@ -36,6 +36,7 @@ type settingsPage struct {
 var settingsSections = []settingsPage{
 	{ID: "appearance", Label: "Appearance", Form: true},
 	{ID: "reading", Label: "Reading", Form: true},
+	{ID: "keybindings", Label: "Keybindings", Form: true},
 	{ID: "composing", Label: "Composing", Form: true},
 	{ID: "quick-actions", Label: "Quick actions", Form: true},
 	{ID: "notifications", Label: "Notifications", Form: true},
@@ -106,23 +107,24 @@ func (s *Server) settingsData(w http.ResponseWriter, r *http.Request) map[string
 		accountFolders[a.Name], _ = s.store.ListFolders(a.Name)
 	}
 	return map[string]any{
-		"CSRF":         auth.EnsureCSRF(w, r, s.secure),
-		"Sections":     settingsSections,
-		"Pro":          s.proView(),
-		"Prefs":        prefs,
-		"Accounts":     s.accounts(),
-		"AccountViews": s.accountViews(),
-		"AppConfig":    s.store.GetAppConfig(),
-		"Presets":      account.PresetNames(),
-		"QAEditor":     qaEditorRows(prefs.QuickActions),
-		"RowActions":   store.AllRowActions,
-		"NotifyScopes": store.AllNotifyScopes,
-		"ReplyQuotes":  store.AllReplyQuotes,
-		"PushDevices":  pushDevices,
-		"VAPIDKey":     s.mail.VAPIDPublicKey(),
-		"Accents":      store.AllAccents,
-		"IconShapes":   iconShapes,
-		"AvatarShapes": avatarShapes,
+		"CSRF":              auth.EnsureCSRF(w, r, s.secure),
+		"Sections":          settingsSections,
+		"Pro":               s.proView(),
+		"Prefs":             prefs,
+		"Accounts":          s.accounts(),
+		"AccountViews":      s.accountViews(),
+		"AppConfig":         s.store.GetAppConfig(),
+		"Presets":           account.PresetNames(),
+		"QAEditor":          qaEditorRows(prefs.QuickActions),
+		"RowActions":        store.AllRowActions,
+		"KeybindingActions": store.AllKeybindings,
+		"NotifyScopes":      store.AllNotifyScopes,
+		"ReplyQuotes":       store.AllReplyQuotes,
+		"PushDevices":       pushDevices,
+		"VAPIDKey":          s.mail.VAPIDPublicKey(),
+		"Accents":           store.AllAccents,
+		"IconShapes":        iconShapes,
+		"AvatarShapes":      avatarShapes,
 		// Resolved mark colour, so the colour input always has a value even
 		// when icon_accent is blank ("inherit the app accent").
 		"IconMark":       iconMark(s.store.GetAppConfig()),
@@ -206,6 +208,14 @@ func (s *Server) handleSettingsSave(w http.ResponseWriter, r *http.Request) {
 	}
 	if in("quick-actions") {
 		p.QuickActions = store.JoinQuickActions(store.SplitQuickActions(r.PostFormValue("quick_actions")))
+	}
+	if section == "keybindings" {
+		bindings, err := parseKeybindings(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		p.Keybindings = bindings
 	}
 	if in("notifications") {
 		applyNotifications(&p, r)
@@ -465,6 +475,45 @@ func clampPreviewLines(n int) int {
 		return 5
 	}
 	return n
+}
+
+func parseKeybindings(r *http.Request) (map[string]string, error) {
+	ids := store.KeybindingIDs()
+	for name := range r.PostForm {
+		if strings.HasPrefix(name, "binding:") && !ids[strings.TrimPrefix(name, "binding:")] {
+			return nil, fmt.Errorf("unknown keyboard action %q", strings.TrimPrefix(name, "binding:"))
+		}
+	}
+	out := make(map[string]string, len(store.AllKeybindings))
+	used := map[string]string{}
+	prefixes := map[string]string{}
+	for _, action := range store.AllKeybindings {
+		binding := r.PostFormValue("binding:" + action.ID)
+		if err := store.ValidateKeybinding(binding); err != nil {
+			return nil, fmt.Errorf("%s: %w", action.Label, err)
+		}
+		if strings.Contains(binding, " ") != action.Sequence() {
+			if action.Sequence() {
+				return nil, fmt.Errorf("%s must remain a two-key sequence", action.Label)
+			}
+			return nil, fmt.Errorf("%s uses one key, not a sequence", action.Label)
+		}
+		if other := used[binding]; other != "" {
+			return nil, fmt.Errorf("%s and %s cannot both use %q", other, action.Label, binding)
+		}
+		parts := strings.Split(binding, " ")
+		if len(parts) == 2 {
+			if other := used[parts[0]]; other != "" {
+				return nil, fmt.Errorf("%s uses %q, which is also the prefix for %s", other, parts[0], action.Label)
+			}
+			prefixes[parts[0]] = action.Label
+		} else if other := prefixes[binding]; other != "" {
+			return nil, fmt.Errorf("%s uses %q as a sequence prefix", other, binding)
+		}
+		used[binding] = action.Label
+		out[action.ID] = binding
+	}
+	return out, nil
 }
 
 func atoiDefault(s string, def int) int {

@@ -1,118 +1,24 @@
 {{define "help-overlay"}}
-<div id="help-overlay" hidden
-     class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"
-     onclick="this.hidden = true">
-  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-2xl" onclick="event.stopPropagation()"
-       role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+<div id="help-overlay" hidden class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4" onclick="this.hidden = true">
+  <div class="bg-zinc-800 rounded-lg shadow-lg p-6 w-full max-w-3xl max-h-[90dvh] overflow-y-auto" onclick="event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="shortcut-title">
     <div class="flex items-start justify-between gap-3 mb-4">
-      <h2 class="text-zinc-100 font-semibold">Keyboard shortcuts</h2>
-      <button type="button" title="Close (Esc)" aria-label="Close" onclick="document.getElementById('help-overlay').hidden = true"
-        class="shrink-0 p-1.5 -m-1.5 rounded-md text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors duration-150">
+      <div><h2 id="shortcut-title" class="text-zinc-100 font-semibold">Keyboard shortcuts</h2><p class="mt-1 text-xs text-zinc-500">Your current keymap</p></div>
+      <button type="button" title="Close (Esc)" aria-label="Close" onclick="document.getElementById('help-overlay').hidden = true" class="shrink-0 p-1.5 -m-1.5 rounded-md text-zinc-400 hover:bg-zinc-700 hover:text-zinc-100 transition-colors duration-150">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
       </button>
     </div>
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-      <!-- Navigation -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Navigation</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">j</kbd></dt>
-          <dd class="text-zinc-400">Next message (scroll down in the reading pane)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">k</kbd></dt>
-          <dd class="text-zinc-400">Previous message (scroll up in the reading pane)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">J</kbd></dt>
-          <dd class="text-zinc-400">Last message (scroll to bottom in the reading pane)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">K</kbd></dt>
-          <dd class="text-zinc-400">First message (scroll to top in the reading pane)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">h</kbd> / <kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">l</kbd></dt>
-          <dd class="text-zinc-400">Focus list / reading pane</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">f</kbd></dt>
-          <dd class="text-zinc-400">Cycle quick filter (All / Unread / Starred)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">o</kbd></dt>
-          <dd class="text-zinc-400">Open message</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Enter</kbd></dt>
-          <dd class="text-zinc-400">Open message</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Space</kbd></dt>
-          <dd class="text-zinc-400">Expand / collapse the selected thread</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Esc</kbd></dt>
-          <dd class="text-zinc-400">Close reading pane</dd>
-        </dl>
+    <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-2 text-xs">
+      {{$category := ""}}{{range .KeybindingActions}}
+      {{if ne .Category $category}}<div class="sm:col-span-2 mt-2 border-b border-zinc-700 pb-1 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{{.Category}}</div>{{$category = .Category}}{{end}}
+      <div class="grid grid-cols-[5.5rem_1fr] items-baseline gap-3">
+        <dt class="font-mono text-zinc-100"><kbd class="inline-block rounded bg-zinc-700 px-1.5 py-0.5">{{index $.Keybindings .ID}}</kbd></dt>
+        <dd><span class="text-zinc-300">{{.Label}}</span><span class="block text-zinc-500">{{.Description}}</span></dd>
       </div>
-
-      <!-- Actions -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Actions</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">r</kbd></dt>
-          <dd class="text-zinc-400">Mark as read</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">u</kbd></dt>
-          <dd class="text-zinc-400">Mark as unread</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">s</kbd></dt>
-          <dd class="text-zinc-400">Star / unstar</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">e</kbd></dt>
-          <dd class="text-zinc-400">Archive</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">d</kbd> or <kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">#</kbd></dt>
-          <dd class="text-zinc-400">Delete</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">!</kbd></dt>
-          <dd class="text-zinc-400">Mark as spam</dd>
-        </dl>
-      </div>
-
-      <!-- Compose -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Compose</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">c</kbd></dt>
-          <dd class="text-zinc-400">New message</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">R</kbd></dt>
-          <dd class="text-zinc-400">Reply</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">A</kbd></dt>
-          <dd class="text-zinc-400">Reply all</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">F</kbd></dt>
-          <dd class="text-zinc-400">Forward</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Ctrl</kbd>+<kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Enter</kbd></dt>
-          <dd class="text-zinc-400">Send</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Esc</kbd></dt>
-          <dd class="text-zinc-400">Close compose</dd>
-        </dl>
-      </div>
-
-      <!-- Search -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Search</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">/</kbd></dt>
-          <dd class="text-zinc-400">Focus search</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Tab</kbd> (in search)</dt>
-          <dd class="text-zinc-400">Cycle scope (folder/account/all)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Esc</kbd> (in search)</dt>
-          <dd class="text-zinc-400">Clear & return to inbox</dd>
-        </dl>
-      </div>
-
-      <!-- Go to -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Go to</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">0</kbd></dt>
-          <dd class="text-zinc-400">Unified inbox</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">1</kbd>–<kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">9</kbd></dt>
-          <dd class="text-zinc-400">Account inbox (by order)</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">g</kbd> then <kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">i</kbd></dt>
-          <dd class="text-zinc-400">Current account's inbox</dd>
-        </dl>
-      </div>
-
-      <!-- Help -->
-      <div>
-        <h3 class="text-zinc-400 font-semibold uppercase text-[11px] mb-2.5">Other</h3>
-        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">?</kbd></dt>
-          <dd class="text-zinc-400">Show this help</dd>
-          <dt class="font-mono text-zinc-100"><kbd class="bg-zinc-700 px-1.5 py-0.5 rounded">Esc</kbd></dt>
-          <dd class="text-zinc-400">Close help / close compose</dd>
-        </dl>
-      </div>
+      {{end}}
+    </dl>
+    <div class="mt-5 pt-4 border-t border-zinc-700 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <p class="text-xs text-zinc-500"><kbd class="rounded bg-zinc-700 px-1">Enter</kbd> opens the selected row; <kbd class="rounded bg-zinc-700 px-1">Esc</kbd> closes panes; <kbd class="rounded bg-zinc-700 px-1">Ctrl/⌘ Enter</kbd> sends while composing. These system keys are reserved.</p>
+      <a href="/settings/keybindings" class="shrink-0 rounded-md bg-indigo-500 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-400">Customize shortcuts</a>
     </div>
   </div>
 </div>

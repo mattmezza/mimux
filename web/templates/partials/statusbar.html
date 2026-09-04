@@ -22,7 +22,7 @@
     <button title="About" aria-label="About" onclick="document.dispatchEvent(new CustomEvent('mimux:about'))"
       class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">About</button>
     <button title="Keyboard shortcuts" onclick="document.dispatchEvent(new CustomEvent('mimux:help'))"
-      class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">Press ? for shortcuts</button>
+      class="px-2 py-1 rounded hover:bg-zinc-800 hover:text-zinc-300 transition-colors duration-150">Press {{index .Keybindings "help"}} for shortcuts</button>
   </div>
 </footer>
 {{end}}

@@ -1,5 +1,100 @@
 // mimux app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
 
+let recordingKeybinding = null;
+let recordingKeys = [];
+function keybindingError(message) {
+  const el = document.getElementById("keybinding-error");
+  if (!el) return;
+  el.textContent = message || "";
+  el.classList.toggle("hidden", !message);
+}
+function bindingConflict(input, value) {
+  return [...document.querySelectorAll("[data-keybinding-input]")].find((other) => {
+    if (other === input) return false;
+    if (other.value === value) return true;
+    const parts = value.split(" ");
+    const theirs = other.value.split(" ");
+    return (parts.length === 2 && theirs.length === 1 && parts[0] === theirs[0]) ||
+      (parts.length === 1 && theirs.length === 2 && parts[0] === theirs[0]);
+  });
+}
+window.beginKeyRecording = function (input) {
+	if (recordingKeybinding === input && input.hasAttribute("data-recording")) return;
+  if (recordingKeybinding) {
+    recordingKeybinding.value = recordingKeybinding.dataset.beforeRecording || recordingKeybinding.defaultValue;
+    recordingKeybinding.removeAttribute("data-recording");
+  }
+  recordingKeybinding = input;
+  recordingKeys = [];
+  input.dataset.beforeRecording = input.value;
+  input.setAttribute("data-recording", "");
+  input.value = input.dataset.sequence === "1" ? "Press first key…" : "Press a key…";
+  keybindingError("");
+};
+window.resetKeybinding = function (input) {
+  const conflict = bindingConflict(input, input.dataset.default);
+  if (conflict) { keybindingError(`Default ${input.dataset.default} is currently used by ${conflict.dataset.label}.`); return; }
+  input.value = input.dataset.default;
+  input.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  keybindingError("");
+};
+window.resetAllKeybindings = function () {
+  document.querySelectorAll("[data-keybinding-input]").forEach((input) => {
+    input.value = input.dataset.default;
+    input.removeAttribute("data-recording");
+  });
+  recordingKeybinding = null;
+  recordingKeys = [];
+  keybindingError("");
+};
+document.addEventListener("keydown", (e) => {
+  const input = recordingKeybinding;
+  if (!input) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+	if (e.repeat) return;
+  if (e.key === "Escape") {
+    input.value = input.dataset.beforeRecording || input.defaultValue;
+    input.removeAttribute("data-recording");
+    recordingKeybinding = null;
+    keybindingError("Recording cancelled. Escape is reserved for closing dialogs and panes.");
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) { keybindingError("Ctrl, Command, and Alt combinations are reserved by the browser and operating system."); return; }
+  if (["Enter", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    keybindingError(`${e.key.replace("Arrow", "Arrow ")} is reserved for controls and keyboard navigation.`);
+    return;
+  }
+  const key = e.key === " " ? "Space" : e.key;
+  if ([...key].length !== 1 && key !== "Space") { keybindingError("Press a printable character."); return; }
+  recordingKeys.push(key);
+  if (input.dataset.sequence === "1" && recordingKeys.length === 1) {
+    input.value = `${key} then…`;
+    return;
+  }
+  const value = recordingKeys.join(" ");
+  const conflict = bindingConflict(input, value);
+  if (conflict) {
+    recordingKeys = [];
+    input.value = input.dataset.sequence === "1" ? "Press first key…" : "Press a key…";
+    keybindingError(`${value} is already used by ${conflict.dataset.label}. Choose another shortcut.`);
+    return;
+  }
+  input.value = value;
+  input.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  recordingKeys = [];
+  keybindingError("");
+}, true);
+document.addEventListener("submit", () => {
+  if (!recordingKeybinding) return;
+  recordingKeybinding.value = recordingKeybinding.dataset.beforeRecording || recordingKeybinding.defaultValue;
+  recordingKeybinding.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  recordingKeys = [];
+}, true);
+
 // The active quick filter, read from its canonical DOM reflection (the
 // :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.
 function activeFilter() {
@@ -2718,50 +2813,62 @@ function readingScroller() {
     .find((e) => e && e.scrollHeight > e.clientHeight + 4) || null;
 }
 
-let goPending = false;
-const keymap = {
-  "h": () => focusSection(-1),
-  "l": () => focusSection(1),
-  "/": () => { const s = document.getElementById("search"); if (s) { s.focus(); return true; } },
-  "?": () => toggleHelp(),
-  "c": () => openCompose(""),
-  "j": () => moveSelection(1),
-  "k": () => moveSelection(-1),
-  "J": () => jumpEdge(1),
-  "K": () => jumpEdge(-1),
-  "o": () => openSelected(),
+const actionKeymap = {
+  focus_list: () => focusSection(-1),
+  focus_reading: () => focusSection(1),
+  search: () => { const s = document.getElementById("search"); if (s) { s.focus(); return true; } },
+  help: () => toggleHelp(),
+  compose: () => openCompose(""),
+  next: () => moveSelection(1),
+  previous: () => moveSelection(-1),
+  last: () => jumpEdge(1),
+  first: () => jumpEdge(-1),
+  open: () => openSelected(),
   // Space expands/collapses the selected thread by clicking its disclosure
   // button — the same control the mouse uses, so the htmx fetch, the hidden
   // class, aria-expanded and the chevron all stay owned by thread_row.html.
   // Returns false (no preventDefault, so the page/pane keeps scrolling) on a
   // single-message row, a sub-row, or while the reading pane holds focus.
-  " ": () => {
+  toggle_thread: () => {
     if (readingScroller()) return false;
     const btn = selectedRow()?.querySelector(".thread-toggle");
     if (!btn) return false;
     btn.click();
     return true;
   },
-  "r": () => flagSelected("read"),
-  "u": () => flagSelected("unread"),
-  "s": () => { if (goPending) { goPending = false; starredSearch(); return true; } return flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"); },
-  "f": () => cycleFilter(),
-  "e": () => moveSelected("archive", "Archived"),
-  "d": () => { if (goPending) { goPending = false; window.location.href = "/drafts"; return true; } return moveSelected("delete", "Deleted"); },
-  "#": () => moveSelected("delete", "Deleted"),
-  "!": () => moveSelected("spam", "Marked as spam"),
-  "R": () => replyCompose("reply"),
-  "A": () => replyCompose("all"),
-  "F": () => replyCompose("forward"),
-  "g": () => { goPending = true; setTimeout(() => (goPending = false), 800); return true; },
-  "i": () => { if (goPending) { goPending = false; jumpInbox(); return true; } return false; },
-  "t": () => { if (goPending) { goPending = false; jumpSent(); return true; } return false; },
-  "0": () => jumpUnified(),
+  mark_read: () => flagSelected("read"),
+  mark_unread: () => flagSelected("unread"),
+  star: () => flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"),
+  cycle_filter: () => cycleFilter(),
+  archive: () => moveSelected("archive", "Archived"),
+  delete: () => moveSelected("delete", "Deleted"),
+  delete_alt: () => moveSelected("delete", "Deleted"),
+  spam: () => moveSelected("spam", "Marked as spam"),
+  reply: () => replyCompose("reply"),
+  reply_all: () => replyCompose("all"),
+  forward: () => replyCompose("forward"),
+  goto_inbox: () => { jumpInbox(); return true; },
+  goto_sent: () => { jumpSent(); return true; },
+  goto_starred: () => { starredSearch(); return true; },
+  goto_drafts: () => { window.location.href = "/drafts"; return true; },
+  goto_unified: () => jumpUnified(),
 };
-// 1–9 jump to the Nth configured account's inbox.
 for (let n = 1; n <= 9; n++) {
-  keymap[String(n)] = () => jumpAccountInbox(n - 1);
+  actionKeymap[`goto_account_${n}`] = () => jumpAccountInbox(n - 1);
 }
+const keymap = {};
+const sequenceKeymap = {};
+const sequencePrefixes = new Set();
+Object.entries(window.SM_KEYBINDINGS || {}).forEach(([action, binding]) => {
+  const fn = actionKeymap[action];
+  if (!fn || typeof binding !== "string") return;
+  if (binding.includes(" ")) {
+    sequenceKeymap[binding] = fn;
+    sequencePrefixes.add(binding.split(" ")[0]);
+  } else keymap[binding] = fn;
+});
+let pendingSequence = "";
+let pendingSequenceTimer = 0;
 // f cycles the quick filters (All → Unread → Starred). Clicks the sidebar
 // buttons so Alpine keeps owning the state (persistence, ?filter= in the URL).
 function cycleFilter() {
@@ -2893,7 +3000,25 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Enter") { if (openSelected()) e.preventDefault(); return; }
-  const fn = keymap[e.key];
+  const key = e.key === " " ? "Space" : e.key;
+  if (pendingSequence) {
+    const fn = sequenceKeymap[`${pendingSequence} ${key}`];
+    pendingSequence = "";
+    clearTimeout(pendingSequenceTimer);
+    if (fn) fn();
+    // A second sequence key is always consumed. Falling through to its direct
+    // binding could archive/delete mail after a mistyped go-to shortcut.
+    e.preventDefault();
+    return;
+  }
+  if (sequencePrefixes.has(key)) {
+    pendingSequence = key;
+    clearTimeout(pendingSequenceTimer);
+    pendingSequenceTimer = setTimeout(() => (pendingSequence = ""), 800);
+    e.preventDefault();
+    return;
+  }
+  const fn = keymap[key];
   if (fn && fn() !== false) e.preventDefault();
 });
 

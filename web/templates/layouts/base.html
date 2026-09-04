@@ -37,6 +37,7 @@
   {{/* iOS home screen only takes PNG, so it keeps the default palette. */}}
   <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
   <script defer src="/static/js/htmx.min.js"></script>
+  <script>window.SM_KEYBINDINGS={{with .KeybindingsJSON}}{{.}}{{else}}{}{{end}};</script>
   <!-- app.js must load before Alpine: it registers the mimuxUI component on the
        alpine:init event, which Alpine fires the moment its own script runs. -->
   <script defer src="/static/js/app.js"></script>
