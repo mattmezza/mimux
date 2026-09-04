@@ -94,7 +94,7 @@ func TestAIModelFor(t *testing.T) {
 	s := open(t)
 	// Nothing configured: every feature runs on the built-in default.
 	c := s.GetAppConfig()
-	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize} {
+	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize, AIThreadSummarize} {
 		if got := c.ModelFor(f); got != defaultAIModel {
 			t.Fatalf("%s model = %q, want the default", f, got)
 		}
@@ -102,12 +102,18 @@ func TestAIModelFor(t *testing.T) {
 	// One override set: only that feature moves off the default model.
 	c.AIModel = "big/model"
 	c.AISummarizeModel = "cheap/model"
+	c.AIThreadSummarizeModel = "thread/model"
+	c.AIThreadSummaryLevel = "detailed"
+	c.AIThreadSummaryEnabled = false
 	if err := s.SaveAppConfig(c); err != nil {
 		t.Fatal(err)
 	}
 	c = s.GetAppConfig()
 	if got := c.ModelFor(AISummarize); got != "cheap/model" {
 		t.Errorf("summarize model = %q", got)
+	}
+	if got := c.ModelFor(AIThreadSummarize); got != "thread/model" || c.AIThreadSummaryLevel != "detailed" || c.AIThreadSummaryEnabled {
+		t.Errorf("thread summary config not round-tripped: model=%q level=%q enabled=%v", got, c.AIThreadSummaryLevel, c.AIThreadSummaryEnabled)
 	}
 	if got := c.ModelFor(AICompose); got != "big/model" {
 		t.Errorf("compose model = %q, want the default model", got)
@@ -139,7 +145,7 @@ func TestAIConfigUpgradeFromFlatKeys(t *testing.T) {
 		c.AILanguage != "Italian" || c.AIReplyOptions != 5 || c.AISummaryLevel != "detailed" {
 		t.Fatalf("old settings not preserved: %+v", c)
 	}
-	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize} {
+	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize, AIThreadSummarize} {
 		if got := c.ModelFor(f); got != "old/model" {
 			t.Errorf("%s model = %q, want the previously configured model", f, got)
 		}

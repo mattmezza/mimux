@@ -509,15 +509,16 @@ func boolStr(b bool) string {
 	return "0"
 }
 
-// AIFeature names one of the four AI features. Each one can pin its own model;
+// AIFeature names an AI feature. Each one can pin its own model;
 // everything else it needs lives in the matching AppConfig field.
 type AIFeature string
 
 const (
-	AICompose   AIFeature = "compose"   // writes a compose/reply draft
-	AIOptions   AIFeature = "options"   // suggests reply directions
-	AIRefine    AIFeature = "refine"    // rewrites an existing draft
-	AISummarize AIFeature = "summarize" // condenses a message
+	AICompose         AIFeature = "compose"          // writes a compose/reply draft
+	AIOptions         AIFeature = "options"          // suggests reply directions
+	AIRefine          AIFeature = "refine"           // rewrites an existing draft
+	AISummarize       AIFeature = "summarize"        // condenses a message
+	AIThreadSummarize AIFeature = "thread_summarize" // condenses a conversation
 )
 
 // defaultAIModel is what every feature runs on until the user says otherwise.
@@ -533,21 +534,24 @@ type AppConfig struct {
 	AIModel         string // default model, default "anthropic/claude-sonnet-4-6"
 	// Per-feature model overrides. Blank inherits AIModel — same
 	// inherit-or-global shape as the per-account sync overrides.
-	AIComposeModel   string
-	AIOptionsModel   string
-	AIRefineModel    string
-	AISummarizeModel string
+	AIComposeModel         string
+	AIOptionsModel         string
+	AIRefineModel          string
+	AISummarizeModel       string
+	AIThreadSummarizeModel string
 	// Tone/brevity/language are shared: they describe the user's voice, not one
 	// feature, and refine's own action ("more formal", "warmer") already carries
 	// its per-call direction.
 	// NOTE: shared, not duplicated per feature — split them into
 	// ai_<feature>_tone/brevity/language if someone actually wants a formal
 	// draft and a casual rewrite.
-	AITone         string // professional|neutral|friendly|casual, default neutral (compose + refine)
-	AIBrevity      string // concise|normal|detailed, default normal (compose + refine)
-	AILanguage     string // "auto" or a fixed language name, default auto (compose + refine + summarize)
-	AIReplyOptions int    // reply directions to generate (2-5), default 3 (options only)
-	AISummaryLevel string // default detail level for Summarize; see AllSummaryLevels
+	AITone                 string // professional|neutral|friendly|casual, default neutral (compose + refine)
+	AIBrevity              string // concise|normal|detailed, default normal (compose + refine)
+	AILanguage             string // "auto" or a fixed language name, default auto (compose + refine + summarize)
+	AIReplyOptions         int    // reply directions to generate (2-5), default 3 (options only)
+	AISummaryLevel         string // default detail level for Summarize; see AllSummaryLevels
+	AIThreadSummaryLevel   string // default detail level for conversation summaries
+	AIThreadSummaryEnabled bool
 	// Look: the UI accent and the app icon. Not secret, but they live here
 	// rather than in Prefs because the icon endpoint reads them on every page
 	// render and this is the smaller struct.
@@ -632,8 +636,7 @@ func (c AppConfig) IconVersion() string {
 
 // ModelFor resolves the model one feature runs on: its own override where set,
 // else the default model. Mirrors EffectiveSyncSettings.
-// NOTE: four flat fields and a switch, not a feature registry — there are
-// four features and they are listed right here.
+// NOTE: flat fields and a switch keep the available features explicit.
 func (c AppConfig) ModelFor(f AIFeature) string {
 	var override string
 	switch f {
@@ -645,6 +648,8 @@ func (c AppConfig) ModelFor(f AIFeature) string {
 		override = c.AIRefineModel
 	case AISummarize:
 		override = c.AISummarizeModel
+	case AIThreadSummarize:
+		override = c.AIThreadSummarizeModel
 	}
 	if override != "" {
 		return override
@@ -655,8 +660,8 @@ func (c AppConfig) ModelFor(f AIFeature) string {
 func (s *Store) GetAppConfig() AppConfig {
 	c := AppConfig{TranslateTarget: "en", AIModel: defaultAIModel,
 		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto",
-		AISummaryLevel: "brief",
-		Accent:         "indigo", IconBG: "#18181b", IconLeaf: "#4ade80", IconShape: "rounded"}
+		AISummaryLevel: "brief", AIThreadSummaryLevel: "brief", AIThreadSummaryEnabled: true,
+		Accent: "indigo", IconBG: "#18181b", IconLeaf: "#4ade80", IconShape: "rounded"}
 	if v, ok := s.getSetting("translate_api_key"); ok {
 		c.TranslateAPIKey = v
 	}
@@ -675,6 +680,10 @@ func (s *Store) GetAppConfig() AppConfig {
 	c.AIOptionsModel, _ = s.getSetting("ai_options_model")
 	c.AIRefineModel, _ = s.getSetting("ai_refine_model")
 	c.AISummarizeModel, _ = s.getSetting("ai_summarize_model")
+	c.AIThreadSummarizeModel, _ = s.getSetting("ai_thread_summary_model")
+	if v, ok := s.getSetting("ai_thread_summary_enabled"); ok {
+		c.AIThreadSummaryEnabled = v == "1" || v == "true"
+	}
 	if v, ok := s.getSetting("ai_tone"); ok && v != "" {
 		c.AITone = v
 	}
@@ -691,6 +700,9 @@ func (s *Store) GetAppConfig() AppConfig {
 	}
 	if v, ok := s.getSetting("ai_summary_level"); ok {
 		c.AISummaryLevel = ValidSummaryLevel(v, c.AISummaryLevel)
+	}
+	if v, ok := s.getSetting("ai_thread_summary_level"); ok {
+		c.AIThreadSummaryLevel = ValidSummaryLevel(v, c.AIThreadSummaryLevel)
 	}
 	// Look. Re-validated on read as well as on write: these end up inside an
 	// SVG and a <style> block, and a hand-edited DB row is still untrusted.
@@ -732,6 +744,7 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		c.AILanguage = "auto"
 	}
 	c.AISummaryLevel = ValidSummaryLevel(c.AISummaryLevel, "brief")
+	c.AIThreadSummaryLevel = ValidSummaryLevel(c.AIThreadSummaryLevel, "brief")
 	c.Accent = ValidAccent(c.Accent, "indigo")
 	c.IconBG = ValidIconBG(c.IconBG, "#18181b")
 	c.IconAccent = ValidHexColor(c.IconAccent, "") // blank = inherit the accent
@@ -747,20 +760,23 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 		"ai_openrouter_key": c.AIKey,
 		"ai_model":          c.AIModel,
 		// Overrides are stored as-is: blank means "inherit ai_model".
-		"ai_compose_model":   c.AIComposeModel,
-		"ai_options_model":   c.AIOptionsModel,
-		"ai_refine_model":    c.AIRefineModel,
-		"ai_summarize_model": c.AISummarizeModel,
-		"ai_tone":            c.AITone,
-		"ai_brevity":         c.AIBrevity,
-		"ai_reply_options":   strconv.Itoa(c.AIReplyOptions),
-		"ai_language":        c.AILanguage,
-		"ai_summary_level":   c.AISummaryLevel,
-		"ui_accent":          c.Accent,
-		"icon_bg":            c.IconBG,
-		"icon_accent":        c.IconAccent,
-		"icon_leaf":          c.IconLeaf,
-		"icon_shape":         c.IconShape,
+		"ai_compose_model":          c.AIComposeModel,
+		"ai_options_model":          c.AIOptionsModel,
+		"ai_refine_model":           c.AIRefineModel,
+		"ai_summarize_model":        c.AISummarizeModel,
+		"ai_thread_summary_model":   c.AIThreadSummarizeModel,
+		"ai_thread_summary_enabled": boolStr(c.AIThreadSummaryEnabled),
+		"ai_tone":                   c.AITone,
+		"ai_brevity":                c.AIBrevity,
+		"ai_reply_options":          strconv.Itoa(c.AIReplyOptions),
+		"ai_language":               c.AILanguage,
+		"ai_summary_level":          c.AISummaryLevel,
+		"ai_thread_summary_level":   c.AIThreadSummaryLevel,
+		"ui_accent":                 c.Accent,
+		"icon_bg":                   c.IconBG,
+		"icon_accent":               c.IconAccent,
+		"icon_leaf":                 c.IconLeaf,
+		"icon_shape":                c.IconShape,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

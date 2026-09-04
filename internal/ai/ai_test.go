@@ -259,8 +259,13 @@ func TestSummarizeThread(t *testing.T) {
 		if !strings.Contains(prompt, "Summarize the whole conversation") {
 			t.Errorf("prompt missing the whole-conversation instruction: %q", prompt)
 		}
-		if !strings.Contains(prompt, "3 to 5 short bullet points") {
+		if !strings.Contains(prompt, "compact structured summary") {
 			t.Errorf("prompt missing level instruction: %q", prompt)
+		}
+		for _, want := range []string{"bob@example.com", `as "Me"`, "Key points", "Decisions", "Action items", "Status / next steps"} {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("thread prompt missing %q: %q", want, prompt)
+			}
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"- alice asked about lunch\n- bob proposed Thursday"}}]}`))
@@ -272,7 +277,7 @@ func TestSummarizeThread(t *testing.T) {
 		[]Msg{{From: "bob@example.com", Date: at(20), Text: "Thursday works for me."}},
 		[]Msg{{From: "alice@example.com", Date: at(10), Text: "Lunch this week?"}},
 	)
-	sum, truncated, err := c.SummarizeThread(context.Background(), "brief", ctx)
+	sum, truncated, err := c.SummarizeThread(context.Background(), "brief", ctx, []string{"bob@example.com"})
 	if err != nil || truncated {
 		t.Fatalf("SummarizeThread = %q, truncated=%v, err=%v", sum, truncated, err)
 	}

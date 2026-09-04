@@ -420,7 +420,12 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		s.background(func(ctx context.Context) error { return s.mail.SetRead(ctx, &msgCopy, true) })
 	}
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
-	translateOn := s.store.GetAppConfig().TranslateAPIKey != ""
+	appCfg := s.store.GetAppConfig()
+	translateOn := appCfg.TranslateAPIKey != ""
+	msgQABar, msgQAMenu := qaBar, qaMenu
+	if !appCfg.AIThreadSummaryEnabled {
+		qaBar, qaMenu = withoutAction(qaBar, "summarize"), withoutAction(qaMenu, "summarize")
+	}
 	folders, _ := s.store.ListFolders(latest.Account)
 	// Display order only: Thread.Messages must stay oldest-first — LatestMessage,
 	// RootID (the list row key + htmx targets) and the reply target all read its
@@ -447,9 +452,19 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 		"RememberTheme":    prefs.RememberMsgTheme,
 		"QABar":            qaBar,
 		"QAMenu":           qaMenu,
-		"QAMsg":            threadMsgActions(qaBar, qaMenu, translateOn),
+		"QAMsg":            threadMsgActions(msgQABar, msgQAMenu, translateOn),
 		"Known":            s.knownLabels(),
 	})
+}
+
+func withoutAction(actions []string, remove string) []string {
+	out := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if action != remove {
+			out = append(out, action)
+		}
+	}
+	return out
 }
 
 // conversationOf moved down to internal/mail (Manager.Conversation) so the pro
@@ -663,7 +678,7 @@ func (s *Server) handleMessageSummary(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "summary_view", view)
 		return
 	}
-	body, err := s.mail.PlainText(r.Context(), msg)
+	body, err := s.mail.ArticleText(r.Context(), msg)
 	if err != nil || strings.TrimSpace(body) == "" {
 		slog.Error("summarize: body", "id", msg.ID, "err", err)
 		view["Err"] = "Couldn't read this message's text."
@@ -709,7 +724,7 @@ func (s *Server) threadSummaryContext(ctx context.Context, msgs []store.Message)
 			earlier = append(earlier, aiMsg(&msgs[i], msgs[i].Snippet))
 			continue
 		}
-		text, err := s.mail.PlainText(ctx, &msgs[i])
+		text, err := s.mail.ArticleText(ctx, &msgs[i])
 		if err != nil || strings.TrimSpace(text) == "" {
 			text = msgs[i].Snippet
 		}
@@ -735,7 +750,11 @@ func (s *Server) handleThreadSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	latest := t.LatestMessage()
 	cfg := s.store.GetAppConfig()
-	level := store.ValidSummaryLevel(r.URL.Query().Get("level"), cfg.AISummaryLevel)
+	if !cfg.AIThreadSummaryEnabled {
+		http.Error(w, "Thread summarization is disabled.", http.StatusForbidden)
+		return
+	}
+	level := store.ValidSummaryLevel(r.URL.Query().Get("level"), cfg.AIThreadSummaryLevel)
 	view := map[string]any{"ID": latest.ID, "Level": level, "Thread": true}
 	key := store.ThreadSummaryCacheKey(latest.ID, level)
 	if sum, truncated, ok, err := s.store.SummaryCached(key); err == nil && ok {
@@ -750,7 +769,7 @@ func (s *Server) handleThreadSummary(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "summary_view", view)
 		return
 	}
-	sum, truncated, err := s.aiClient(store.AISummarize).SummarizeThread(r.Context(), level, text)
+	sum, truncated, err := s.aiClient(store.AIThreadSummarize).SummarizeThread(r.Context(), level, text, s.ownerEmails(t.Messages))
 	if err != nil {
 		slog.Error("ai summarize thread", "err", err)
 		view["Err"] = ai.ErrMessage(err)
@@ -762,6 +781,35 @@ func (s *Server) handleThreadSummary(w http.ResponseWriter, r *http.Request) {
 	}
 	view["Summary"], view["Truncated"] = sum, truncated
 	s.renderPartial(w, "summary_view", view)
+}
+
+func (s *Server) ownerEmails(messages []store.Message) []string {
+	present := map[string]bool{}
+	for _, msg := range messages {
+		for _, value := range append([]string{msg.FromAddress}, append(mail.SplitAddrList(msg.ToAddresses), mail.SplitAddrList(msg.CcAddresses)...)...) {
+			value = strings.TrimSpace(value)
+			if i := strings.LastIndex(value, "<"); i >= 0 {
+				value = strings.TrimSuffix(value[i+1:], ">")
+			}
+			present[strings.ToLower(strings.TrimSpace(value))] = true
+		}
+	}
+	seen := map[string]bool{}
+	var emails []string
+	add := func(email string) {
+		email = strings.ToLower(strings.TrimSpace(email))
+		if email != "" && present[email] && !seen[email] {
+			seen[email] = true
+			emails = append(emails, email)
+		}
+	}
+	for _, account := range s.accounts() {
+		add(account.Email)
+		for _, alias := range account.Aliases {
+			add(alias.Email)
+		}
+	}
+	return emails
 }
 
 // aiClient builds an OpenRouter client for one AI feature from the stored

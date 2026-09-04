@@ -49,12 +49,18 @@ func refinePrompt(text, action string) (string, error) {
 	return exec("refine.tmpl", map[string]string{"Text": text, "Action": action})
 }
 
-func summarizePrompt(body, level, language string, truncated, thread bool) (string, error) {
+func summarizePrompt(body, level, language string, truncated bool) (string, error) {
 	return exec("summarize.tmpl", map[string]any{
 		"Body":      body,
 		"Level":     level,
 		"Language":  language,
 		"Truncated": truncated,
-		"Thread":    thread,
+	})
+}
+
+func summarizeThreadPrompt(body, level, language string, truncated bool, ownerEmails []string) (string, error) {
+	return exec("summarize_thread.tmpl", map[string]any{
+		"Body": body, "Level": level, "Language": language,
+		"Truncated": truncated, "OwnerEmails": ownerEmails,
 	})
 }
