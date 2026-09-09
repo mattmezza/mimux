@@ -147,7 +147,9 @@ Authorization: Bearer mimux_pat_...</code></pre>
     <tr><td><code>list_accounts</code></td><td>The configured accounts with live sync state (ok/syncing/error), last sync time and message/unread counts. Use it to learn account names, and to check whether mail is syncing before trusting freshness.</td></tr>
     <tr><td><code>list_folders</code></td><td>The folder tree per account: id, name, special role (inbox/sent/archive/spam/trash), unread count. Folder ids are what <code>move_message</code> and search filters take. Omit <code>account</code> for every tree.</td></tr>
     <tr><td><code>search_mail</code></td><td>Structured search results: id, account, folder_id, from, subject, date, snippet, flags.</td></tr>
-    <tr><td><code>read_message</code></td><td>One message by id: sender, recipients, subject, date, flags, labels, attachment list, and the body as plain text (<code>format=html</code> returns sanitised HTML instead). <code>headers=raw|parsed|both</code> adds the message's own header block — opt-in, because a <code>Received:</code> chain is a lot of tokens.</td></tr>
+    <tr><td><code>read_message</code></td><td>One message by id: sender, recipients, subject, date, flags, labels, attachment list, and body. <code>headers=raw|parsed|both</code> adds its headers.</td></tr>
+    <tr><td><code>get_raw_message</code></td><td>The exact RFC 822 source as base64, including its MIME attachments.</td></tr>
+    <tr><td><code>draft_forward_as_eml</code></td><td>Creates a reviewable draft with the original attached. It never sends; use <code>send_draft</code> only after human approval.</td></tr>
   </tbody>
 </table>
 </div>

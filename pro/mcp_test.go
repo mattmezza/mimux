@@ -97,8 +97,8 @@ func TestMCPToolsFollowScopes(t *testing.T) {
 	}
 
 	all, _, _ := mcpSession(t, "mail:read mail:send mail:modify accounts:read")
-	if n := toolNames(t, all); len(n) != 9 {
-		t.Errorf("full-scope token should expose 9 tools, got %d: %v", len(n), n)
+	if n := toolNames(t, all); len(n) != 11 {
+		t.Errorf("full-scope token should expose 11 tools, got %d: %v", len(n), n)
 	}
 }
 
@@ -390,5 +390,29 @@ func TestBridgeTargetUsesStoredLogin(t *testing.T) {
 	t.Setenv("MIMUX_TOKEN", "env")
 	if _, token, _ = bridgeTarget(); token != "env" {
 		t.Fatalf("MIMUX_TOKEN = %q", token)
+	}
+}
+
+func TestMCPSendDraftDoesNotDropUnresolvedForwards(t *testing.T) {
+	_, a, st := mcpSession(t, "mail:send")
+	for _, eml := range []bool{false, true} {
+		d := &store.Draft{Account: "a1", To: "ada@example.test", Kind: "forward"}
+		if eml {
+			d.ForwardEMLID = 999999
+		} else {
+			d.ForwardSourceID = 999999
+			d.ForwardAttachmentsInitialized = true
+			d.ForwardAttachments = []store.ForwardAttachment{{Part: []int{2}, Filename: "report.pdf"}}
+		}
+		if err := st.UpsertDraft(d); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := a.mcpSendDraft(t.Context(), nil, sendDraftArgs{DraftID: d.ID})
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "original message") {
+			t.Fatalf("missing source reached send: %v", err)
+		}
+		if kept, _ := st.DraftByID(d.ID); kept == nil {
+			t.Fatal("failed forward deleted draft")
+		}
 	}
 }

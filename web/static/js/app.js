@@ -1490,6 +1490,30 @@ document.addEventListener("htmx:afterSwap", (e) => {
 // missing the buttons lose their affordance (see .no-clipboard in app.css) and
 // the click is a no-op — the address stays selectable text either way.
 if (!navigator.clipboard) document.documentElement.classList.add("no-clipboard");
+
+let sourceModalReturnFocus = null;
+document.addEventListener("htmx:beforeRequest", (e) => {
+  if (e.detail?.target?.id === "source-modal-root") sourceModalReturnFocus = document.activeElement;
+});
+document.addEventListener("htmx:afterSwap", (e) => {
+  if (e.target?.id !== "source-modal-root") return;
+  e.target.querySelector("[data-source-modal] button, [data-source-modal] [tabindex]")?.focus();
+});
+function closeSourceModal() {
+  const root = document.getElementById("source-modal-root");
+  if (root) root.replaceChildren();
+  if (sourceModalReturnFocus?.isConnected) sourceModalReturnFocus.focus();
+  sourceModalReturnFocus = null;
+}
+
+function copyMessageHeaders() {
+  const text = document.querySelector("[data-message-headers]")?.textContent || "";
+  if (!navigator.clipboard) { toast("Clipboard access isn't available."); return; }
+  navigator.clipboard.writeText(text).then(
+    () => toast("Headers copied."),
+    () => toast("Couldn't copy the headers."),
+  );
+}
 document.addEventListener("click", (e) => {
   const btn = e.target.closest?.("[data-copy-addr]");
   if (!btn || !navigator.clipboard) return;
@@ -1502,6 +1526,16 @@ document.addEventListener("click", (e) => {
     () => toast("Couldn't copy to the clipboard."),
   );
 });
+document.addEventListener("keydown", (e) => {
+  const modal = document.querySelector("[data-source-modal]");
+  if (!modal || e.key !== "Tab") return;
+  const focusable = [...modal.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && !el.hidden);
+  if (!focusable.length) { e.preventDefault(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+  else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+}, true);
 
 // --- send later / undo send / schedule / attachment reminder ---
 // Attachment-hint keywords (English + Italian). Mirrors mail.attachWords in
@@ -1540,6 +1574,7 @@ function needsAttachmentReminder(form) {
   // stay metadata-only until send. Either one still counts as attached.
   if (form.querySelector('#compose-attachments [data-attachment]')) return false;
   if (form.querySelector('input[name="forward_attachment"]:checked')) return false;
+  if (form.querySelector('[name="forward_eml_id"]')?.value > 0) return false;
   const subject = form.querySelector('[name="subject"]')?.value || "";
   const body = form.querySelector('textarea[name="body"]')?.value || "";
   // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
@@ -2903,6 +2938,7 @@ document.addEventListener("keydown", (e) => {
   // that's what made the star and thread-disclosure buttons keyboard-dead).
   if (t instanceof HTMLElement && (e.key === "Enter" || e.key === " ") && t.closest("button, summary, a[href]")) return;
   if (e.key === "Escape") {
+    if (document.querySelector("[data-source-modal]")) { closeSourceModal(); return; }
     const accounts = document.getElementById("accounts-overlay");
     if (accounts && !accounts.hidden) { accounts.hidden = true; return; }
     const about = document.getElementById("about-overlay");

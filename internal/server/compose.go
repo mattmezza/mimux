@@ -62,23 +62,25 @@ func (s *Server) accountForAddress(addr string) (config.Account, bool) {
 
 // composeView is the compose partial's template data.
 type composeView struct {
-	CSRF          string
-	DraftID       int64
-	Accounts      []config.Account
-	Account       string
-	From          string // selected send-as address (primary or alias)
-	To, Cc, Bcc   string
-	Subject       string
-	Body          string
-	Mode          string // plain|html|markdown compose editor
-	Kind          string // new|reply|reply_all|forward
-	Layout        string // fullscreen|popup|modal window layout
-	InReplyTo     string // original Message-ID, for the In-Reply-To header
-	References    string // full References header value to reuse
-	ThreadContext string // for the embedded ai_reply partial
-	UndoSendDelay int    // seconds the split-button "Send" waits (undo window)
-	Autosave      bool   // opt-in: client debounce-saves the draft while typing
-	Error         string
+	CSRF           string
+	DraftID        int64
+	ForwardEMLID   int64  // source message attached only when the user saves/sends
+	ForwardEMLName string // display-only name for the pending attachment
+	Accounts       []config.Account
+	Account        string
+	From           string // selected send-as address (primary or alias)
+	To, Cc, Bcc    string
+	Subject        string
+	Body           string
+	Mode           string // plain|html|markdown compose editor
+	Kind           string // new|reply|reply_all|forward
+	Layout         string // fullscreen|popup|modal window layout
+	InReplyTo      string // original Message-ID, for the In-Reply-To header
+	References     string // full References header value to reuse
+	ThreadContext  string // for the embedded ai_reply partial
+	UndoSendDelay  int    // seconds the split-button "Send" waits (undo window)
+	Autosave       bool   // opt-in: client debounce-saves the draft while typing
+	Error          string
 	// Signatures maps lowercased identity address -> its linked signature
 	// variants, embedded so the client inserts the right one per From identity.
 	Signatures map[string]sigVar
@@ -162,7 +164,12 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	}
 	if replyID, err := strconv.ParseInt(r.URL.Query().Get("reply"), 10, 64); err == nil && replyID > 0 {
 		if orig, err := s.store.MessageByID(replyID); err == nil && orig != nil {
-			s.prefillReply(r.Context(), &view, orig, r.URL.Query().Get("mode"), prefs)
+			mode := r.URL.Query().Get("mode")
+			s.prefillReply(r.Context(), &view, orig, mode, prefs)
+			if mode == "forward-eml" {
+				view.ForwardEMLID = orig.ID
+				view.ForwardEMLName = mail.MessageFilename(orig.Subject, orig.ID)
+			}
 		}
 	}
 	// A mailto: link, handed over by the OS/browser (see protocol_handlers in
@@ -205,8 +212,14 @@ func (s *Server) renderDraft(ctx context.Context, w http.ResponseWriter, view co
 		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 		Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
 		Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave, Attachments: atts,
-		ForwardSourceID: d.ForwardSourceID, ForwardAttachments: d.ForwardAttachments,
+		ForwardEMLID: d.ForwardEMLID, ForwardSourceID: d.ForwardSourceID, ForwardAttachments: d.ForwardAttachments,
 		ForwardAttachmentsInitialized: d.ForwardAttachmentsInitialized,
+	}
+	if d.ForwardEMLID > 0 {
+		out.ForwardEMLName = "Original message.eml"
+		if orig, _ := s.store.MessageByID(d.ForwardEMLID); orig != nil {
+			out.ForwardEMLName = mail.MessageFilename(orig.Subject, orig.ID)
+		}
 	}
 	if d.Kind == "forward" && d.ForwardSourceID > 0 && !d.ForwardAttachmentsInitialized {
 		if orig, err := s.store.MessageByID(d.ForwardSourceID); err == nil && orig != nil && orig.Account == d.Account {
@@ -293,13 +306,19 @@ func (s *Server) prefillReply(ctx context.Context, view *composeView, orig *stor
 		to, cc := mail.ReplyAllRecipients(self,
 			mail.SplitAddrList(orig.FromAddress), mail.SplitAddrList(orig.ToAddresses), mail.SplitAddrList(orig.CcAddresses))
 		view.To, view.Cc = joinAddrList(to), joinAddrList(cc)
-	case "forward":
+	case "forward", "forward-eml":
 		view.Kind = "forward"
 	default:
 		view.Kind = "reply"
 		view.To = joinAddrList(mail.ReplyRecipients(self, orig.FromAddress))
 	}
 	view.Subject = mail.PrefixSubject(view.Kind, orig.Subject)
+	if mode == "forward-eml" {
+		// The source itself becomes the attachment below; fetching and parsing it
+		// here merely to build an inline quote would double the IMAP transfer.
+		view.ThreadContext = s.aiThreadContext(orig, orig.Snippet)
+		return
+	}
 	text, htmlBody := s.quoteSource(ctx, orig)
 	if view.Kind == "forward" {
 		// A forward carries the whole original, whatever the reply-quote
@@ -322,6 +341,21 @@ func (s *Server) prefillReply(ctx context.Context, view *composeView, orig *stor
 	// Independent of the quote setting: "quote nothing" is about what the
 	// recipient reads, not about what the assistant is allowed to see.
 	view.ThreadContext = s.aiThreadContext(orig, text)
+}
+
+func (s *Server) forwardedMessageAttachment(ctx context.Context, id int64) ([]mail.OutAttachment, string) {
+	if id <= 0 {
+		return nil, ""
+	}
+	orig, err := s.store.MessageByID(id)
+	if err != nil || orig == nil {
+		return nil, "The original message is no longer available."
+	}
+	raw, err := s.mail.RawAttachment(ctx, orig)
+	if err != nil {
+		return nil, "Could not attach the original message: " + err.Error()
+	}
+	return []mail.OutAttachment{{Filename: mail.MessageFilename(orig.Subject, orig.ID), ContentType: "message/rfc822", Data: raw}}, ""
 }
 
 func (s *Server) loadForwardAttachments(ctx context.Context, view *composeView, orig *store.Message) {
@@ -452,6 +486,7 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	id, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
+	forwardID, _ := strconv.ParseInt(r.PostFormValue("forward_eml_id"), 10, 64)
 	// The From menu posts an address; store which account owns it.
 	account := r.PostFormValue("account")
 	if account == "" {
@@ -460,7 +495,7 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 	d := &store.Draft{
-		ID: id, Account: account,
+		ID: id, Account: account, ForwardEMLID: forwardID,
 		To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"),
 		InReplyTo: r.PostFormValue("in_reply_to"), Kind: r.PostFormValue("kind"),
@@ -470,6 +505,8 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft save", "err", err)
+		http.Error(w, "Could not save draft", http.StatusInternalServerError)
+		return
 	}
 	// The files picked since the last save join the draft before it is
 	// published, so what lands in the Drafts folder is the message as the window
@@ -478,6 +515,21 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 	atts, attErr := readAttachments(r)
 	if attErr == "" {
 		attErr = s.keepDraftAttachments(d.ID, atts)
+	}
+	forwardKept := false
+	if attErr == "" && forwardID > 0 {
+		var forwarded []mail.OutAttachment
+		forwarded, attErr = s.forwardedMessageAttachment(r.Context(), forwardID)
+		if attErr == "" {
+			attErr = s.keepDraftAttachments(d.ID, forwarded)
+			forwardKept = attErr == "" && d.ID > 0
+			if forwardKept {
+				d.ForwardEMLID = 0
+				if err := s.store.UpsertDraft(d); err != nil {
+					slog.Error("compose: clear pending EML", "draft", d.ID, "err", err)
+				}
+			}
+		}
 	}
 	if attErr != "" {
 		s.mail.Toast(attErr)
@@ -488,6 +540,10 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		// First save: tell the open form its new draft id via OOB swap so later
 		// saves target this row instead of creating more.
 		_, _ = fmt.Fprintf(w, `<input type="hidden" id="compose-draft-id" name="draft_id" value="%d" hx-swap-oob="true">`, d.ID)
+	}
+	if forwardKept {
+		_, _ = fmt.Fprint(w, `<input type="hidden" id="compose-forward-eml-id" name="forward_eml_id" value="" hx-swap-oob="true">`)
+		_, _ = fmt.Fprint(w, `<div id="compose-pending-forward-eml" hx-swap-oob="delete"></div>`)
 	}
 	s.renderDraftAttachments(w, d.ID)
 }
@@ -504,7 +560,7 @@ func (s *Server) keepDraftAttachments(draftID int64, atts []mail.OutAttachment) 
 	total, err := s.store.DraftAttachmentsSize(draftID)
 	if err != nil {
 		slog.Error("compose: draft attachment size", "draft", draftID, "err", err)
-		return ""
+		return "Could not read the draft attachment size."
 	}
 	for _, a := range atts {
 		total += int64(len(a.Data))
@@ -781,6 +837,12 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		ForwardSourceID: parseForwardSource(r), ForwardAttachments: forwardAttachments,
 		ForwardAttachmentsInitialized: parseForwardInitialized(r),
 	}
+	view.ForwardEMLID, _ = strconv.ParseInt(r.PostFormValue("forward_eml_id"), 10, 64)
+	if view.ForwardEMLID > 0 {
+		if orig, _ := s.store.MessageByID(view.ForwardEMLID); orig != nil {
+			view.ForwardEMLName = mail.MessageFilename(orig.Subject, orig.ID)
+		}
+	}
 	// Keep the window in whatever layout it was opened in — and the draft's kept
 	// files listed — across an error re-render.
 	view.Attachments, _ = s.store.DraftAttachments(draftID)
@@ -830,6 +892,22 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	}
 	if attErr != "" {
 		view.Error = attErr
+		s.renderCompose(w, view)
+		return
+	}
+	if view.ForwardEMLID > 0 {
+		forwarded, err := s.forwardedMessageAttachment(r.Context(), view.ForwardEMLID)
+		if err != "" {
+			view.Error = err
+			s.preserveComposeFailure(&view, fresh)
+			s.renderCompose(w, view)
+			return
+		}
+		atts = append(atts, forwarded...)
+	}
+	if err := mail.ValidateAttachmentSize(atts); err != nil {
+		view.Error = err.Error()
+		s.preserveComposeFailure(&view, fresh)
 		s.renderCompose(w, view)
 		return
 	}
@@ -895,7 +973,7 @@ func (s *Server) preserveComposeFailure(view *composeView, fresh []mail.OutAttac
 	d := &store.Draft{
 		ID: view.DraftID, Account: view.Account, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
 		Subject: view.Subject, Body: view.Body, InReplyTo: view.InReplyTo, Kind: view.Kind, Mode: view.Mode,
-		ForwardSourceID: view.ForwardSourceID, ForwardAttachments: view.ForwardAttachments,
+		ForwardEMLID: view.ForwardEMLID, ForwardSourceID: view.ForwardSourceID, ForwardAttachments: view.ForwardAttachments,
 		ForwardAttachmentsInitialized: view.ForwardAttachmentsInitialized,
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
@@ -957,18 +1035,6 @@ func parseForwardAttachments(r *http.Request) ([]store.ForwardAttachment, error)
 	return out, nil
 }
 
-func samePart(a, b []int) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 func exceedsAttachmentLimit(total int64, declared uint32) bool {
 	return declared > 0 && total+int64(declared) > maxAttachTotal
 }
@@ -978,54 +1044,7 @@ func exceedsAttachmentLimit(total int64, declared uint32) bool {
 // its draft intact. Queued messages receive the fetched bytes, so later IMAP
 // availability cannot break undo-send or scheduled delivery.
 func (s *Server) forwardAttachments(ctx context.Context, account string, sourceID int64, selected []store.ForwardAttachment, existing []mail.OutAttachment) ([]mail.OutAttachment, string) {
-	msg, err := s.store.MessageByID(sourceID)
-	if err != nil || msg == nil || msg.Account != account {
-		return nil, "Could not find the original message's attachments. Your draft is safe."
-	}
-	available, err := s.mail.Attachments(ctx, msg)
-	if err != nil {
-		return nil, "Could not check the original attachments. Check your connection and try again — your draft is safe."
-	}
-	var total int64
-	for _, a := range existing {
-		total += int64(len(a.Data))
-	}
-	out := make([]mail.OutAttachment, 0, len(selected))
-	for _, wanted := range selected {
-		var found *mail.Attachment
-		for i := range available {
-			if samePart(available[i].Part, wanted.Part) {
-				found = &available[i]
-				break
-			}
-		}
-		if found == nil {
-			return nil, fmt.Sprintf("The original attachment %q is no longer available. Remove it or try again — your draft is safe.", wanted.Filename)
-		}
-		// BODYSTRUCTURE size is available before the part bytes are requested.
-		// Reject known-oversized selections here so a hostile or accidental huge
-		// attachment cannot be buffered into process memory merely to discover it
-		// exceeds the compose limit. Keep the actual decoded-size check below too.
-		if exceedsAttachmentLimit(total, found.Size) {
-			return nil, fmt.Sprintf("Attachments exceed the %dMB limit. Remove %q and try again — your draft is safe.", maxAttachTotal>>20, found.Filename)
-		}
-		data, mediaType, filename, fetchErr := s.mail.Attachment(ctx, msg, found.Part)
-		if fetchErr != nil {
-			return nil, fmt.Sprintf("Could not fetch the original attachment %q. Try again — your draft is safe.", found.Filename)
-		}
-		total += int64(len(data))
-		if total > maxAttachTotal {
-			return nil, fmt.Sprintf("Attachments exceed the %dMB limit. Your draft is safe.", maxAttachTotal>>20)
-		}
-		if filename == "" {
-			filename = found.Filename
-		}
-		if mediaType == "" {
-			mediaType = found.MediaType
-		}
-		out = append(out, mail.OutAttachment{Filename: filename, ContentType: mediaType, Data: data})
-	}
-	return out, ""
+	return s.mail.ForwardAttachments(ctx, account, sourceID, selected, existing)
 }
 
 // draftAttachments loads a draft's kept files in the form the send path

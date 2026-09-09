@@ -21,6 +21,7 @@ type Draft struct {
 	InReplyTo                     string
 	Kind                          string // new|reply|reply_all|forward
 	Mode                          string // plain|html|markdown — which editor authored Body
+	ForwardEMLID                  int64
 	ForwardSourceID               int64
 	ForwardAttachments            []ForwardAttachment
 	ForwardAttachmentsInitialized bool
@@ -70,9 +71,9 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	}
 	if d.ID == 0 {
 		res, err := s.DB.Exec(`
-			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, imap_dirty)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now)
+			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_eml_id, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, imap_dirty)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardEMLID, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now)
 		if err != nil {
 			return err
 		}
@@ -85,17 +86,17 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	}
 	_, err := s.DB.Exec(`
 		UPDATE drafts SET account = ?, to_addresses = ?, cc_addresses = ?, bcc_addresses = ?,
-			subject = ?, body = ?, in_reply_to = ?, kind = ?, mode = ?, forward_source_id = ?, forward_attachments = ?, forward_attachments_initialized = ?, updated_at = ?, imap_dirty = 1 WHERE id = ?`,
-		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now, d.ID)
+			subject = ?, body = ?, in_reply_to = ?, kind = ?, mode = ?, forward_eml_id = ?, forward_source_id = ?, forward_attachments = ?, forward_attachments_initialized = ?, updated_at = ?, imap_dirty = 1 WHERE id = ?`,
+		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardEMLID, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now, d.ID)
 	return err
 }
 
-const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, message_id, folder_id, uid, imap_dirty`
+const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_eml_id, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, message_id, folder_id, uid, imap_dirty`
 
 func scanDraft(sc interface{ Scan(...any) error }) (*Draft, error) {
 	d := &Draft{}
 	var updated, forwardJSON string
-	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &d.Mode, &d.ForwardSourceID, &forwardJSON, &d.ForwardAttachmentsInitialized, &updated,
+	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &d.Mode, &d.ForwardEMLID, &d.ForwardSourceID, &forwardJSON, &d.ForwardAttachmentsInitialized, &updated,
 		&d.MessageID, &d.FolderID, &d.UID, &d.IMAPDirty); err != nil {
 		return nil, err
 	}
