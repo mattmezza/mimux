@@ -30,7 +30,7 @@
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"/></svg>
       </button>
       {{end}}
-      <button type="button" title="Close (Esc)" aria-label="Close" onclick="closeCompose()"
+      <button type="button" title="Close (Esc)" aria-label="Close" onclick="closeCompose()" data-compose-send-control
         class="p-1.5 rounded-md text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 transition-colors duration-150">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12"/></svg>
       </button>
@@ -275,19 +275,20 @@
              submitCompose() runs the attachment-reminder gate before posting. */}}
         <div class="flex items-stretch">
           <button type="button" title="Send in {{.UndoSendDelay}}s (Ctrl+Enter) — you can undo"
-            onclick="setSendMode('later');submitCompose()"
+            onclick="setSendMode('later');submitCompose()" data-compose-send-control
             class="rounded-l-md bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white text-sm font-medium pl-4 pr-3 py-1.5">
-            Send
+            <span data-compose-send-label>Send</span>
+            {{template "compose_send_progress"}}
           </button>
           <details class="send-more relative">
-            <summary title="More send options"
+            <summary title="More send options" onclick="if(this.getAttribute('aria-disabled')==='true')event.preventDefault()"
               class="list-none cursor-pointer select-none h-full flex items-center rounded-r-md border-l border-indigo-400/40 bg-indigo-500 hover:bg-indigo-400 transition-colors duration-150 text-white px-2 py-1.5">
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5"/></svg>
             </summary>
             <div class="send-more-menu absolute right-0 bottom-full mb-1 w-48 rounded-md border border-zinc-700 bg-zinc-800 shadow-lg py-1 z-10">
-              <button type="button" onclick="setSendMode('now');submitCompose()"
-                class="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors duration-150">Send now</button>
-              <button type="button" onclick="openSchedulePicker()"
+              <button type="button" onclick="setSendMode('now');submitCompose()" data-compose-send-control
+                class="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors duration-150"><span data-compose-send-label>Send now</span>{{template "compose_send_progress"}}</button>
+              <button type="button" onclick="openSchedulePicker()" data-compose-send-control
                 class="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-700 transition-colors duration-150">Schedule send…</button>
             </div>
           </details>
@@ -311,7 +312,7 @@
           <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
             onclick="document.getElementById('schedule-modal').hidden=true">Cancel</button>
           <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-indigo-500 hover:bg-indigo-400 text-white"
-            onclick="confirmSchedule()">Schedule</button>
+            data-compose-send-control onclick="confirmSchedule()">Schedule</button>
         </div>
       </div>
     </div>
@@ -344,7 +345,7 @@
           <button type="button" class="px-3 py-1.5 rounded-md text-xs text-zinc-300 hover:bg-zinc-700"
             onclick="document.getElementById('attach-reminder-modal').hidden=true">Go back</button>
           <button type="button" class="px-3 py-1.5 rounded-md text-xs bg-indigo-500 hover:bg-indigo-400 text-white"
-            onclick="document.getElementById('attach-reminder-modal').hidden=true;submitCompose(true)">Send anyway</button>
+            onclick="document.getElementById('attach-reminder-modal').hidden=true;submitCompose(true)" data-compose-send-control><span data-compose-send-label>Send anyway</span>{{template "compose_send_progress"}}</button>
         </div>
       </div>
     </div>
@@ -457,3 +458,4 @@
         class="w-full flex-1 min-h-[16rem] font-mono text-[13px] leading-relaxed rounded-md bg-zinc-950 border border-zinc-800 focus:border-indigo-500 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:outline-none transition-colors duration-150">{{.Body}}</textarea>
       {{end}}
 {{end}}
+{{define "compose_send_progress"}}<span data-compose-send-progress hidden role="status"><svg aria-hidden="true" class="inline-block w-3.5 h-3.5 animate-spin mr-1" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 0 1 8-8V0C5.373 0 0 5.373 0 12h4z"/></svg>Sending…</span>{{end}}
