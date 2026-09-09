@@ -7,7 +7,7 @@ import vm from "node:vm";
 const app = await readFile(new URL("./app.js", import.meta.url), "utf8");
 const start = app.indexOf("const attachKeywords");
 const end = app.indexOf("// Handles the 204", start);
-const context = { window: {} };
+const context = { document: { addEventListener() {} }, window: {} };
 vm.runInNewContext(`${app.slice(start, end)}; globalThis.needsAttachmentReminder = needsAttachmentReminder;`, context);
 
 function form(subject, body, attachments = []) {
