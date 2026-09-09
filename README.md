@@ -107,6 +107,12 @@ make help    # everything else
 | `g d` | Go to drafts | `g t` | Go to sent |
 | `0` | Unified inbox | `1`–`9` | Nth account's inbox |
 
+These are the defaults. Open **Settings → Keybindings** to record a different
+key for any app shortcut, reset one action or the whole keymap, and see
+conflicts before saving. The in-app <kbd>?</kbd> overlay always shows the saved
+bindings. Browser and accessibility keys such as Escape, Enter, Tab, the arrow
+keys, and Ctrl/Command/Alt combinations stay reserved.
+
 ## Architecture
 
 A single Go binary (`cmd/mimux`) serves everything: chi handlers render
