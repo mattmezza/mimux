@@ -172,3 +172,22 @@ func TestBuildThreadContextBudget(t *testing.T) {
 		t.Errorf("kept the whole earlier thread: %d blocks", strings.Count(got, "--- Earlier"))
 	}
 }
+
+func TestBuildThreadContextLongRecentMessages(t *testing.T) {
+	for _, char := range []string{"x", "界"} {
+		recent := []Msg{
+			{From: "alice@example.com", Date: at(30), Text: "latest decision " + strings.Repeat(char, MaxContextChars*2)},
+			{From: "bob@example.com", Date: at(20), Text: "budget request " + strings.Repeat(char, MaxContextChars*2)},
+			{From: "carol@example.com", Date: at(10), Text: "initial proposal " + strings.Repeat(char, MaxContextChars*2)},
+		}
+		got := BuildThreadContext(recent, nil)
+		for _, want := range []string{"latest decision", "budget request", "initial proposal", truncMarker} {
+			if !strings.Contains(got, want) {
+				t.Errorf("missing %q from long thread", want)
+			}
+		}
+		if len([]rune(got)) > MaxContextChars+500 {
+			t.Errorf("context exceeds budget: %d runes", len([]rune(got)))
+		}
+	}
+}

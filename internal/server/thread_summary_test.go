@@ -14,6 +14,7 @@ import (
 
 	"github.com/mattmezza/mimux/internal/config"
 	"github.com/mattmezza/mimux/internal/store"
+	appweb "github.com/mattmezza/mimux/web"
 )
 
 // TestThreadSummaryContextFeedsWholeThread reproduces the bug this change
@@ -73,6 +74,19 @@ func TestThreadSummaryContextFeedsWholeThread(t *testing.T) {
 	// Oldest-first: the kickoff message reads before the final "ready to go" one.
 	if strings.Index(got, "kickoff") > strings.Index(got, "ready to go") {
 		t.Errorf("thread summary context is not oldest-first:\n%s", got)
+	}
+}
+
+func TestSummaryTemplateCopyAndRequestIsolation(t *testing.T) {
+	b, err := appweb.FS.ReadFile("templates/partials/summary_bar.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	for _, want := range []string{`source: bar`, `data-summary-text`, `smSummaryCopy`, `navigator.clipboard.writeText`, `document.execCommand('copy')`, `aria-live="polite"`} {
+		if !strings.Contains(src, want) {
+			t.Errorf("summary template missing %q", want)
+		}
 	}
 }
 
@@ -141,5 +155,35 @@ func TestHandleThreadSummaryRoute(t *testing.T) {
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/t/"+strconv.FormatInt(latestID, 10)+"/summary?level=brief", nil))
 	if strings.Contains(rec.Body.String(), "single-message-only summary") {
 		t.Errorf("thread summary route served the per-message cache entry; body:\n%s", rec.Body.String())
+	}
+
+	cfg := s.store.GetAppConfig()
+	cfg.AIThreadSummaryEnabled = false
+	if err := s.store.SaveAppConfig(cfg); err != nil {
+		t.Fatal(err)
+	}
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/t/"+strconv.FormatInt(latestID, 10)+"/summary", nil))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("disabled thread summary status = %d, want 403", rec.Code)
+	}
+}
+
+func TestThreadSummaryOwnerEmails(t *testing.T) {
+	account := config.Account{
+		Name: "Work", Email: "Me@Example.com", IMAPHost: "imap.example.com", SMTPHost: "smtp.example.com",
+		Aliases: []config.Alias{{Email: "alias@example.com"}, {Email: "me@example.com"}, {Email: "private-alias@example.com"}},
+	}
+	s := serverWith(t, []config.Account{account}, func(st *store.Store) {
+		if err := st.UpsertAccount(account); err != nil {
+			t.Fatal(err)
+		}
+	})
+	got := strings.Join(s.ownerEmails([]store.Message{{
+		FromAddress: "Other <other@example.com>",
+		ToAddresses: "Me <me@example.com>, alias@example.com",
+	}}), ",")
+	if got != "me@example.com,alias@example.com" {
+		t.Fatalf("ownerEmails = %q", got)
 	}
 }

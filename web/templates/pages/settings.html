@@ -1004,6 +1004,28 @@
                     </label>
                     <span class="block text-xs text-zinc-500">Only the starting level — each summary can be switched from its own strip.</span>
                   </div>
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                    <label class="flex items-center justify-between gap-3">
+                      <span class="text-sm text-zinc-200">Thread summarization</span>
+                      <input type="checkbox" name="ai_thread_summary_enabled" value="1" {{if .AppConfig.AIThreadSummaryEnabled}}checked{{end}}
+                        class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500" aria-describedby="thread-summary-help">
+                    </label>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Model override <span class="text-zinc-600">(optional)</span></span>
+                      <input type="text" name="ai_thread_summary_model" value="{{.AppConfig.AIThreadSummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                        class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                    </label>
+                    <label class="block space-y-1">
+                      <span class="text-xs text-zinc-400">Default detail level</span>
+                      <select name="ai_thread_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+                        {{$ts := .AppConfig.AIThreadSummaryLevel}}
+                        <option value="oneline" {{if eq $ts "oneline"}}selected{{end}}>One line</option>
+                        <option value="brief" {{if eq $ts "brief"}}selected{{end}}>Brief (structured)</option>
+                        <option value="detailed" {{if eq $ts "detailed"}}selected{{end}}>Detailed</option>
+                      </select>
+                    </label>
+                    <span id="thread-summary-help" class="block text-xs text-zinc-500">Tracks participants, decisions, action owners, and who needs to reply next.</span>
+                  </div>
                 </div>
               </div>
               <p class="text-xs text-zinc-500">Keys and settings are saved with the Save button below.</p>

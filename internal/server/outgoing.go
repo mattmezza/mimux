@@ -56,7 +56,7 @@ func (s *Server) outgoing(csrf string) outgoingData {
 
 func (s *Server) handleOutgoingPage(w http.ResponseWriter, r *http.Request) {
 	csrf := auth.EnsureCSRF(w, r, s.secure)
-	s.render(w, "outgoing", map[string]any{
+	s.renderRequest(w, r, "outgoing", map[string]any{
 		"CSRF":          csrf,
 		"Sidebar":       s.sidebarData(),
 		"AccountColors": s.store.GetPrefs().AccountColors,

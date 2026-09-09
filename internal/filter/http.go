@@ -50,7 +50,7 @@ const dryRunShow = 15
 // page fills in what the shared layout needs (version, appearance, sync
 // state) and the vocabulary the form offers (Accounts, Folders, Labels) —
 // none of which this package can know on its own.
-func Routes(rs RuleStore, secure bool, funcs template.FuncMap, page func(map[string]any)) chi.Router {
+func Routes(rs RuleStore, secure bool, funcs template.FuncMap, page func(*http.Request, map[string]any)) chi.Router {
 	tmpl := template.Must(template.New("").Funcs(funcs).ParseFS(web.FS,
 		"templates/pages/filters.html",
 		"templates/layouts/base.html",
@@ -71,7 +71,7 @@ type handler struct {
 	rs     RuleStore
 	tmpl   *template.Template
 	secure bool
-	page   func(map[string]any)
+	page   func(*http.Request, map[string]any)
 }
 
 // --- view models (carry CSRF + derived fields alongside the plain Rule) ---
@@ -166,7 +166,7 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 	} else if r.URL.Query().Get("new") != "" {
 		data["Form"] = blankForm(csrf)
 	}
-	h.render(w, data)
+	h.render(w, r, data)
 }
 
 // dryRun answers "which of my recent messages does this rule match" by running
@@ -270,9 +270,9 @@ func (h *handler) reorder(w http.ResponseWriter, r *http.Request) {
 
 // --- helpers ---
 
-func (h *handler) render(w http.ResponseWriter, data map[string]any) {
+func (h *handler) render(w http.ResponseWriter, r *http.Request, data map[string]any) {
 	if h.page != nil {
-		h.page(data)
+		h.page(r, data)
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := h.tmpl.ExecuteTemplate(w, "base", data); err != nil {

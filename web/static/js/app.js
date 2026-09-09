@@ -1511,6 +1511,30 @@ document.addEventListener("htmx:afterSwap", (e) => {
 // missing the buttons lose their affordance (see .no-clipboard in app.css) and
 // the click is a no-op — the address stays selectable text either way.
 if (!navigator.clipboard) document.documentElement.classList.add("no-clipboard");
+
+let sourceModalReturnFocus = null;
+document.addEventListener("htmx:beforeRequest", (e) => {
+  if (e.detail?.target?.id === "source-modal-root") sourceModalReturnFocus = document.activeElement;
+});
+document.addEventListener("htmx:afterSwap", (e) => {
+  if (e.target?.id !== "source-modal-root") return;
+  e.target.querySelector("[data-source-modal] button, [data-source-modal] [tabindex]")?.focus();
+});
+function closeSourceModal() {
+  const root = document.getElementById("source-modal-root");
+  if (root) root.replaceChildren();
+  if (sourceModalReturnFocus?.isConnected) sourceModalReturnFocus.focus();
+  sourceModalReturnFocus = null;
+}
+
+function copyMessageHeaders() {
+  const text = document.querySelector("[data-message-headers]")?.textContent || "";
+  if (!navigator.clipboard) { toast("Clipboard access isn't available."); return; }
+  navigator.clipboard.writeText(text).then(
+    () => toast("Headers copied."),
+    () => toast("Couldn't copy the headers."),
+  );
+}
 document.addEventListener("click", (e) => {
   const btn = e.target.closest?.("[data-copy-addr]");
   if (!btn || !navigator.clipboard) return;
@@ -1523,6 +1547,16 @@ document.addEventListener("click", (e) => {
     () => toast("Couldn't copy to the clipboard."),
   );
 });
+document.addEventListener("keydown", (e) => {
+  const modal = document.querySelector("[data-source-modal]");
+  if (!modal || e.key !== "Tab") return;
+  const focusable = [...modal.querySelectorAll('button, a[href], [tabindex]:not([tabindex="-1"])')]
+    .filter((el) => !el.disabled && !el.hidden);
+  if (!focusable.length) { e.preventDefault(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) { last.focus(); e.preventDefault(); }
+  else if (!e.shiftKey && document.activeElement === last) { first.focus(); e.preventDefault(); }
+}, true);
 
 // --- send later / undo send / schedule / attachment reminder ---
 // Attachment-hint keywords (English + Italian). Mirrors mail.attachWords in
@@ -1557,12 +1591,39 @@ window.setSendMode = setSendMode;
 function needsAttachmentReminder(form) {
   const files = form.querySelector('input[type=file][name="attachments"]');
   if (files && files.files && files.files.length) return false;
+  // Saved uploads have no file input on reopen, and original-forward chips
+  // stay metadata-only until send. Either one still counts as attached.
+  if (form.querySelector('#compose-attachments [data-attachment]')) return false;
+  if (form.querySelector('input[name="forward_attachment"]:checked')) return false;
+  if (form.querySelector('[name="forward_eml_id"]')?.value > 0) return false;
   const subject = form.querySelector('[name="subject"]')?.value || "";
   const body = form.querySelector('textarea[name="body"]')?.value || "";
   // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
   const text = (subject + " " + body).replace(/<[^>]+>/g, " ");
   return attachKeywords.test(text);
 }
+
+function updateForwardAttachment(chip, included) {
+  if (!chip) return;
+  const box = chip.querySelector('input[name="forward_attachment"]');
+  const btn = chip.querySelector("button[data-filename]");
+  const filename = btn?.dataset.filename || chip.querySelector("[data-forward-name]")?.textContent || "attachment";
+  if (box) box.checked = included;
+  chip.classList.toggle("opacity-60", !included);
+  chip.querySelector("[data-forward-name]")?.classList.toggle("line-through", !included);
+  if (btn) {
+    btn.querySelector("[data-forward-action]").textContent = included ? "Remove" : "Include";
+    btn.setAttribute("aria-label", `${included ? "Remove" : "Include"} original attachment ${filename}`);
+    btn.title = `${included ? "Remove" : "Include"} original attachment`;
+  }
+  const status = document.getElementById("forward-attachment-status");
+  if (status) status.textContent = `${filename} ${included ? "included" : "excluded"} from the forward.`;
+}
+window.onForwardAttachmentCheck = function (box) { updateForwardAttachment(box.closest("[data-forward-attachment]"), box.checked); };
+window.toggleForwardAttachment = function (btn) {
+  const chip = btn.closest("[data-forward-attachment]");
+  updateForwardAttachment(chip, !chip.querySelector('input[name="forward_attachment"]').checked);
+};
 
 // Handles the 204 from POST /compose: close compose, then show the right toast
 // (Undo for delayed send, a confirmation for scheduled send). Non-204 responses
@@ -2898,6 +2959,7 @@ document.addEventListener("keydown", (e) => {
   // that's what made the star and thread-disclosure buttons keyboard-dead).
   if (t instanceof HTMLElement && (e.key === "Enter" || e.key === " ") && t.closest("button, summary, a[href]")) return;
   if (e.key === "Escape") {
+    if (document.querySelector("[data-source-modal]")) { closeSourceModal(); return; }
     const accounts = document.getElementById("accounts-overlay");
     if (accounts && !accounts.hidden) { accounts.hidden = true; return; }
     const about = document.getElementById("about-overlay");
