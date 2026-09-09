@@ -3,6 +3,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -157,6 +158,11 @@ func (s *Server) pageData(data map[string]any) {
 	// The spinner's starting state, so a cold load paints it right on first
 	// paint instead of waiting for the first SSE event.
 	data["Syncing"] = s.mail.AnySyncing()
+	prefs := s.store.GetPrefs()
+	data["Keybindings"] = prefs.Keybindings
+	data["KeybindingActions"] = store.AllKeybindings
+	bindingsJSON, _ := json.Marshal(prefs.Keybindings)
+	data["KeybindingsJSON"] = template.JS(bindingsJSON) //nolint:gosec // encoding/json escapes script-significant HTML
 	s.appearanceData(data)
 	if _, ok := data["OGOrigin"]; !ok {
 		data["OGOrigin"] = cleanOrigin(s.cfg.Server.BaseURL)

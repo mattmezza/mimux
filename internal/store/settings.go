@@ -3,6 +3,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"hash/fnv"
 	"io"
 	"log/slog"
@@ -29,6 +30,7 @@ type Prefs struct {
 	ShowAccountBadge    bool              // show account-name badge on list rows (default true)
 	ShowAttachMarker    bool              // show attachment marker on list rows (default true)
 	ShowListLabels      bool              // show labels on message-list rows (default false)
+	DaySeparators       bool              // group message-list rows by local received day (default true)
 	ShowFavicon         bool              // use sender-domain favicon as avatar (default false)
 	HideAvatarMobile    bool              // hide sender avatar/favicon on mobile only (default false)
 	AvatarShape         string            // sender-avatar corner style: circle|rounded|square (default circle)
@@ -68,7 +70,8 @@ type Prefs struct {
 	// self-hosted one). Blank disables that transport. It needs no browser
 	// permission and no installed PWA — the fallback for a phone that can't or
 	// won't run Web Push.
-	NtfyURL string
+	NtfyURL     string
+	Keybindings map[string]string // action id -> printable key or two-key sequence
 }
 
 // AllNotifyScopes are the notification master-switch choices, for the Settings
@@ -239,6 +242,7 @@ func defaultPrefs() Prefs {
 		ShowAccountBadge:    true,
 		ShowAttachMarker:    true,
 		ShowListLabels:      false,
+		DaySeparators:       true,
 		ShowFavicon:         false,
 		HideAvatarMobile:    false,
 		AvatarShape:         "circle",
@@ -264,6 +268,7 @@ func defaultPrefs() Prefs {
 		NotifyScope:         "off",
 		ExternalBurstLimit:  200,
 		NtfyURL:             "",
+		Keybindings:         DefaultKeybindings(),
 	}
 }
 
@@ -356,6 +361,9 @@ func (s *Store) GetPrefs() Prefs {
 	if v, ok := s.getSetting("show_list_labels"); ok {
 		p.ShowListLabels = v == "1"
 	}
+	if v, ok := s.getSetting("day_separators"); ok {
+		p.DaySeparators = v == "1"
+	}
 	if v, ok := s.getSetting("show_favicon"); ok {
 		p.ShowFavicon = v == "1"
 	}
@@ -435,6 +443,21 @@ func (s *Store) GetPrefs() Prefs {
 			p.ExternalBurstLimit = n
 		}
 	}
+	if v, ok := s.getSetting("keybindings"); ok {
+		var saved map[string]string
+		if json.Unmarshal([]byte(v), &saved) == nil {
+			merged := DefaultKeybindings()
+			for id, binding := range saved {
+				action, known := KeybindingByID(id)
+				if known && ValidateKeybinding(binding) == nil && strings.Contains(binding, " ") == action.Sequence() {
+					merged[id] = binding
+				}
+			}
+			if ValidateKeybindings(merged) == nil {
+				p.Keybindings = merged
+			}
+		}
+	}
 	if v, ok := s.getSetting("undo_send_delay"); ok {
 		if n, err := strconv.Atoi(v); err == nil && (n == 3 || n == 5 || n == 10) {
 			p.UndoSendDelay = n
@@ -458,6 +481,7 @@ func (s *Store) GetPrefs() Prefs {
 
 // SavePrefs writes all preference keys.
 func (s *Store) SavePrefs(p Prefs) error {
+	bindings, _ := json.Marshal(p.Keybindings)
 	kv := map[string]string{
 		"mark_read_delay":       strconv.Itoa(p.MarkReadDelay),
 		"sync_interval_min":     strconv.Itoa(p.SyncIntervalMin),
@@ -469,6 +493,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"show_account_badge":    boolStr(p.ShowAccountBadge),
 		"show_attach_marker":    boolStr(p.ShowAttachMarker),
 		"show_list_labels":      boolStr(p.ShowListLabels),
+		"day_separators":        boolStr(p.DaySeparators),
 		"show_favicon":          boolStr(p.ShowFavicon),
 		"hide_avatar_mobile":    boolStr(p.HideAvatarMobile),
 		"avatar_shape":          p.AvatarShape,
@@ -493,6 +518,7 @@ func (s *Store) SavePrefs(p Prefs) error {
 		"notify_scope":          p.NotifyScope,
 		"ntfy_url":              p.NtfyURL,
 		"external_burst_limit":  strconv.Itoa(p.ExternalBurstLimit),
+		"keybindings":           string(bindings),
 	}
 	for name, color := range p.AccountColors {
 		kv[accountColorPrefix+name] = color

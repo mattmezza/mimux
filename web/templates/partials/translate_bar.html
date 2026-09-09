@@ -38,7 +38,7 @@ if (!window.smTranslate) {
     });
     bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b bg-zinc-800/60 border-zinc-800 text-zinc-400";
     bar.textContent = on ? "Translating…" : "";
-    frame.src = u.pathname + u.search;
+    loadBody(frame, u.pathname + u.search);
   };
 
   function smLangName(code) {

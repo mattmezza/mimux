@@ -47,6 +47,7 @@ func seedConfig(t *testing.T, s *Store) {
 	prefs := s.GetPrefs()
 	prefs.ShowListLabels = true
 	prefs.AvatarShape = "square"
+	prefs.Keybindings["archive"] = "x"
 	// Notification *preferences* travel (they're just settings). The VAPID
 	// private key and the push subscriptions deliberately do NOT — they live in
 	// their own tables precisely so this dump can't carry them; see migration
@@ -157,6 +158,9 @@ func TestConfigRoundTrip(t *testing.T) {
 	}
 	if dst.GetPrefs().AvatarShape != "square" {
 		t.Errorf("AvatarShape not restored: %q", dst.GetPrefs().AvatarShape)
+	}
+	if got := dst.GetPrefs().Keybindings["archive"]; got != "x" {
+		t.Errorf("custom keybinding not restored: %q", got)
 	}
 	if p := dst.GetPrefs(); p.NotifyScope != "all" || p.NtfyURL != "https://ntfy.sh/mimux-test-topic" {
 		t.Errorf("notification prefs not restored: %q %q", p.NotifyScope, p.NtfyURL)

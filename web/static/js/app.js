@@ -1,5 +1,114 @@
 // mimux app glue: htmx CSRF, service worker, SSE, toasts, keybindings.
 
+let recordingKeybinding = null;
+let recordingKeys = [];
+function keybindingError(message) {
+  const el = document.getElementById("keybinding-error");
+  if (!el) return;
+  el.textContent = message || "";
+  el.classList.toggle("hidden", !message);
+}
+function bindingConflict(input, value) {
+  return [...document.querySelectorAll("[data-keybinding-input]")].find((other) => {
+    if (other === input) return false;
+    if (other.value === value) return true;
+    const parts = value.split(" ");
+    const theirs = other.value.split(" ");
+    return (parts.length === 2 && theirs.length === 1 && parts[0] === theirs[0]) ||
+      (parts.length === 1 && theirs.length === 2 && parts[0] === theirs[0]);
+  });
+}
+window.beginKeyRecording = function (input) {
+	if (recordingKeybinding === input && input.hasAttribute("data-recording")) return;
+  if (recordingKeybinding) {
+    recordingKeybinding.value = recordingKeybinding.dataset.beforeRecording || recordingKeybinding.defaultValue;
+    recordingKeybinding.removeAttribute("data-recording");
+  }
+  recordingKeybinding = input;
+  recordingKeys = [];
+  input.dataset.beforeRecording = input.value;
+  input.setAttribute("data-recording", "");
+  input.value = input.dataset.sequence === "1" ? "Press first key…" : "Press a key…";
+  keybindingError("");
+};
+window.resetKeybinding = function (input) {
+  const conflict = bindingConflict(input, input.dataset.default);
+  if (conflict) { keybindingError(`Default ${input.dataset.default} is currently used by ${conflict.dataset.label}.`); return; }
+  input.value = input.dataset.default;
+  input.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  keybindingError("");
+};
+window.resetAllKeybindings = function () {
+  document.querySelectorAll("[data-keybinding-input]").forEach((input) => {
+    input.value = input.dataset.default;
+    input.removeAttribute("data-recording");
+  });
+  recordingKeybinding = null;
+  recordingKeys = [];
+  keybindingError("");
+};
+document.addEventListener("keydown", (e) => {
+  const input = recordingKeybinding;
+  if (!input) return;
+  e.preventDefault();
+  e.stopImmediatePropagation();
+	if (e.repeat) return;
+  if (e.key === "Escape") {
+    input.value = input.dataset.beforeRecording || input.defaultValue;
+    input.removeAttribute("data-recording");
+    recordingKeybinding = null;
+    keybindingError("Recording cancelled. Escape is reserved for closing dialogs and panes.");
+    return;
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey) { keybindingError("Ctrl, Command, and Alt combinations are reserved by the browser and operating system."); return; }
+  if (["Enter", "Tab", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)) {
+    keybindingError(`${e.key.replace("Arrow", "Arrow ")} is reserved for controls and keyboard navigation.`);
+    return;
+  }
+  const key = e.key === " " ? "Space" : e.key;
+  if ([...key].length !== 1 && key !== "Space") { keybindingError("Press a printable character."); return; }
+  recordingKeys.push(key);
+  if (input.dataset.sequence === "1" && recordingKeys.length === 1) {
+    input.value = `${key} then…`;
+    return;
+  }
+  const value = recordingKeys.join(" ");
+  const conflict = bindingConflict(input, value);
+  if (conflict) {
+    recordingKeys = [];
+    input.value = input.dataset.sequence === "1" ? "Press first key…" : "Press a key…";
+    keybindingError(`${value} is already used by ${conflict.dataset.label}. Choose another shortcut.`);
+    return;
+  }
+  input.value = value;
+  input.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  recordingKeys = [];
+  keybindingError("");
+}, true);
+document.addEventListener("submit", () => {
+  if (!recordingKeybinding) return;
+  recordingKeybinding.value = recordingKeybinding.dataset.beforeRecording || recordingKeybinding.defaultValue;
+  recordingKeybinding.removeAttribute("data-recording");
+  recordingKeybinding = null;
+  recordingKeys = [];
+}, true);
+// Replace stale reading-pane content as soon as a message request starts.
+// Templates live outside the htmx swap target, so this keeps working after
+// every message/thread response replaces the pane's inner HTML.
+document.addEventListener("htmx:beforeRequest", (e) => {
+  if (e.detail?.target?.id !== "reading-pane") return;
+  const path = e.detail.requestConfig?.path || "";
+  const template = document.getElementById(path.startsWith("/t/") ? "reading-skeleton-thread" : "reading-skeleton-single");
+  if (template && /^\/(?:messages|t)\//.test(path)) e.detail.target.replaceChildren(template.content.cloneNode(true));
+});
+document.addEventListener("htmx:afterRequest", (e) => {
+  const pane = e.detail?.target;
+  if (pane?.id !== "reading-pane" || !e.detail.failed || !pane.querySelector("[data-reading-skeleton]")) return;
+  pane.innerHTML = '<div role="alert" class="m-auto p-6 text-center text-sm text-red-300">Couldn\'t load this message. Please try again.</div>';
+});
+
 // The active quick filter, read from its canonical DOM reflection (the
 // :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.
 function activeFilter() {
@@ -606,10 +715,11 @@ document.addEventListener("htmx:afterSettle", (e) => {
 document.addEventListener("htmx:afterSettle", (e) => {
   if (!e.target?.closest?.("#message-list-items")) return;
   const seen = new Set();
-  document.querySelectorAll("#message-list-items > li[id]").forEach((li) => {
+  document.querySelectorAll("#message-list-items li[id]").forEach((li) => {
     if (seen.has(li.id)) li.remove();
     else seen.add(li.id);
   });
+  document.querySelectorAll("#message-list-items [data-day-group]").forEach(cleanupDayGroup);
 });
 document.addEventListener("htmx:afterSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
@@ -782,10 +892,24 @@ function moveSelected(path, label) {
 // Fade + slide a row out, then drop it (see .row-removing in app.css).
 function removeRowAnimated(el) {
   if (!el) return;
+  const group = el.closest("[data-day-group]");
+  const root = !el.hasAttribute("data-mid") && el.id?.startsWith("msg-") ? el.id.slice(4) : "";
+  const sub = root ? document.getElementById(`sub-${root}`) : null;
   el.classList.add("row-removing");
-  setTimeout(() => el.remove(), 200);
+  setTimeout(() => {
+    el.remove();
+    sub?.remove();
+    cleanupDayGroup(group);
+  }, 200);
 }
 window.removeRowAnimated = removeRowAnimated;
+
+// Date wrappers are presentation only. Never leave a separator (or an
+// hx-preserved sub-row container) behind without a top-level conversation.
+function cleanupDayGroup(group) {
+  if (!group?.matches?.("[data-day-group]")) return;
+  if (!group.querySelector(":scope > ul > li[data-message-row]")) group.remove();
+}
 
 // Reset the reading pane back to its empty placeholder — used by back
 // buttons, Escape (mobile), and after archive/delete/spam. Keeping the
@@ -1068,16 +1192,182 @@ window.toggleThreadMessage = toggleThreadMessage;
 // --- attachments: inline preview (image/pdf/text) without downloading. The
 // attachment endpoint is same-origin and served under a locked-down CSP, so
 // embedding it here is safe. Toggles the preview panel; loads it only once. ---
-window.previewAttachment = function (btn, url, kind) {
+function stopPDFPreview(holder) {
+  const state = holder?._pdfPreview;
+  if (!state) return;
+  state.cancelled = true;
+  state.observer?.disconnect();
+  state.renderTasks.forEach((task) => { try { task.cancel(); } catch (_) {} });
+  state.renderTasks.clear();
+  state.loadingTask?.destroy();
+  holder._pdfPreview = null;
+  delete holder.dataset.loaded;
+  holder.removeAttribute("aria-busy");
+  holder.replaceChildren();
+}
+
+document.addEventListener("htmx:beforeCleanupElement", (event) => {
+  const root = event.detail?.elt || event.target;
+  if (!(root instanceof Element)) return;
+  if (root.matches?.("[data-preview]")) stopPDFPreview(root);
+  root.querySelectorAll?.("[data-preview]").forEach(stopPDFPreview);
+});
+
+async function startPDFPreview(holder, url) {
+  // Even a small, hostile PDF can advertise thousands of pages or enormous
+  // media boxes. Keep both DOM and raster memory bounded; pages outside the
+  // scroll viewport are placeholders and old canvases are evicted.
+  const MAX_PAGES = 100, MAX_CANVASES = 6, MAX_PIXELS = 12_000_000, MAX_EDGE = 4096;
+  const state = { cancelled: false, active: 0, queue: [], queued: new Set(), renderTasks: new Map(), rendered: new Map() };
+  holder._pdfPreview = state;
+  const pdfjs = await import("/static/js/pdf.min.mjs");
+  if (state.cancelled) return;
+  pdfjs.GlobalWorkerOptions.workerSrc = "/static/js/pdf.worker.min.mjs";
+  state.loadingTask = pdfjs.getDocument({ url });
+  const pdf = await state.loadingTask.promise;
+  state.pdf = pdf;
+  if (state.cancelled) return;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "mb-2 flex items-center justify-between gap-3 text-[11px] text-zinc-400";
+  const status = document.createElement("span");
+  status.textContent = `${pdf.numPages} page${pdf.numPages === 1 ? "" : "s"}${pdf.numPages > MAX_PAGES ? `; preview limited to ${MAX_PAGES}` : ""}`;
+  const native = document.createElement("a");
+  native.href = url;
+  native.target = "_blank";
+  native.rel = "noopener";
+  native.className = "shrink-0 underline text-indigo-300 hover:text-indigo-200";
+  native.textContent = "Open in accessible PDF viewer";
+  native.setAttribute("aria-label", "Open PDF in the browser viewer for searchable text, links, and assistive technology");
+  toolbar.append(status, native);
+
+  const pages = document.createElement("div");
+  pages.className = "space-y-3 max-h-[32rem] overflow-auto rounded bg-zinc-800/50 p-2";
+  pages.setAttribute("aria-label", `Visual preview of ${Math.min(pdf.numPages, MAX_PAGES)} PDF pages`);
+  const count = Math.min(pdf.numPages, MAX_PAGES);
+  for (let number = 1; number <= count; number++) {
+    const slot = document.createElement("div");
+    slot.dataset.pdfPage = String(number);
+    slot.className = "min-h-64 flex items-center justify-center bg-zinc-800 text-zinc-500 text-xs";
+    slot.setAttribute("aria-label", `PDF page ${number} visual preview`);
+    slot.textContent = `Page ${number}`;
+    pages.appendChild(slot);
+  }
+  holder.replaceChildren(toolbar, pages);
+  holder.removeAttribute("aria-busy");
+
+  const evict = () => {
+    while (state.rendered.size > MAX_CANVASES) {
+      const candidate = [...state.rendered].find(([slot]) => slot.dataset.visible !== "1") || state.rendered.entries().next().value;
+      const [slot, page] = candidate;
+      page.cleanup();
+      state.rendered.delete(slot);
+      slot.replaceChildren(`Page ${slot.dataset.pdfPage}`);
+      slot.classList.add("min-h-64");
+    }
+  };
+  const pump = () => {
+    while (!state.cancelled && state.active < 2 && state.queue.length) {
+      const slot = state.queue.shift();
+      state.queued.delete(slot);
+      if (!slot.isConnected || slot.dataset.visible !== "1" || state.rendered.has(slot)) continue;
+      state.active++;
+      let loadedPage = null;
+      (async () => {
+        const number = Number(slot.dataset.pdfPage);
+        const page = loadedPage = await pdf.getPage(number);
+        if (state.cancelled || slot.dataset.visible !== "1") { page.cleanup(); return; }
+        const natural = page.getViewport({ scale: 1 });
+        const available = Math.max(1, pages.clientWidth - 16);
+        const cssScale = Math.min(2, available / natural.width, MAX_EDGE / natural.height);
+        const viewport = page.getViewport({ scale: cssScale });
+        let ratio = Math.min(window.devicePixelRatio || 1, 2);
+        ratio = Math.min(ratio, MAX_EDGE / viewport.width, MAX_EDGE / viewport.height,
+          Math.sqrt(MAX_PIXELS / (viewport.width * viewport.height)));
+        ratio = Math.max(0.1, ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.floor(viewport.width * ratio));
+        canvas.height = Math.max(1, Math.floor(viewport.height * ratio));
+        canvas.style.width = `${Math.floor(viewport.width)}px`;
+        canvas.style.height = `${Math.floor(viewport.height)}px`;
+        canvas.className = "block max-w-full h-auto mx-auto bg-white shadow-sm";
+        canvas.setAttribute("aria-hidden", "true");
+        slot.replaceChildren(canvas);
+        slot.classList.remove("min-h-64");
+        const task = page.render({ canvasContext: canvas.getContext("2d"), viewport,
+          transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] });
+        state.renderTasks.set(slot, task);
+        await task.promise;
+        state.renderTasks.delete(slot);
+        if (!state.cancelled) { state.rendered.set(slot, page); evict(); }
+        else page.cleanup();
+      })().catch((err) => {
+        state.renderTasks.delete(slot);
+        loadedPage?.cleanup();
+        if (!state.cancelled && err?.name !== "RenderingCancelledException") console.error("PDF page preview failed", err);
+      }).finally(() => { state.active--; pump(); });
+    }
+  };
+  state.observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      const slot = entry.target;
+      slot.dataset.visible = entry.isIntersecting ? "1" : "0";
+      if (entry.isIntersecting && !state.rendered.has(slot) && !state.queued.has(slot)) {
+        state.queued.add(slot); state.queue.push(slot);
+      } else if (!entry.isIntersecting) {
+        const task = state.renderTasks.get(slot);
+        if (task) { try { task.cancel(); } catch (_) {} }
+      }
+    });
+    evict(); pump();
+  }, { root: pages, rootMargin: "320px 0px" });
+  pages.querySelectorAll("[data-pdf-page]").forEach((slot) => state.observer.observe(slot));
+}
+
+window.previewAttachment = async function (btn, url, kind) {
   const holder = btn.closest("[data-attachment]")?.querySelector("[data-preview]");
   if (!holder) return;
-  if (holder.dataset.loaded) { holder.classList.toggle("hidden"); return; }
+  if (holder.dataset.loaded) {
+    if (kind === "pdf" && !holder.classList.contains("hidden")) {
+      stopPDFPreview(holder);
+      holder.classList.add("hidden");
+      return;
+    }
+    holder.classList.toggle("hidden"); return;
+  }
   holder.dataset.loaded = "1";
   holder.classList.remove("hidden");
   // Fetching the part means a live IMAP round-trip, so show the same spinner
   // the list header uses until the element fires load (or errors).
   holder.setAttribute("aria-busy", "true");
   holder.innerHTML = `<span data-preview-spinner role="status" class="flex items-center gap-1.5 text-[11px] text-zinc-500"><svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg>Loading preview…</span>`;
+  if (kind === "pdf") {
+    let state;
+    try {
+      const loading = startPDFPreview(holder, url);
+      state = holder._pdfPreview;
+      await loading;
+    } catch (err) {
+      // Closing and immediately reopening starts a new preview in the same
+      // holder. A late rejection from the cancelled load must not replace the
+      // newer preview with its error state.
+      if (holder._pdfPreview !== state || state?.cancelled || !holder.dataset.loaded) return;
+      console.error("PDF preview failed", err);
+      holder.removeAttribute("aria-busy");
+      holder.replaceChildren();
+      const alert = document.createElement("div");
+      alert.role = "alert";
+      alert.className = "text-xs text-red-300";
+      alert.append("This PDF could not be previewed. ");
+      const download = document.createElement("a");
+      download.className = "underline hover:text-red-200";
+      download.href = url + (url.includes("?") ? "&" : "?") + "dl=1";
+      download.textContent = "Download it instead";
+      alert.append(download, ".");
+      holder.append(alert);
+    }
+    return;
+  }
   const el = document.createElement(kind === "image" ? "img" : "iframe");
   if (kind === "image") { el.alt = ""; el.className = "max-h-96 max-w-full rounded hidden"; }
   else { el.title = "Attachment preview"; el.className = "w-full h-96 rounded border-0 bg-white hidden"; }
@@ -1092,6 +1382,14 @@ window.previewAttachment = function (btn, url, kind) {
   el.addEventListener("error", done);
   el.src = url;
   holder.appendChild(el);
+};
+
+// Reload an already-displayed message body without adding a nested iframe
+// history entry. Otherwise browser Back visits stale translated/image-blocked
+// body states before it can return the mobile reading pane to the list.
+window.loadBody = function (frame, url) {
+  if (!frame || !url) return;
+  if (frame.contentWindow) frame.contentWindow.location.replace(url);
 };
 
 // --- per-message dark/light: email bodies render light by default (many
@@ -1905,9 +2203,9 @@ function postMarkRead(id, read, thread) {
 // stuck) and undoes the flip with a toast when the server never took it, so the
 // list can never silently disagree with what the next sync will show.
 function markRead(id, read, thread) {
-  if (read) markRowRead(id); else markRowUnread(id);
+  if (read) markRowRead(id, thread); else markRowUnread(id, thread);
   return postMarkRead(id, read, thread).catch(() => {
-    if (read) markRowUnread(id); else markRowRead(id);
+    if (read) markRowUnread(id, thread); else markRowRead(id, thread);
     toast(`Couldn't mark ${read ? "read" : "unread"} — still ${read ? "unread" : "read"}.`);
   });
 }
@@ -1916,12 +2214,23 @@ function markRead(id, read, thread) {
 // and clear data-unread. Adds .just-read so the row stays visible even under an
 // active "Unread" quick filter (per requirement — a just-read message shouldn't
 // vanish out from under you; the next list refresh removes it correctly).
-// A message can be on screen twice: as its thread's row (msg-<id>) and as that
-// thread's expanded sub-row (msg-s<id>). Flip both wherever they exist.
-function rowsFor(id) {
-  return id ? [document.getElementById(`msg-${id}`), document.getElementById(`msg-s${id}`)].filter(Boolean) : [];
+// A message can be on screen twice when it is the latest member of a thread:
+// the conversation row uses msg-<id>, while the expanded message uses
+// msg-s<id>. A per-message change must start at the sub-row so the parent stays
+// unread until every child is read. A whole-thread change updates every loaded
+// child as well as the aggregate row.
+function rowsFor(id, wholeThread) {
+  if (!id) return [];
+  const parent = document.getElementById(`msg-${id}`);
+  const sub = document.getElementById(`msg-s${id}`);
+  if (!wholeThread && sub) return [sub];
+  if (wholeThread && parent?.querySelector(".thread-toggle")) {
+    const box = document.getElementById(`sub-${id}`);
+    return [...(box?.querySelectorAll("li[data-mid]") || []), parent];
+  }
+  return [parent, sub].filter(Boolean);
 }
-function markRowRead(id) { rowsFor(id).forEach(setRowRead); }
+function markRowRead(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowRead); }
 function setRowRead(row) {
   if (!row.hasAttribute("data-unread")) return;
   row.removeAttribute("data-unread");
@@ -1934,11 +2243,39 @@ function setRowRead(row) {
   // Brief highlight so the state change is noticeable when it fires on a delay.
   row.classList.add("read-flash");
   setTimeout(() => row.classList.remove("read-flash"), 700);
+
+  if (!row.hasAttribute("data-mid") && row.querySelector(".thread-toggle") && activeFilter() === "unread") {
+    const root = row.id.startsWith("msg-") ? row.id.slice(4) : "";
+    const sub = root && document.getElementById(`sub-${root}`);
+    sub?.classList.add("hidden");
+    const toggle = row.querySelector(".thread-toggle");
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.firstElementChild?.classList.remove("rotate-90");
+  }
+
+  // A sub-row carries one message's state while its parent carries the
+  // conversation aggregate. Once the final unread sub-row is cleared, update
+  // that aggregate too. Under the Unread filter, collapse it at the same time
+  // so preserved sub-rows never float beneath a hidden thread header.
+  if (row.hasAttribute("data-mid")) {
+    const sub = row.closest('li[id^="sub-"]');
+    if (sub && !sub.querySelector('li[data-mid][data-unread]')) {
+      const root = sub.id.slice(4);
+      const parent = document.getElementById(`msg-${root}`);
+      if (parent?.hasAttribute("data-unread")) setRowRead(parent);
+      if (parent && activeFilter() === "unread") {
+        sub.classList.add("hidden");
+        const toggle = parent.querySelector(".thread-toggle");
+        toggle?.setAttribute("aria-expanded", "false");
+        toggle?.firstElementChild?.classList.remove("rotate-90");
+      }
+    }
+  }
 }
 
 // Inverse of markRowRead: flip a row back to unread in place (re-add the dot,
 // re-bold). Used by the double-click read/unread toggle.
-function markRowUnread(id) { rowsFor(id).forEach(setRowUnread); }
+function markRowUnread(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowUnread); }
 function setRowUnread(row) {
   if (row.hasAttribute("data-unread")) return;
   row.setAttribute("data-unread", "");
@@ -1983,8 +2320,10 @@ function setThreadMsgRead(block, read) {
 function syncThreadRow(pane) {
   const rootId = pane && pane.dataset.messageId;
   if (!rootId) return;
-  if (pane.querySelector("[data-thread-msg][data-unread]")) markRowUnread(rootId);
-  else markRowRead(rootId);
+  const parent = document.getElementById(`msg-${rootId}`);
+  if (!parent) return;
+  if (pane.querySelector("[data-thread-msg][data-unread]")) setRowUnread(parent);
+  else setRowRead(parent);
 }
 
 // Thread header "Mark thread read/unread": flip every message in the pane and
@@ -2870,50 +3209,62 @@ function readingScroller() {
     .find((e) => e && e.scrollHeight > e.clientHeight + 4) || null;
 }
 
-let goPending = false;
-const keymap = {
-  "h": () => focusSection(-1),
-  "l": () => focusSection(1),
-  "/": () => { const s = document.getElementById("search"); if (s) { s.focus(); return true; } },
-  "?": () => toggleHelp(),
-  "c": () => openCompose(""),
-  "j": () => moveSelection(1),
-  "k": () => moveSelection(-1),
-  "J": () => jumpEdge(1),
-  "K": () => jumpEdge(-1),
-  "o": () => openSelected(),
+const actionKeymap = {
+  focus_list: () => focusSection(-1),
+  focus_reading: () => focusSection(1),
+  search: () => { const s = document.getElementById("search"); if (s) { s.focus(); return true; } },
+  help: () => toggleHelp(),
+  compose: () => openCompose(""),
+  next: () => moveSelection(1),
+  previous: () => moveSelection(-1),
+  last: () => jumpEdge(1),
+  first: () => jumpEdge(-1),
+  open: () => openSelected(),
   // Space expands/collapses the selected thread by clicking its disclosure
   // button — the same control the mouse uses, so the htmx fetch, the hidden
   // class, aria-expanded and the chevron all stay owned by thread_row.html.
   // Returns false (no preventDefault, so the page/pane keeps scrolling) on a
   // single-message row, a sub-row, or while the reading pane holds focus.
-  " ": () => {
+  toggle_thread: () => {
     if (readingScroller()) return false;
     const btn = selectedRow()?.querySelector(".thread-toggle");
     if (!btn) return false;
     btn.click();
     return true;
   },
-  "r": () => flagSelected("read"),
-  "u": () => flagSelected("unread"),
-  "s": () => { if (goPending) { goPending = false; starredSearch(); return true; } return flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"); },
-  "f": () => cycleFilter(),
-  "e": () => moveSelected("archive", "Archived"),
-  "d": () => { if (goPending) { goPending = false; window.location.href = "/drafts"; return true; } return moveSelected("delete", "Deleted"); },
-  "#": () => moveSelected("delete", "Deleted"),
-  "!": () => moveSelected("spam", "Marked as spam"),
-  "R": () => replyCompose("reply"),
-  "A": () => replyCompose("all"),
-  "F": () => replyCompose("forward"),
-  "g": () => { goPending = true; setTimeout(() => (goPending = false), 800); return true; },
-  "i": () => { if (goPending) { goPending = false; jumpInbox(); return true; } return false; },
-  "t": () => { if (goPending) { goPending = false; jumpSent(); return true; } return false; },
-  "0": () => jumpUnified(),
+  mark_read: () => flagSelected("read"),
+  mark_unread: () => flagSelected("unread"),
+  star: () => flagSelected(selectedRow()?.querySelector('[hx-post*="unstar"]') ? "unstar" : "star"),
+  cycle_filter: () => cycleFilter(),
+  archive: () => moveSelected("archive", "Archived"),
+  delete: () => moveSelected("delete", "Deleted"),
+  delete_alt: () => moveSelected("delete", "Deleted"),
+  spam: () => moveSelected("spam", "Marked as spam"),
+  reply: () => replyCompose("reply"),
+  reply_all: () => replyCompose("all"),
+  forward: () => replyCompose("forward"),
+  goto_inbox: () => { jumpInbox(); return true; },
+  goto_sent: () => { jumpSent(); return true; },
+  goto_starred: () => { starredSearch(); return true; },
+  goto_drafts: () => { window.location.href = "/drafts"; return true; },
+  goto_unified: () => jumpUnified(),
 };
-// 1–9 jump to the Nth configured account's inbox.
 for (let n = 1; n <= 9; n++) {
-  keymap[String(n)] = () => jumpAccountInbox(n - 1);
+  actionKeymap[`goto_account_${n}`] = () => jumpAccountInbox(n - 1);
 }
+const keymap = {};
+const sequenceKeymap = {};
+const sequencePrefixes = new Set();
+Object.entries(window.SM_KEYBINDINGS || {}).forEach(([action, binding]) => {
+  const fn = actionKeymap[action];
+  if (!fn || typeof binding !== "string") return;
+  if (binding.includes(" ")) {
+    sequenceKeymap[binding] = fn;
+    sequencePrefixes.add(binding.split(" ")[0]);
+  } else keymap[binding] = fn;
+});
+let pendingSequence = "";
+let pendingSequenceTimer = 0;
 // f cycles the quick filters (All → Unread → Starred). Clicks the sidebar
 // buttons so Alpine keeps owning the state (persistence, ?filter= in the URL).
 function cycleFilter() {
@@ -3046,7 +3397,25 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Enter") { if (openSelected()) e.preventDefault(); return; }
-  const fn = keymap[e.key];
+  const key = e.key === " " ? "Space" : e.key;
+  if (pendingSequence) {
+    const fn = sequenceKeymap[`${pendingSequence} ${key}`];
+    pendingSequence = "";
+    clearTimeout(pendingSequenceTimer);
+    if (fn) fn();
+    // A second sequence key is always consumed. Falling through to its direct
+    // binding could archive/delete mail after a mistyped go-to shortcut.
+    e.preventDefault();
+    return;
+  }
+  if (sequencePrefixes.has(key)) {
+    pendingSequence = key;
+    clearTimeout(pendingSequenceTimer);
+    pendingSequenceTimer = setTimeout(() => (pendingSequence = ""), 800);
+    e.preventDefault();
+    return;
+  }
+  const fn = keymap[key];
   if (fn && fn() !== false) e.preventDefault();
 });
 

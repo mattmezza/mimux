@@ -18,6 +18,9 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	if p.ShowListLabels {
 		t.Fatalf("ShowListLabels should default off: %+v", p)
 	}
+	if !p.DaySeparators {
+		t.Fatalf("DaySeparators should default on: %+v", p)
+	}
 	if p.AvatarShape != "circle" {
 		t.Fatalf("AvatarShape should default to circle: %+v", p)
 	}
@@ -26,6 +29,41 @@ func TestPrefsDefaultsWhenEmpty(t *testing.T) {
 	}
 	if p.SwipeLeftAction != "none" || p.SwipeRightAction != "unread" {
 		t.Fatalf("unexpected swipe defaults: SwipeLeftAction=%q, SwipeRightAction=%q", p.SwipeLeftAction, p.SwipeRightAction)
+	}
+	if p.Keybindings["next"] != "j" || p.Keybindings["goto_inbox"] != "g i" || p.Keybindings["goto_account_9"] != "9" {
+		t.Fatalf("unexpected keybinding defaults: %+v", p.Keybindings)
+	}
+}
+
+func TestKeybindingsRoundTripAndInvalidImportFallback(t *testing.T) {
+	s := open(t)
+	p := s.GetPrefs()
+	p.Keybindings["archive"] = "x"
+	if err := s.SavePrefs(p); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetPrefs().Keybindings["archive"]; got != "x" {
+		t.Fatalf("archive = %q", got)
+	}
+	if err := s.setSetting("keybindings", `{"archive":"Enter","unknown":"z"}`); err != nil {
+		t.Fatal(err)
+	}
+	got := s.GetPrefs().Keybindings
+	if got["archive"] != "e" || got["unknown"] != "" {
+		t.Fatalf("invalid imported bindings survived: %+v", got)
+	}
+}
+
+func TestValidateKeybinding(t *testing.T) {
+	for _, valid := range []string{"x", "X", "?", "Space", "g i"} {
+		if err := ValidateKeybinding(valid); err != nil {
+			t.Errorf("%q: %v", valid, err)
+		}
+	}
+	for _, invalid := range []string{"", "Enter", "Tab", "ArrowUp", "Ctrl+x", "g i x", " "} {
+		if err := ValidateKeybinding(invalid); err == nil {
+			t.Errorf("%q unexpectedly valid", invalid)
+		}
 	}
 }
 
@@ -40,6 +78,7 @@ func TestPrefsRoundTrip(t *testing.T) {
 		PreviewMobileLines:  5,
 		ShowAvatar:          false,
 		ShowListLabels:      true,
+		DaySeparators:       true,
 		AvatarShape:         "square",
 		AccountColors:       map[string]string{"work": "#6366f1", "personal": "#22c55e"},
 	}
@@ -49,7 +88,7 @@ func TestPrefsRoundTrip(t *testing.T) {
 	got := s.GetPrefs()
 	if got.MarkReadDelay != want.MarkReadDelay || got.SyncIntervalMin != want.SyncIntervalMin ||
 		got.ShowAvatar != want.ShowAvatar ||
-		got.ShowListLabels != want.ShowListLabels || got.AvatarShape != want.AvatarShape {
+		got.ShowListLabels != want.ShowListLabels || got.DaySeparators != want.DaySeparators || got.AvatarShape != want.AvatarShape {
 		t.Fatalf("scalars mismatch: got %+v want %+v", got, want)
 	}
 	if got.PreviewDesktop != want.PreviewDesktop || got.PreviewDesktopLines != want.PreviewDesktopLines ||
