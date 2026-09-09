@@ -45,6 +45,68 @@ func postSettings(t *testing.T, r http.Handler, form url.Values) *httptest.Respo
 	return rec
 }
 
+func keybindingForm() url.Values {
+	form := url.Values{"section": {"keybindings"}}
+	for _, action := range store.AllKeybindings {
+		form.Set("binding:"+action.ID, action.Binding)
+	}
+	return form
+}
+
+func TestKeybindingsSaveAndValidation(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+	form := keybindingForm()
+	form.Set("binding:archive", "x")
+	if rec := postSettings(t, r, form); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := s.store.GetPrefs().Keybindings["archive"]; got != "x" {
+		t.Fatalf("archive = %q", got)
+	}
+
+	for name, mutate := range map[string]func(url.Values){
+		"reserved":         func(v url.Values) { v.Set("binding:archive", "Enter") },
+		"duplicate":        func(v url.Values) { v.Set("binding:archive", "j") },
+		"prefix collision": func(v url.Values) { v.Set("binding:archive", "g") },
+		"unknown action":   func(v url.Values) { v.Set("binding:not-real", "z") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			v := keybindingForm()
+			mutate(v)
+			rec := postSettings(t, r, v)
+			if rec.Code != http.StatusBadRequest || strings.TrimSpace(rec.Body.String()) == "" {
+				t.Fatalf("status = %d, body=%q", rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestKeybindingsSettingsAndHelpAreLive(t *testing.T) {
+	s := serverWith(t, nil, func(st *store.Store) {
+		p := st.GetPrefs()
+		p.Keybindings["help"] = "x"
+		if err := st.SavePrefs(p); err != nil {
+			t.Fatal(err)
+		}
+	})
+	body := renderSection(t, s, "keybindings")
+	for _, want := range []string{`name="binding:help"`, `value="x"`, `beginKeyRecording(this)`, `Reset all to defaults`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("settings missing %q", want)
+		}
+	}
+	data := map[string]any{"Prefs": s.store.GetPrefs()}
+	s.pageData(data)
+	var out strings.Builder
+	if err := s.tmpl["inbox"].ExecuteTemplate(&out, "help-overlay", data); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), ">x</kbd>") || !strings.Contains(out.String(), `/settings/keybindings`) {
+		t.Fatalf("help does not reflect configured binding: %s", out.String())
+	}
+}
+
 // TestAvatarDependentsSurviveAvatarsOff pins the fix for the disabled-input
 // trap: show_favicon, hide_avatar_mobile and avatar_shape are disabled in the
 // UI (and so never submitted by the browser) whenever show_avatar is off.

@@ -82,6 +82,12 @@
   scrollbar-width: thin;
   scrollbar-color: #3f3f46 transparent;
 }
+
+[data-keybinding-input][data-recording] {
+  border-color: var(--color-indigo-500, #6366f1);
+  box-shadow: 0 0 0 1px var(--color-indigo-500, #6366f1);
+  background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 10%, transparent);
+}
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
