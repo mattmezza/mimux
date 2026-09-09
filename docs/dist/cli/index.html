@@ -430,6 +430,11 @@ Thanks for your business...</code></pre>
   repeated fields kept, and <code>-headers both</code> prints both.
 </p>
 
+<pre><code>mimux mail header 123
+mimux mail download 123 --output message.eml
+mimux mail forward-eml 123 recipient@example.com</code></pre>
+<p><code>forward-eml</code> saves a draft and never sends it. Review the draft in mimux, then send it explicitly.</p>
+
 <h3>Triage</h3>
 
 <pre><code>$ mimux mail mark-read 12792

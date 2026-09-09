@@ -104,6 +104,37 @@ func TestDraftAttachments(t *testing.T) {
 	}
 }
 
+func TestDraftForwardAttachmentsRoundTrip(t *testing.T) {
+	s := open(t)
+	d := &Draft{
+		Account: "work", Kind: "forward", Mode: "plain", ForwardSourceID: 91,
+		ForwardAttachmentsInitialized: true,
+		ForwardAttachments: []ForwardAttachment{
+			{Part: []int{2}, Filename: "brief.pdf", ContentType: "application/pdf", Size: 1234},
+			{Part: []int{3, 1}, Filename: "photo.jpg", ContentType: "image/jpeg", Size: 5678},
+		},
+	}
+	if err := s.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.DraftByID(d.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ForwardSourceID != 91 || !got.ForwardAttachmentsInitialized || len(got.ForwardAttachments) != 2 ||
+		got.ForwardAttachments[1].Filename != "photo.jpg" || len(got.ForwardAttachments[1].Part) != 2 {
+		t.Fatalf("forward attachment selection not preserved: %+v", got)
+	}
+	got.ForwardAttachments = got.ForwardAttachments[:1]
+	if err := s.UpsertDraft(got); err != nil {
+		t.Fatal(err)
+	}
+	reopened, _ := s.DraftByID(d.ID)
+	if len(reopened.ForwardAttachments) != 1 || reopened.ForwardAttachments[0].Filename != "brief.pdf" {
+		t.Fatalf("updated selection = %+v", reopened.ForwardAttachments)
+	}
+}
+
 // TestDraftIMAPDirty is the write-through cache contract: a save owes a push, a
 // completed push clears the debt and records where the revision landed, and a
 // save that raced the push leaves the debt standing.

@@ -95,10 +95,13 @@ var cliCommands = []cliCommand{
 	{"list", "", "mail:read", "List messages newest-first (unified inbox by default).", cliList},
 	{"search", "<query>", "mail:read", "Search mail in the client's query language.", cliSearch},
 	{"read", "<id>", "mail:read", "Read one message: headers, flags, attachments, body.", cliRead},
+	{"header", "<id>", "mail:read", "Print the complete raw message headers.", cliHeader},
+	{"download", "<id>", "mail:read", "Write the original .eml to a file or stdout.", cliDownload},
 	{"mark-read", "<id>", "mail:modify", "Mark a message read, or -unread.", cliMarkRead},
 	{"star", "<id>", "mail:modify", "Star a message, or -off to unstar.", cliStar},
 	{"move", "<id> <folder-id|archive|spam|trash>", "mail:modify", "Move a message.", cliMove},
 	{"draft", "", "mail:send", "Save a draft — nothing is sent.", cliDraft},
+	{"forward-eml", "<id> [recipient...]", "mail:send", "Create a reviewable forward with the original attached.", cliForwardEML},
 	{"send", "", "mail:send", "Send a message now (-dry-run previews it).", cliSend},
 	{"webhooks", "<subcommand>", "webhooks:manage", "Webhook tools; `listen` forwards live events to a local URL or program.", cliWebhooks},
 }
@@ -685,6 +688,92 @@ func cliRead(c *cliClient, args []string) error {
 			return
 		}
 		c.printf("%s\n", strings.TrimSpace(cmp.Or(msg.Body.Text, msg.Body.HTML)))
+	})
+	return nil
+}
+
+func cliHeader(c *cliClient, args []string) error {
+	fs := c.flags("header")
+	rest, err := parseFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	id, err := oneID(rest)
+	if err != nil {
+		return err
+	}
+	raw, err := c.get("/api/v1/messages/" + strconv.FormatInt(id, 10) + "/headers")
+	if err != nil {
+		return err
+	}
+	var out struct {
+		Raw string `json:"raw"`
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return err
+	}
+	c.emit(raw, func() { c.printf("%s", out.Raw) })
+	return nil
+}
+
+func cliDownload(c *cliClient, args []string) error {
+	fs := c.flags("download")
+	output := fs.String("output", "", "output file; default stdout")
+	rest, err := parseFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	id, err := oneID(rest)
+	if err != nil {
+		return err
+	}
+	raw, err := c.get("/api/v1/messages/" + strconv.FormatInt(id, 10) + "/raw")
+	if err != nil {
+		return err
+	}
+	if *output == "" {
+		_, err = c.out.Write(raw)
+		return err
+	}
+	if err := os.WriteFile(*output, raw, 0o600); err != nil {
+		return err
+	}
+	c.printf("wrote %s (%d bytes)\n", *output, len(raw))
+	return nil
+}
+
+func cliForwardEML(c *cliClient, args []string) error {
+	fs := c.flags("forward-eml")
+	body := fs.String("body", "", "optional note in the draft")
+	account := fs.String("account", "", "sending account; defaults to the original's account")
+	rest, err := parseFlags(fs, args)
+	if err != nil {
+		return err
+	}
+	if len(rest) < 1 {
+		return usageError{msg: "message id is required"}
+	}
+	id, err := strconv.ParseInt(rest[0], 10, 64)
+	if err != nil || id <= 0 {
+		return usageError{msg: "message id must be a positive integer"}
+	}
+	raw, err := c.do("POST", "/api/v1/messages/"+strconv.FormatInt(id, 10)+"/forward-eml", map[string]any{"to": rest[1:], "body": *body, "account": *account})
+	if err != nil {
+		return err
+	}
+	c.emit(raw, func() {
+		var out struct {
+			Draft struct {
+				ID      int64  `json:"id"`
+				Subject string `json:"subject"`
+			} `json:"draft"`
+			Attachment struct {
+				Filename string `json:"filename"`
+			} `json:"attachment"`
+		}
+		if json.Unmarshal(raw, &out) == nil {
+			c.printf("Draft %d saved, NOT sent.\nsubject: %s\nattach: %s\nReview it and send explicitly.\n", out.Draft.ID, out.Draft.Subject, out.Attachment.Filename)
+		}
 	})
 	return nil
 }

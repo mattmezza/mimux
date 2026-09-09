@@ -65,7 +65,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// (htmx swaps the whole history element, so it needs the base HTML back);
 	// the plain partial for a normal htmx list swap.
 	if r.Header.Get("HX-Request") == "" || r.Header.Get("HX-History-Restore-Request") != "" {
-		s.renderSearchPage(w, data)
+		s.renderSearchPage(w, r, data)
 		return
 	}
 	s.renderPartial(w, "search_results", data)
@@ -73,12 +73,12 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 
 // renderSearchPage renders the search results inside the full inbox shell, so a
 // pushed /search?q=… URL is bookmarkable and survives a hard reload / Back.
-func (s *Server) renderSearchPage(w http.ResponseWriter, sv map[string]any) {
+func (s *Server) renderSearchPage(w http.ResponseWriter, r *http.Request, sv map[string]any) {
 	// NOTE: mirrors handleInbox's base data; kept local to avoid editing
 	// server.go (concurrent work there). Fold into one helper if it drifts.
 	prefs := s.store.GetPrefs()
 	totalUnread, _ := s.store.TotalInboxUnread()
-	s.render(w, "inbox", map[string]any{
+	s.renderRequest(w, r, "inbox", map[string]any{
 		"CSRF":          sv["CSRF"],
 		"Accounts":      s.cfg.Accounts,
 		"Sidebar":       s.sidebarData(),

@@ -379,6 +379,38 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, out)
 }
 
+func (a *api) handleMessageHeaders(w http.ResponseWriter, r *http.Request) {
+	msg := a.messageOr404(w, r)
+	if msg == nil {
+		return
+	}
+	raw, parsed, err := a.mail.Headers(r.Context(), msg)
+	if err != nil {
+		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the headers — the account may be offline.")
+		return
+	}
+	writeJSON(w, map[string]any{"raw": raw, "parsed": parsed})
+}
+
+func (a *api) handleRawMessage(w http.ResponseWriter, r *http.Request) {
+	msg := a.messageOr404(w, r)
+	if msg == nil {
+		return
+	}
+	raw, err := a.mail.Raw(r.Context(), msg)
+	if err != nil {
+		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the raw message — the account may be offline.")
+		return
+	}
+	w.Header().Set("Content-Type", "message/rfc822")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(mail.MessageFilename(msg.Subject, msg.ID), `"`, "")+`"`)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Length", strconv.Itoa(len(raw)))
+	// #nosec G705 -- exact message bytes are deliberately downloaded with an
+	// attachment disposition and nosniff; they are never interpreted as HTML.
+	_, _ = w.Write(raw)
+}
+
 // handleAttachment streams attachment #n (the index from GET /messages/{id})
 // with its real content type.
 func (a *api) handleAttachment(w http.ResponseWriter, r *http.Request) {
