@@ -1,6 +1,9 @@
 {
   "name": "mimux",
   "private": true,
+  "scripts": {
+    "test:js": "node --test web/static/js/*_test.mjs"
+  },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.0",
     "tailwindcss": "^4.1.0",

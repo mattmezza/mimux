@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/mail"
 	"github.com/mattmezza/mimux/internal/store"
 )
 
@@ -142,5 +143,20 @@ func TestForwardIgnoresTheReplyQuoteSetting(t *testing.T) {
 	body := rec.Body.String()
 	if !strings.Contains(body, "Forwarded message") || !strings.Contains(body, "four") {
 		t.Errorf("forward dropped the original:\n%s", body)
+	}
+}
+
+func TestForwardBodyKeepsOriginalQuoteBoundaries(t *testing.T) {
+	orig := &store.Message{Subject: "attached original", Date: time.Now()}
+	for _, mode := range []string{"plain", "markdown", "html"} {
+		t.Run(mode, func(t *testing.T) {
+			body := forwardBody(mode, orig, "Alice", "Original attachment", "<p>Original attachment</p>")
+			if mail.MentionsAttachment(body) {
+				t.Fatalf("original triggered reminder: %q", body)
+			}
+			if !mail.MentionsAttachment(body + "\nI attached my response.") {
+				t.Fatalf("bottom reply was stripped: %q", body)
+			}
+		})
 	}
 }
