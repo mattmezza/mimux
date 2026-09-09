@@ -10,14 +10,15 @@ const end = app.indexOf("// Handles the 204", start);
 const context = { document: { addEventListener() {} }, window: {} };
 vm.runInNewContext(`${app.slice(start, end)}; globalThis.needsAttachmentReminder = needsAttachmentReminder;`, context);
 
-function form(subject, body, attachments = []) {
+function form(subject, body, attachments = [], nodes = {}) {
   return {
     querySelector(selector) {
       if (selector === 'input[type=file][name="attachments"]') return { files: attachments };
       if (selector === '[name="subject"]') return { value: subject };
       if (selector === 'textarea[name="body"]') return { value: body };
-      return null;
+      return nodes[selector] || null;
     },
+    querySelectorAll(selector) { return nodes[selector] || []; },
   };
 }
 
@@ -39,3 +40,12 @@ for (const {name, text, want} of fixtures) {
     assert.equal(context.needsAttachmentReminder(form('', text)), want);
   });
 }
+
+test('existing uploads and selected forward attachments suppress the reminder', () => {
+  assert.equal(context.needsAttachmentReminder(form('', 'I attached it.', [{}])), false);
+  for (const nodes of [
+    {'#compose-attachments [data-attachment]': {}},
+    {'input[name="forward_attachment"]:checked': {}},
+    {'[name="forward_eml_id"]': {value:'42'}},
+  ]) assert.equal(context.needsAttachmentReminder(form('', 'I attached it.', [], nodes)), false);
+});
