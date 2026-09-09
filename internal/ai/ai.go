@@ -200,6 +200,12 @@ var summaryLevels = map[string]string{
 	"detailed": `one short paragraph of context, then "- " bullets covering every key fact, date, number and action item`,
 }
 
+var threadSummaryLevels = map[string]string{
+	"oneline":  "a single sentence of at most 25 words",
+	"brief":    "a compact structured summary with at most 2 short bullets per section",
+	"detailed": "a thorough structured summary covering every material fact and action",
+}
+
 // maxSummaryChars is the body budget sent to the model — long enough for any
 // real email, short enough to keep one summary cheap. Longer bodies are cut and
 // the caller is told so it can say as much in the UI.
@@ -210,20 +216,31 @@ const maxSummaryChars = 12000
 // (oneline|brief|detailed). truncated reports whether the body was cut to
 // maxSummaryChars before being sent.
 func (c *Client) Summarize(ctx context.Context, level, body string) (summary string, truncated bool, err error) {
-	return c.summarize(ctx, level, body, false)
+	return c.summarize(ctx, level, body)
 }
 
 // SummarizeThread condenses a whole conversation at the given detail level.
 // text is assembled by BuildThreadContext (or equivalent) — several messages,
 // not one — so the prompt reads "conversation" instead of "email". Same
 // levels, same truncated-cap contract as Summarize.
-func (c *Client) SummarizeThread(ctx context.Context, level, text string) (summary string, truncated bool, err error) {
-	return c.summarize(ctx, level, text, true)
+func (c *Client) SummarizeThread(ctx context.Context, level, text string, ownerEmails []string) (summary string, truncated bool, err error) {
+	instr, ok := threadSummaryLevels[level]
+	if !ok {
+		return "", false, fmt.Errorf("ai: unknown summary level %q", level)
+	}
+	if r := []rune(text); len(r) > maxSummaryChars {
+		text, truncated = strings.TrimSpace(string(r[:maxSummaryChars])), true
+	}
+	prompt, err := summarizeThreadPrompt(text, instr, c.Prefs.withDefaults().Language, truncated, ownerEmails)
+	if err != nil {
+		return "", truncated, err
+	}
+	out, err := c.chat(ctx, "You summarize email conversations for a busy reader. Output only the requested plain-text structure.", prompt)
+	return out, truncated, err
 }
 
-// summarize is the shared body of Summarize and SummarizeThread: cap, prompt,
-// call. thread only changes which wording the prompt template picks.
-func (c *Client) summarize(ctx context.Context, level, text string, thread bool) (summary string, truncated bool, err error) {
+// summarize handles the single-message prompt and shared truncation contract.
+func (c *Client) summarize(ctx context.Context, level, text string) (summary string, truncated bool, err error) {
 	instr, ok := summaryLevels[level]
 	if !ok {
 		return "", false, fmt.Errorf("ai: unknown summary level %q", level)
@@ -231,7 +248,7 @@ func (c *Client) summarize(ctx context.Context, level, text string, thread bool)
 	if r := []rune(text); len(r) > maxSummaryChars {
 		text, truncated = strings.TrimSpace(string(r[:maxSummaryChars])), true
 	}
-	prompt, err := summarizePrompt(text, instr, c.Prefs.withDefaults().Language, truncated, thread)
+	prompt, err := summarizePrompt(text, instr, c.Prefs.withDefaults().Language, truncated)
 	if err != nil {
 		return "", truncated, err
 	}

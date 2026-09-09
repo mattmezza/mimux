@@ -396,11 +396,14 @@ func applyIntegrations(c *store.AppConfig, r *http.Request) {
 	c.AIOptionsModel = strings.TrimSpace(r.PostFormValue("ai_options_model"))
 	c.AIRefineModel = strings.TrimSpace(r.PostFormValue("ai_refine_model"))
 	c.AISummarizeModel = strings.TrimSpace(r.PostFormValue("ai_summarize_model"))
+	c.AIThreadSummarizeModel = strings.TrimSpace(r.PostFormValue("ai_thread_summary_model"))
+	c.AIThreadSummaryEnabled = r.PostFormValue("ai_thread_summary_enabled") == "1"
 	c.AITone = r.PostFormValue("ai_tone")
 	c.AIBrevity = r.PostFormValue("ai_brevity")
 	c.AIReplyOptions = atoiDefault(r.PostFormValue("ai_reply_options"), 3)
 	c.AILanguage = r.PostFormValue("ai_language")
 	c.AISummaryLevel = r.PostFormValue("ai_summary_level")
+	c.AIThreadSummaryLevel = r.PostFormValue("ai_thread_summary_level")
 }
 
 // oneOf returns v when it is one of the allowed values, else the first one —
