@@ -26,6 +26,12 @@ func isAttachmentPart(sp *imap.BodyStructureSinglePart) bool {
 	if d := sp.Disposition(); d != nil && strings.EqualFold(d.Value, "attachment") {
 		return true
 	}
+	// Content-ID identifies an inline resource (signature logo, footer icon,
+	// tracking pixel, ...). Explicit attachment disposition above still wins
+	// for the uncommon legitimate attachment that also carries a Content-ID.
+	if sp.ID != "" {
+		return false
+	}
 	return sp.Filename() != "" && !strings.HasPrefix(sp.MediaType(), "text/")
 }
 
