@@ -1542,6 +1542,36 @@ document.addEventListener("keydown", (e) => {
 // internal/mail/attachhint.go — keep the two in sync.
 const attachKeywords = /\b(attach|attached|attachment|attachments|attaching|enclosed|allegato|allegati|allegata|allegate|allego)\b/i;
 
+// Remove only complete quote regions, preserving authored text between and
+// below them. Unmarked legacy forwards are ambiguous, so retain their text.
+function stripQuotedText(text) {
+  const tags = /<!--[^]*?-->|<\/?([a-z][a-z0-9-]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+  let depth = 0, start = 0, kept = 0, unquoted = "";
+  for (const tag of text.matchAll(tags)) {
+    if (tag[1]?.toLowerCase() !== "blockquote") continue;
+    if (tag[0].startsWith("</")) {
+      if (!depth) continue;
+      if (--depth === 0) {
+        unquoted += text.slice(kept, start) + "\n";
+        kept = tag.index + tag[0].length;
+      }
+    } else {
+      if (depth === 0) start = tag.index;
+      depth++;
+    }
+  }
+  const lines = (unquoted + text.slice(kept)).split(/\r?\n/);
+  return lines.filter((line, i) => {
+    if (/^[ \t]*>/.test(line)) return false;
+    if (/^[ \t]*(?:On .+ wrote:|---------- Forwarded message ----------)[ \t]*$/i.test(line)) {
+      let next = i + 1;
+      while (next < lines.length && !lines[next].trim()) next++;
+      if (next < lines.length && /^[ \t]*>/.test(lines[next])) return false;
+    }
+    return true;
+  }).join("\n");
+}
+
 function setSendMode(m) {
   const el = document.getElementById("compose-send-mode");
   if (el) el.value = m;
@@ -1576,7 +1606,7 @@ function needsAttachmentReminder(form) {
   if (form.querySelector('input[name="forward_attachment"]:checked')) return false;
   if (form.querySelector('[name="forward_eml_id"]')?.value > 0) return false;
   const subject = form.querySelector('[name="subject"]')?.value || "";
-  const body = form.querySelector('textarea[name="body"]')?.value || "";
+  const body = stripQuotedText(form.querySelector('textarea[name="body"]')?.value || "");
   // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
   const text = (subject + " " + body).replace(/<[^>]+>/g, " ");
   return attachKeywords.test(text);
