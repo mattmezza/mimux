@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 package mail
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"testing"
+)
 
 func TestMentionsAttachment(t *testing.T) {
 	cases := []struct {
@@ -24,7 +28,7 @@ func TestMentionsAttachment(t *testing.T) {
 		{"Check https://x.com/attachment.pdf", true},
 		{"\n\nOn Mon, 20 Jul 2026 10:30, Alice <alice@example.com> wrote:\n> Please find the invoice attached.\n", false},
 		{"My attachment is in this reply.\n\nOn Mon, 20 Jul 2026 10:30, Alice <alice@example.com> wrote:\n> Please find the invoice attached.\n", true},
-		{"\n\n---------- Forwarded message ----------\nFrom: Alice <alice@example.com>\n\nPlease find the invoice attached.", false},
+		{"\n\n---------- Forwarded message ----------\n> From: Alice <alice@example.com>\n>\n> Please find the invoice attached.", false},
 		{"<p><br></p><blockquote>Please find the invoice attached.</blockquote>", false},
 		{"<p>I attached the invoice.</p><blockquote>Please find the invoice attached.</blockquote>", true},
 		{"On Monday, I wrote: attached files are ready", true},
@@ -35,5 +39,28 @@ func TestMentionsAttachment(t *testing.T) {
 		if got := MentionsAttachment(c.text); got != c.want {
 			t.Errorf("MentionsAttachment(%q) = %v, want %v", c.text, got, c.want)
 		}
+	}
+}
+
+// The browser reads the same cases, keeping both implementations honest about
+// bottom and inline replies and nested or ambiguous markup.
+func TestAttachmentQuoteFixtures(t *testing.T) {
+	data, err := os.ReadFile("testdata/attachment_hint_quotes.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Name, Text string
+		Want       bool
+	}
+	if err := json.Unmarshal(data, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			if got := MentionsAttachment(c.Text); got != c.Want {
+				t.Fatalf("got %v, want %v for %q", got, c.Want, c.Text)
+			}
+		})
 	}
 }

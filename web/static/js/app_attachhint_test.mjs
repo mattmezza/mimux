@@ -23,7 +23,7 @@ function form(subject, body, attachments = []) {
 
 test("attachment reminder ignores quoted replies and forwards", () => {
   assert.equal(context.needsAttachmentReminder(form("", "\n\nOn Mon, 20 Jul 2026 10:30, Alice wrote:\n> Please find the invoice attached.")), false);
-  assert.equal(context.needsAttachmentReminder(form("", "\n\n---------- Forwarded message ----------\nPlease find the invoice attached.")), false);
+  assert.equal(context.needsAttachmentReminder(form("", "\n\n---------- Forwarded message ----------\n> Please find the invoice attached.")), false);
   assert.equal(context.needsAttachmentReminder(form("", "<p><br></p><blockquote>Please find the invoice attached.</blockquote>")), false);
 });
 
@@ -32,3 +32,10 @@ test("attachment reminder retains sender text and the subject", () => {
   assert.equal(context.needsAttachmentReminder(form("attached report", "\n\nOn Mon, Alice wrote:\n> Please find the invoice attached.")), true);
   assert.equal(context.needsAttachmentReminder(form("", "On Monday, I wrote: attached files are ready")), true);
 });
+
+const fixtures = JSON.parse(await readFile(new URL('../../../internal/mail/testdata/attachment_hint_quotes.json', import.meta.url), 'utf8'));
+for (const {name, text, want} of fixtures) {
+  test(`quote boundaries: ${name}`, () => {
+    assert.equal(context.needsAttachmentReminder(form('', text)), want);
+  });
+}

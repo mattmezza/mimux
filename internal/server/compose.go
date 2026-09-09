@@ -332,8 +332,16 @@ func forwardBody(mode string, orig *store.Message, from, text, htmlBody string) 
 			htmlEsc(from) + "<br>Date: " + date +
 			"<br>Subject: " + htmlEsc(orig.Subject) + "<br><br>" + body + "</blockquote>"
 	}
-	return "\n\n---------- Forwarded message ----------\nFrom: " + from +
-		"\nDate: " + date + "\nSubject: " + orig.Subject + "\n\n" + text
+	// Prefix the whole original, including its headers, so attachment hints
+	// can exclude it without swallowing the sender's inline or bottom reply.
+	original := "From: " + from + "\nDate: " + date + "\nSubject: " + orig.Subject + "\n\n" + text
+	var quoted strings.Builder
+	quoted.WriteString("\n\n---------- Forwarded message ----------\n\n")
+	for _, line := range strings.Split(original, "\n") {
+		quoted.WriteString("> " + line + "\n")
+	}
+	quoted.WriteByte('\n')
+	return quoted.String()
 }
 
 // aiThreadContext assembles what the AI reply features are given: the message

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "plain bottom reply",
+    "text": "On Mon, Alice wrote:\n> Thanks.\n\nI attached the report.",
+    "want": true
+  },
+  {
+    "name": "plain inline reply",
+    "text": "On Mon, Alice wrote:\n> First question\nMy attachment answers that.\n> Second question\nNo.",
+    "want": true
+  },
+  {
+    "name": "markdown bottom reply",
+    "text": "On Mon, Alice wrote:\n\n> Thanks.\n\nI attached the report.",
+    "want": true
+  },
+  {
+    "name": "attribution keyword only",
+    "text": "On Mon, Attached Reports wrote:\n> Thanks.\n\nNo files.",
+    "want": false
+  },
+  {
+    "name": "HTML bottom reply",
+    "text": "<blockquote>Thanks.</blockquote><p>I attached the report.</p>",
+    "want": true
+  },
+  {
+    "name": "HTML inline reply",
+    "text": "<blockquote>First question</blockquote><p>See my attachment.</p><blockquote>Second question</blockquote>",
+    "want": true
+  },
+  {
+    "name": "nested HTML quote only",
+    "text": "<blockquote><p>Thanks.</p><blockquote>Old attached report</blockquote><p>More attachments</p></blockquote><p>No files.</p>",
+    "want": false
+  },
+  {
+    "name": "nested HTML bottom reply",
+    "text": "<blockquote><blockquote>Old attached report</blockquote>Thanks.</blockquote><p>I attached the update.</p>",
+    "want": true
+  },
+  {
+    "name": "uppercase HTML quotes",
+    "text": "<BLOCKQUOTE class=\"quote\">Old attachment</BLOCKQUOTE><p>No files.</p>",
+    "want": false
+  },
+  {
+    "name": "attribute greater-than",
+    "text": "<blockquote title=\"a > b\">Old attachment</blockquote><p>No files.</p>",
+    "want": false
+  },
+  {
+    "name": "unclosed quote stays conservative",
+    "text": "<blockquote>Unclosed region\nMy attachment matters.",
+    "want": true
+  },
+  {
+    "name": "literal lookalike tag",
+    "text": "<blockquote-note>My attachment.</blockquote-note>",
+    "want": true
+  },
+  {
+    "name": "marked forward only",
+    "text": "---------- Forwarded message ----------\n\n> From: Alice\n> Subject: attachment\n>\n> I attached it.\n",
+    "want": false
+  },
+  {
+    "name": "marked forward bottom reply",
+    "text": "---------- Forwarded message ----------\n\n> From: Alice\n> Thanks.\n\nI attached my reply.",
+    "want": true
+  },
+  {
+    "name": "legacy ambiguous forward keeps user text",
+    "text": "---------- Forwarded message ----------\nFrom: Alice\n\nThanks.\n\nI attached my reply.",
+    "want": true
+  },
+  {
+    "name": "ordinary attribution-like prose",
+    "text": "On Monday, I wrote:\nI attached the report.",
+    "want": true
+  }
+]
