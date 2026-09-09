@@ -2025,9 +2025,9 @@ function postMarkRead(id, read, thread) {
 // stuck) and undoes the flip with a toast when the server never took it, so the
 // list can never silently disagree with what the next sync will show.
 function markRead(id, read, thread) {
-  if (read) markRowRead(id); else markRowUnread(id);
+  if (read) markRowRead(id, thread); else markRowUnread(id, thread);
   return postMarkRead(id, read, thread).catch(() => {
-    if (read) markRowUnread(id); else markRowRead(id);
+    if (read) markRowUnread(id, thread); else markRowRead(id, thread);
     toast(`Couldn't mark ${read ? "read" : "unread"} — still ${read ? "unread" : "read"}.`);
   });
 }
@@ -2036,12 +2036,23 @@ function markRead(id, read, thread) {
 // and clear data-unread. Adds .just-read so the row stays visible even under an
 // active "Unread" quick filter (per requirement — a just-read message shouldn't
 // vanish out from under you; the next list refresh removes it correctly).
-// A message can be on screen twice: as its thread's row (msg-<id>) and as that
-// thread's expanded sub-row (msg-s<id>). Flip both wherever they exist.
-function rowsFor(id) {
-  return id ? [document.getElementById(`msg-${id}`), document.getElementById(`msg-s${id}`)].filter(Boolean) : [];
+// A message can be on screen twice when it is the latest member of a thread:
+// the conversation row uses msg-<id>, while the expanded message uses
+// msg-s<id>. A per-message change must start at the sub-row so the parent stays
+// unread until every child is read. A whole-thread change updates every loaded
+// child as well as the aggregate row.
+function rowsFor(id, wholeThread) {
+  if (!id) return [];
+  const parent = document.getElementById(`msg-${id}`);
+  const sub = document.getElementById(`msg-s${id}`);
+  if (!wholeThread && sub) return [sub];
+  if (wholeThread && parent?.querySelector(".thread-toggle")) {
+    const box = document.getElementById(`sub-${id}`);
+    return [...(box?.querySelectorAll("li[data-mid]") || []), parent];
+  }
+  return [parent, sub].filter(Boolean);
 }
-function markRowRead(id) { rowsFor(id).forEach(setRowRead); }
+function markRowRead(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowRead); }
 function setRowRead(row) {
   if (!row.hasAttribute("data-unread")) return;
   row.removeAttribute("data-unread");
@@ -2086,7 +2097,7 @@ function setRowRead(row) {
 
 // Inverse of markRowRead: flip a row back to unread in place (re-add the dot,
 // re-bold). Used by the double-click read/unread toggle.
-function markRowUnread(id) { rowsFor(id).forEach(setRowUnread); }
+function markRowUnread(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowUnread); }
 function setRowUnread(row) {
   if (row.hasAttribute("data-unread")) return;
   row.setAttribute("data-unread", "");
@@ -2131,8 +2142,10 @@ function setThreadMsgRead(block, read) {
 function syncThreadRow(pane) {
   const rootId = pane && pane.dataset.messageId;
   if (!rootId) return;
-  if (pane.querySelector("[data-thread-msg][data-unread]")) markRowUnread(rootId);
-  else markRowRead(rootId);
+  const parent = document.getElementById(`msg-${rootId}`);
+  if (!parent) return;
+  if (pane.querySelector("[data-thread-msg][data-unread]")) setRowUnread(parent);
+  else setRowRead(parent);
 }
 
 // Thread header "Mark thread read/unread": flip every message in the pane and
