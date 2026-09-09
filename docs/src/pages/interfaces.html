@@ -22,17 +22,19 @@ description: The keyboard-driven mimux web interface and its full shortcut set, 
   <li><strong>Conversation threading</strong>, with the reading pane ordered
     oldest first.</li>
   <li><strong>Compose, reply, reply-all and forward</strong> over SMTP — plain
-    text, rich text or Markdown — with local draft autosave, undo-send and
-    scheduled send.</li>
+    text, rich text or Markdown — with attachment reminders that exclude
+    recognizable quoted reply text, visible sending feedback, local draft
+    autosave, undo-send and scheduled send. A forward starts with the original
+    attachments selected, ready to keep or remove.</li>
   <li><strong>Search</strong>: instant local full-text search, plus on-demand
     deep IMAP search against the servers themselves, streamed back over SSE as
     each result arrives.</li>
   <li><strong>Filters</strong> under Settings: conditions on
     from/to/subject/body, actions to move, label, forward, mark read, star,
     delete or notify.</li>
-  <li><strong>AI compose/reply and translation</strong>, both optional and
-    bring-your-own-key (OpenRouter, Google Translate). Off until you add a key,
-    and both fail gracefully when unset.</li>
+  <li><strong>AI compose/reply, message and thread summaries, and
+    translation</strong>, all optional and bring-your-own-key (OpenRouter,
+    Google Translate). They fail gracefully when their provider is unset.</li>
   <li>Live updates without a refresh: new mail and sync-status changes arrive
     over a Server-Sent Events stream.</li>
 </ul>
@@ -43,9 +45,23 @@ description: The keyboard-driven mimux web interface and its full shortcut set, 
   allow a sender permanently.
 </p>
 
+<h2>AI summaries</h2>
+
+<p>
+  Summarize one message or a whole conversation. Thread summaries identify
+  participants, decisions, action owners and who should reply next. Under
+  <strong>Settings → Integrations</strong>, you can turn thread summaries on or
+  off and choose their model override and default detail level independently of
+  message summaries.
+</p>
+
 <h2>Keyboard shortcuts</h2>
 
-<p>Press <code>?</code> anywhere to toggle this list in the app itself.</p>
+<p>
+  These are the defaults. Change any action in <strong>Settings → Keybindings</strong>;
+  open Keyboard Help (default: <code>?</code>) to see your current map in the
+  app itself.
+</p>
 
 <div class="table-wrap">
 <table>

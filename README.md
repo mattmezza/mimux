@@ -17,16 +17,19 @@ single Go binary serving htmx + Alpine.js + Tailwind, talking IMAP and SMTP.
 - **Conversation threading**, unread counts, and a full folder tree
   (inbox/sent/drafts/archive/spam/trash) per account
 - **Compose, reply, reply-all, and forward** over SMTP — plain text, rich text
-  or Markdown — with local draft autosave, undo-send and scheduled send
+  or Markdown — with attachment reminders that exclude recognizable quoted
+  reply text, visible sending feedback, local draft autosave, undo-send and
+  scheduled send; forwards start with the original attachments selected for
+  review
 - **Search** — instant local full-text search plus on-demand deep IMAP
   server search, streamed back over SSE as results arrive
 - **Filters** — a rule engine (conditions → actions: move, label, forward,
   mark read, star, delete, notify) that runs on incoming mail
-- **AI compose/reply and translate**, both optional and bring-your-own-key
-  (OpenRouter, Google Translate)
+- **AI compose/reply, message and thread summaries, and translate**, all
+  optional and bring-your-own-key (OpenRouter, Google Translate)
 - **OAuth2** login for Gmail and Zoho, alongside plain password/app-password auth
-- **Keyboard-first** — a full shortcut set for navigating and triaging mail
-  without leaving the home row (see below)
+- **Keyboard-first** — a customizable shortcut map for navigating and triaging
+  mail without leaving the home row (see below)
 - **Installable PWA** with an offline fallback to your last-synced inbox
 - **Notifications** for new mail when mimux isn't open — Web Push straight from
   your server, or a POST to an [ntfy](https://ntfy.sh) topic (see below)
@@ -93,6 +96,9 @@ make help    # everything else
 ```
 
 ## Keyboard shortcuts
+
+These are the defaults. Change any action in **Settings → Keybindings**; open
+Keyboard Help (default: `?`) in the app to see the current map.
 
 | Key | Action | Key | Action |
 |-----|--------|-----|--------|

@@ -174,8 +174,9 @@
           <p class="kicker">Keyboard</p>
           <h2 id="keyboard-h" class="display mt-3 text-3xl sm:text-4xl">Inbox forty to inbox zero, hands on the home row.</h2>
           <p class="mt-4 text-ink-600 leading-relaxed">
-            Every action has a key. Press <kbd class="kbd">?</kbd> anywhere in the app for
-            the live version of this table.
+            Every action has a key you can make your own. Open Keyboard Help
+            (default: <kbd class="kbd">?</kbd>) for the live map, or change it
+            in Settings → Keybindings.
           </p>
         </div>
         <div class="mt-10 grid sm:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-2 text-sm max-w-5xl" data-reveal data-reveal="80">
@@ -235,12 +236,15 @@
           <h2 id="compose-h" class="display mt-3 text-3xl sm:text-4xl">Write in Markdown. Send without regret.</h2>
           <p class="mt-4 text-ink-600 leading-relaxed">
             Reply, reply-all and forward over your own SMTP — in plain text, rich text or
-            Markdown, whichever the moment calls for. Drafts autosave locally as you type.
+            Markdown, whichever the moment calls for. Forwards start with the original files
+            selected, and drafts autosave locally as you type.
           </p>
           <ul class="mt-6 space-y-3 text-sm text-ink-600">
-            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Undo-send</strong> holds every message for a beat after you hit send — long enough to catch the missing attachment.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Attachment reminder</strong> catches an attachment mention in what you write, excluding recognizable quoted reply text.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Clear sending state</strong> confirms the click immediately and blocks accidental duplicate sends while SMTP does its work.</span></li>
+            <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Undo-send</strong> holds every message for a beat after you hit send — long enough to catch a second thought.</span></li>
             <li class="flex gap-3"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">Scheduled send</strong> for the reply you want to land Monday morning, not Saturday night.</span></li>
-            <li class="flex gap-3" id="ai"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">AI compose &amp; translate, bring-your-own-key.</strong> Optional drafting via OpenRouter and translation via Google Translate. Off by default; your keys live in your database and requests go straight from your server to the provider you chose.</span></li>
+            <li class="flex gap-3" id="ai"><span aria-hidden="true" class="text-accent-600 font-mono">→</span><span><strong class="text-ink-950 font-medium">AI compose, summaries &amp; translate, bring-your-own-key.</strong> Optional drafting and message or thread summaries via OpenRouter, plus translation via Google Translate. Your keys live in your database and requests go straight from your server to the provider you chose.</span></li>
           </ul>
         </div>
         <figure class="panel" data-reveal data-reveal="100" aria-hidden="true">
