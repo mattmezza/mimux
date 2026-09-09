@@ -1165,13 +1165,34 @@ function setupBodyZoom(frame) {
   }, { passive: false });
   let pinch = null;
   const dist = (e) => Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+  const midpoint = (e) => ({
+    x: (e.touches[0].clientX + e.touches[1].clientX) / 2,
+    y: (e.touches[0].clientY + e.touches[1].clientY) / 2,
+  });
   doc.addEventListener("touchstart", (e) => {
-    if (e.touches.length === 2) pinch = { d: dist(e), z: +frame.dataset.zoom || 1 };
+    if (e.touches.length !== 2) return;
+    const point = midpoint(e);
+    const anchor = doc.elementFromPoint(point.x, point.y) || doc.body;
+    const rect = anchor.getBoundingClientRect();
+    pinch = {
+      d: dist(e), z: +frame.dataset.zoom || 1, anchor,
+      // Keep the same relative point in the touched element beneath the
+      // fingers. bodyZoom deliberately reflows text as it scales, so changing
+      // transform-origin alone cannot preserve the user's focal point.
+      rx: rect.width ? (point.x - rect.left) / rect.width : 0.5,
+      ry: rect.height ? (point.y - rect.top) / rect.height : 0.5,
+    };
   }, { passive: true });
   doc.addEventListener("touchmove", (e) => {
     if (!pinch || e.touches.length !== 2) return;
     e.preventDefault(); // keep the page itself from scrolling/zooming
     bodyZoom(frame, clamp(pinch.z * (dist(e) / pinch.d)));
+    const point = midpoint(e);
+    const rect = pinch.anchor.getBoundingClientRect();
+    doc.defaultView.scrollBy(
+      rect.left + rect.width * pinch.rx - point.x,
+      rect.top + rect.height * pinch.ry - point.y,
+    );
   }, { passive: false });
   doc.addEventListener("touchend", () => { pinch = null; });
 }
