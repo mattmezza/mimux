@@ -121,6 +121,8 @@
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H8a6 6 0 0 0-6 6v3"/></svg>
   {{if $menu}}<span>Forward</span>{{end}}
 </button>
+{{else if or (eq .ID "headers") (eq .ID "download-eml") (eq .ID "forward-eml")}}
+{{template "qa_source" (dict "ID" .ID "M" $latest "Btn" $btn "Icon" $ic "Menu" $menu)}}
 {{else if eq .ID "archive"}}
 <button title="Archive (e)" aria-label="Archive" hx-post="/messages/{{$latest.ID}}/archive" hx-swap="none"
   {{/* after-request fires for failures too — only tear the row down on a real success. */}}
@@ -217,6 +219,8 @@
 <button title="Forward (F)" aria-label="Forward" hx-get="/compose?reply={{$m.ID}}&mode=forward" hx-target="#compose-root" hx-swap="innerHTML" class="{{$btn}} hover:text-zinc-100">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 15l6-6m0 0-6-6m6 6H8a6 6 0 0 0-6 6v3"/></svg>
 </button>
+{{else if or (eq .ID "headers") (eq .ID "download-eml") (eq .ID "forward-eml")}}
+{{template "qa_source" (dict "ID" .ID "M" $m "Btn" $btn "Icon" $ic "Menu" false)}}
 {{else if eq .ID "star"}}
 {{/* NOTE: swap="none" + toggleStarBtn — starring a non-latest message
      can't cleanly repaint the thread list row; the button flips locally, the

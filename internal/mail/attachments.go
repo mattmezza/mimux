@@ -4,6 +4,7 @@ package mail
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/emersion/go-imap/v2"
@@ -11,6 +12,21 @@ import (
 
 	"github.com/mattmezza/mimux/internal/store"
 )
+
+var unsafeMessageFilename = regexp.MustCompile(`[\\/:*?"<>|\x00-\x1f]`)
+
+// MessageFilename turns a subject into a portable .eml filename.
+func MessageFilename(subject string, id int64) string {
+	name := strings.TrimSpace(unsafeMessageFilename.ReplaceAllString(subject, "_"))
+	name = strings.Trim(name, ". ")
+	if len([]rune(name)) > 120 {
+		name = string([]rune(name)[:120])
+	}
+	if name == "" {
+		name = fmt.Sprintf("message-%d", id)
+	}
+	return name + ".eml"
+}
 
 // Attachment is one downloadable/previewable MIME part of a message. Part is
 // the IMAP body path (e.g. [2] or [1,2]) used to fetch the bytes.
@@ -25,6 +41,12 @@ type Attachment struct {
 func isAttachmentPart(sp *imap.BodyStructureSinglePart) bool {
 	if d := sp.Disposition(); d != nil && strings.EqualFold(d.Value, "attachment") {
 		return true
+	}
+	// Content-ID identifies an inline resource (signature logo, footer icon,
+	// tracking pixel, ...). Explicit attachment disposition above still wins
+	// for the uncommon legitimate attachment that also carries a Content-ID.
+	if sp.ID != "" {
+		return false
 	}
 	return sp.Filename() != "" && !strings.HasPrefix(sp.MediaType(), "text/")
 }

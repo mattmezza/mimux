@@ -20,12 +20,35 @@ if (!window.smSummarize) {
     bar.textContent = "Summarizing…";
     var base = thread ? "/t/" : "/messages/";
     htmx.ajax("GET", base + id + "/summary" + (level ? "?level=" + level : ""),
-      { target: bar, swap: "outerHTML" });
+      { source: bar, target: bar, swap: "outerHTML" });
   };
 
   window.smSummaryDismiss = function (bar) {
     bar.className = "shrink-0 empty:hidden";
     bar.textContent = "";
+  };
+
+  window.smSummaryCopy = function (btn) {
+    var textEl = btn.closest('[data-summary-bar]').querySelector('[data-summary-text]');
+    var text = textEl && textEl.textContent.trim();
+    if (!text) return;
+    var done = function () {
+      btn.textContent = 'Copied!';
+      btn.setAttribute('aria-label', 'Summary copied');
+      window.setTimeout(function () { btn.textContent = 'Copy'; btn.setAttribute('aria-label', 'Copy summary'); }, 1500);
+    };
+    var fallback = function () {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { if (document.execCommand('copy')) done(); } catch (_) {}
+      ta.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, fallback);
+    else fallback();
   };
 }
 </script>
@@ -40,13 +63,15 @@ if (!window.smSummarize) {
   <span class="flex-1">{{.Err}}</span>
   {{else}}
   <div class="flex-1 min-w-0 space-y-1">
-    <div class="whitespace-pre-line break-words">{{.Summary}}</div>
+    <div data-summary-text class="whitespace-pre-line break-words">{{.Summary}}</div>
     {{if .Truncated}}<div class="text-indigo-300/60">Summary of the beginning of this {{if .Thread}}conversation{{else}}message{{end}} — it was too long to send in full.</div>{{end}}
   </div>
   <div class="shrink-0 self-start flex items-center gap-1">
     {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "oneline" "Label" "1 line" "Thread" .Thread)}}
     {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "brief" "Label" "Brief" "Thread" .Thread)}}
     {{template "summary_chip" (dict "ID" .ID "Cur" .Level "Level" "detailed" "Label" "Detailed" "Thread" .Thread)}}
+    <button type="button" title="Copy summary" aria-label="Copy summary" aria-live="polite"
+      onclick="smSummaryCopy(this)" class="rounded px-1.5 py-0.5 text-indigo-300/70 hover:bg-indigo-500/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-400">Copy</button>
   </div>
   {{end}}
   <button type="button" title="Dismiss" aria-label="Dismiss summary" class="shrink-0 self-start underline hover:opacity-80"

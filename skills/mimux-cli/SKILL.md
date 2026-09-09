@@ -41,6 +41,8 @@ mimux mail folders [-account NAME]        # folder tree with ids
 mimux mail list [-unread] [-starred] [-account NAME] [-folder ID] [-limit N] [-cursor C]
 mimux mail search '<query>' [-account NAME] [-folder ID] [-limit N] [-deep] [-wait 30s]
 mimux mail read <id> [-html]
+mimux mail header <id>
+mimux mail download <id> [--output message.eml]
 mimux mail mark-read <id> [-unread]
 mimux mail star <id> [-off]
 mimux mail move <id> <folder-id|archive|spam|trash> [-yes]   # -yes required for trash
@@ -63,9 +65,11 @@ mimux mail search 'is:unread from:google' -limit 3 --json | jq -r '.data[] | "\(
 
 ```sh
 echo "Thanks — next week works." | mimux mail draft -in-reply-to <id>
+mimux mail forward-eml <id> recipient@example.com
 ```
 
 `draft` only ever saves to Drafts — nothing is sent, ever. Prefer it, or
+`forward-eml` also only creates a reviewable draft with the exact original attached.
 `mimux mail send ... -dry-run` (prints exactly what would go out, sends
 nothing), to show the human what would be sent. **Only run `mimux mail send`
 without `-dry-run` after the human has explicitly reviewed and approved the

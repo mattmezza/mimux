@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -35,6 +36,63 @@ func serverWith(t *testing.T, accounts []config.Account, seed func(*store.Store)
 		t.Fatal(err)
 	}
 	return srv
+}
+
+func TestOpenGraphMetadataIsStaticPrivateAndCanonical(t *testing.T) {
+	s := serverWith(t, nil, func(st *store.Store) {
+		fid, _ := st.UpsertFolder("A", "INBOX", "inbox", 0)
+		_ = st.UpsertMessage(&store.Message{
+			Account: "A", FolderID: fid, UID: 73, MessageID: "private-thread-id",
+			Subject: "Confidential acquisition", FromName: "Secret Sender",
+			FromAddress: "private@example.test", Date: time.Now(),
+		})
+	})
+
+	assertMeta := func(path string, render func(http.ResponseWriter, *http.Request)) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "https://mail.example.test"+path, nil)
+		rec := httptest.NewRecorder()
+		render(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s status = %d", path, rec.Code)
+		}
+		body := rec.Body.String()
+		for _, want := range []string{
+			`property="og:title" content="mimux — Simple Mail"`,
+			`property="og:url" content="https://mail.example.test"`,
+			`property="og:image" content="https://mail.example.test/static/og-image.png"`,
+			`name="twitter:card" content="summary_large_image"`,
+		} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s missing %q", path, want)
+			}
+		}
+		meta := strings.Join(regexp.MustCompile(`(?m)^\s*<meta (?:property="og:|name="twitter:)[^>]+>`).FindAllString(body, -1), "\n")
+		for _, private := range []string{"Confidential acquisition", "Secret Sender", "private@example.test", "private-thread-id", "?t=", "?src="} {
+			if strings.Contains(meta, private) {
+				t.Errorf("%s metadata leaked %q:\n%s", path, private, meta)
+			}
+		}
+	}
+
+	assertMeta("/login?t=private-thread-id&src=73", s.handleLogin)
+	assertMeta("/?t=private-thread-id&src=73", s.handleInbox)
+}
+
+func TestOpenGraphMetadataHonorsConfiguredBaseURL(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	s.cfg.Server.BaseURL = "https://public.example.test/mail/?ignored=1#fragment"
+	s.cfg.Server.BaseURLExplicit = true
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "http://internal:8080/login?t=secret", nil)
+	s.handleLogin(rec, req)
+	body := rec.Body.String()
+	if !strings.Contains(body, `property="og:url" content="https://public.example.test"`) {
+		t.Fatalf("configured canonical origin missing; body:\n%s", body)
+	}
+	if strings.Contains(body, "internal:8080") || strings.Contains(body, "ignored=1") || strings.Contains(body, "fragment") {
+		t.Fatalf("metadata did not reduce configured URL to its origin")
+	}
 }
 
 func listRouter(s *Server) http.Handler {
@@ -206,5 +264,25 @@ func TestEventsOpensWithSyncState(t *testing.T) {
 	}
 	if ct := w.Header().Get("Content-Type"); ct != "text/event-stream" {
 		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
+	}
+}
+
+func TestOpenGraphFiltersUseRequestOrigin(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	data := map[string]any{}
+	s.filtersPageData(httptest.NewRequest(http.MethodGet, "https://mail.example.test/filters?edit=73", nil), data)
+	if data["OGOrigin"] != "https://mail.example.test" {
+		t.Fatalf("origin = %v", data["OGOrigin"])
+	}
+}
+
+func TestCleanOriginRejectsInvalidConfiguration(t *testing.T) {
+	for _, raw := range []string{"/mail/?t=secret", "https://invalid%host/?t=secret", "javascript:secret", "ftp://mail.example.test"} {
+		if got := cleanOrigin(raw); got != "" {
+			t.Errorf("cleanOrigin(%q) = %q", raw, got)
+		}
+	}
+	if got := cleanOrigin("https://user:secret@mail.example.test/mail/?t=secret#fragment"); got != "https://mail.example.test" {
+		t.Errorf("origin = %q", got)
 	}
 }
