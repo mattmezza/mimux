@@ -1248,10 +1248,16 @@ window.previewAttachment = async function (btn, url, kind) {
   holder.setAttribute("aria-busy", "true");
   holder.innerHTML = `<span data-preview-spinner role="status" class="flex items-center gap-1.5 text-[11px] text-zinc-500"><svg class="w-3 h-3 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" d="M12 3a9 9 0 1 0 9 9"/></svg>Loading preview…</span>`;
   if (kind === "pdf") {
+    let state;
     try {
-      await startPDFPreview(holder, url);
+      const loading = startPDFPreview(holder, url);
+      state = holder._pdfPreview;
+      await loading;
     } catch (err) {
-      if (holder._pdfPreview?.cancelled || !holder.dataset.loaded) return;
+      // Closing and immediately reopening starts a new preview in the same
+      // holder. A late rejection from the cancelled load must not replace the
+      // newer preview with its error state.
+      if (holder._pdfPreview !== state || state?.cancelled || !holder.dataset.loaded) return;
       console.error("PDF preview failed", err);
       holder.removeAttribute("aria-busy");
       holder.replaceChildren();
