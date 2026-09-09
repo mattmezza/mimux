@@ -179,8 +179,8 @@ func (s *Server) publicOrigin(r *http.Request) string {
 
 func cleanOrigin(raw string) string {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || u.Scheme == "" || u.Host == "" {
-		return strings.TrimRight(raw, "/")
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return ""
 	}
 	return u.Scheme + "://" + u.Host
 }
@@ -188,7 +188,8 @@ func cleanOrigin(raw string) string {
 // filtersPageData is pageData plus the vocabulary the filters form offers:
 // the accounts a rule can be scoped to and the folder/label names its actions
 // can name. internal/filter knows about neither, so it takes this callback.
-func (s *Server) filtersPageData(data map[string]any) {
+func (s *Server) filtersPageData(r *http.Request, data map[string]any) {
+	data["OGOrigin"] = s.publicOrigin(r)
 	s.pageData(data)
 	data["Accounts"] = s.accounts()
 	data["Folders"] = s.allFolderNames()

@@ -266,3 +266,23 @@ func TestEventsOpensWithSyncState(t *testing.T) {
 		t.Fatalf("Content-Type = %q, want text/event-stream", ct)
 	}
 }
+
+func TestOpenGraphFiltersUseRequestOrigin(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	data := map[string]any{}
+	s.filtersPageData(httptest.NewRequest(http.MethodGet, "https://mail.example.test/filters?edit=73", nil), data)
+	if data["OGOrigin"] != "https://mail.example.test" {
+		t.Fatalf("origin = %v", data["OGOrigin"])
+	}
+}
+
+func TestCleanOriginRejectsInvalidConfiguration(t *testing.T) {
+	for _, raw := range []string{"/mail/?t=secret", "https://invalid%host/?t=secret", "javascript:secret", "ftp://mail.example.test"} {
+		if got := cleanOrigin(raw); got != "" {
+			t.Errorf("cleanOrigin(%q) = %q", raw, got)
+		}
+	}
+	if got := cleanOrigin("https://user:secret@mail.example.test/mail/?t=secret#fragment"); got != "https://mail.example.test" {
+		t.Errorf("origin = %q", got)
+	}
+}
