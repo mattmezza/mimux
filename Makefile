@@ -73,6 +73,10 @@ css-build: ## Build Tailwind CSS (production)
 test: ## Run tests
 	go test -race -cover ./...
 
+.PHONY: test-js
+test-js: ## Run browser-logic regression tests (Node.js)
+	node --test web/static/js/*_test.mjs
+
 .PHONY: lint
 lint: ## Run linter
 	golangci-lint run
@@ -82,7 +86,7 @@ test-pro: ## Run tests including the pro layer
 	go test -race -cover -tags pro ./...
 
 .PHONY: check
-check: lint test verify-licence verify-free verify-boundary ## Run all checks
+check: lint test test-js verify-licence verify-free verify-boundary ## Run all checks
 
 .PHONY: diagnose
 diagnose: ## Sanitised environment dump to paste into a bug report

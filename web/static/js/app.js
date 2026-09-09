@@ -1478,6 +1478,7 @@ window.forceCloseCompose = forceCloseCompose;
 // closeCompose is every user-initiated close path (X button, Escape). Dirty →
 // show the guard modal; clean → close immediately with no modal.
 function closeCompose() {
+  if (composeSending) return;
   if (isComposeDirty()) {
     document.getElementById("compose-close-guard")?.removeAttribute("hidden");
     return;
@@ -1513,7 +1514,7 @@ document.addEventListener("htmx:beforeRequest", (e) => {
   if (!root || !root.firstElementChild) return;
   if (e.detail.target?.id !== "compose-root") return;
   if (e.detail.elt && root.contains(e.detail.elt)) return;
-  if (!isComposeDirty()) return; // untouched: replacing it loses nothing
+  if (!composeSending && !isComposeDirty()) return; // untouched: replacing it loses nothing
   e.preventDefault();
   window.toast?.("Finish or close the message you're writing first.");
   root.querySelector("#compose-panel")?.scrollIntoView({ block: "nearest" });
@@ -1525,6 +1526,7 @@ function composeGuardKeep() {
   if (m) m.hidden = true;
 }
 function composeGuardDiscard() {
+  if (composeSending) return;
   const m = document.getElementById("compose-close-guard");
   if (m) m.hidden = true;
   // Discard only drops the newer edits; any draft row saved earlier this session
@@ -1532,6 +1534,7 @@ function composeGuardDiscard() {
   forceCloseCompose();
 }
 function composeGuardSave() {
+  if (composeSending) return;
   const m = document.getElementById("compose-close-guard");
   if (m) m.hidden = true;
   composeCloseAfterSave = true;
@@ -1572,7 +1575,7 @@ function onDraftSaved(event) {
     window.dispatchEvent(new CustomEvent("compose-saved", { detail: { n: composeAttachSent } }));
     composeAttachSent = 0;
   }
-  if (composeCloseAfterSave) forceCloseCompose();
+  if (composeCloseAfterSave && !composeSending) forceCloseCompose();
 }
 window.onDraftSaved = onDraftSaved;
 
@@ -1587,6 +1590,23 @@ let composeAutosaveTimer = null;
 let composeAutosaveClick = false; // raised for the timer's synthetic click only
 let composeSaveSilent = false; // the save in flight came from the timer
 let composeSending = false; // true while POST /compose (send) is in flight
+
+// Update the actual controls synchronously so every send entry point (including
+// keyboard shortcuts and Send anyway) shares one accessible busy state.
+function setComposeSending(sending) {
+  composeSending = sending;
+  if (sending) composeCloseAfterSave = false;
+  const root = document.getElementById("compose-window");
+  if (!root) return;
+  root.querySelector("#compose-form")?.setAttribute("aria-busy", String(sending));
+  root.querySelectorAll("[data-compose-send-control], #compose-save-draft").forEach((el) => {
+    el.disabled = sending;
+  });
+  root.querySelectorAll("[data-compose-send-label]").forEach((el) => { el.hidden = sending; });
+  root.querySelectorAll("[data-compose-send-progress]").forEach((el) => { el.hidden = !sending; });
+  const more = root.querySelector("details.send-more summary");
+  more?.setAttribute("aria-disabled", String(sending));
+}
 
 function clearComposeAutosaveTimer() {
   if (composeAutosaveTimer) clearTimeout(composeAutosaveTimer);
@@ -1746,7 +1766,38 @@ document.addEventListener("keydown", (e) => {
 // internal/mail/attachhint.go — keep the two in sync.
 const attachKeywords = /\b(attach|attached|attachment|attachments|attaching|enclosed|allegato|allegati|allegata|allegate|allego)\b/i;
 
+// Remove only complete quote regions, preserving authored text between and
+// below them. Unmarked legacy forwards are ambiguous, so retain their text.
+function stripQuotedText(text) {
+  const tags = /<!--[^]*?-->|<\/?([a-z][a-z0-9-]*)\b(?:[^>"']|"[^"]*"|'[^']*')*>/gi;
+  let depth = 0, start = 0, kept = 0, unquoted = "";
+  for (const tag of text.matchAll(tags)) {
+    if (tag[1]?.toLowerCase() !== "blockquote") continue;
+    if (tag[0].startsWith("</")) {
+      if (!depth) continue;
+      if (--depth === 0) {
+        unquoted += text.slice(kept, start) + "\n";
+        kept = tag.index + tag[0].length;
+      }
+    } else {
+      if (depth === 0) start = tag.index;
+      depth++;
+    }
+  }
+  const lines = (unquoted + text.slice(kept)).split(/\r?\n/);
+  return lines.filter((line, i) => {
+    if (/^[ \t]*>/.test(line)) return false;
+    if (/^[ \t]*(?:On .+ wrote:|---------- Forwarded message ----------)[ \t]*$/i.test(line)) {
+      let next = i + 1;
+      while (next < lines.length && !lines[next].trim()) next++;
+      if (next < lines.length && /^[ \t]*>/.test(lines[next])) return false;
+    }
+    return true;
+  }).join("\n");
+}
+
 function setSendMode(m) {
+  if (composeSending) return;
   const el = document.getElementById("compose-send-mode");
   if (el) el.value = m;
 }
@@ -1756,20 +1807,31 @@ function setSendMode(m) {
 // schedule/Ctrl+Enter paths all route through here so the gate is enforced once.
 function submitCompose(skipGate) {
   const form = document.getElementById("compose-form");
-  if (!form) return true;
+  if (!form || composeSending) return true;
   document.querySelector("details.send-more[open]")?.removeAttribute("open");
   syncComposeEditor();
+  if (!form.reportValidity()) return true;
   if (!skipGate && needsAttachmentReminder(form)) {
     const modal = document.getElementById("attach-reminder-modal");
     if (modal) { modal.hidden = false; return true; }
   }
-  composeSending = true;
   clearComposeAutosaveTimer();
   form.requestSubmit();
   return true;
 }
 window.submitCompose = submitCompose;
 window.setSendMode = setSendMode;
+
+// htmx validates and serializes the form before beforeRequest. Start the busy
+// state only when it actually sends, so invalid forms never get stuck. Blocking
+// other compose requests also prevents an attachment edit/save during SMTP.
+document.addEventListener("htmx:beforeRequest", (e) => {
+  const form = document.getElementById("compose-form");
+  const elt = e.detail.elt;
+  if (!form || !elt || !form.contains(elt)) return;
+  if (composeSending) { e.preventDefault(); return; }
+  if (elt === form && !e.defaultPrevented) setComposeSending(true);
+});
 
 function needsAttachmentReminder(form) {
   const files = form.querySelector('input[type=file][name="attachments"]');
@@ -1780,7 +1842,7 @@ function needsAttachmentReminder(form) {
   if (form.querySelector('input[name="forward_attachment"]:checked')) return false;
   if (form.querySelector('[name="forward_eml_id"]')?.value > 0) return false;
   const subject = form.querySelector('[name="subject"]')?.value || "";
-  const body = form.querySelector('textarea[name="body"]')?.value || "";
+  const body = stripQuotedText(form.querySelector('textarea[name="body"]')?.value || "");
   // Strip HTML tags so the WYSIWYG markup doesn't hide/emit false keywords.
   const text = (subject + " " + body).replace(/<[^>]+>/g, " ");
   return attachKeywords.test(text);
@@ -1812,7 +1874,7 @@ window.toggleForwardAttachment = function (btn) {
 // (Undo for delayed send, a confirmation for scheduled send). Non-204 responses
 // re-render the form inline with an error, so we leave those alone.
 function onComposeResponse(event) {
-  composeSending = false;
+  setComposeSending(false);
   const xhr = event.detail.xhr;
   if (!xhr || xhr.status !== 204) return;
   const outboxId = xhr.getResponseHeader("Mimux-Outbox-Id");
@@ -1835,6 +1897,7 @@ window.onComposeResponse = onComposeResponse;
 
 // --- schedule picker ---
 function openSchedulePicker() {
+  if (composeSending) return;
   document.querySelector("details.send-more[open]")?.removeAttribute("open");
   const tz = document.getElementById("schedule-tz");
   if (tz && !tz.options.length) {
@@ -2978,7 +3041,14 @@ function initComposeSignature() {
 
 // Ensure the hidden body textarea is current before the form submits.
 document.addEventListener("submit", (e) => {
-  if (e.target && e.target.id === "compose-form") syncComposeEditor();
+  if (e.target && e.target.id === "compose-form") {
+    if (composeSending) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      return;
+    }
+    syncComposeEditor();
+  }
 }, true);
 
 // --- h/l: move focus between the two panes (messages ↔ reading). A subtle
