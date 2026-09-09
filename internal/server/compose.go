@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
@@ -91,7 +92,11 @@ type composeView struct {
 	// Attachments are the files already kept with the saved draft (as opposed to
 	// the ones sitting unsaved in the file input, which the client owns). Empty
 	// until the draft has been saved at least once.
-	Attachments []store.DraftAttachment
+	Attachments                   []store.DraftAttachment
+	ForwardSourceID               int64
+	ForwardAttachments            []store.ForwardAttachment
+	ForwardAttachmentsInitialized bool
+	ForwardAttachmentsError       string
 }
 
 // validLayout whitelists a compose layout to the three the partial can render,
@@ -145,7 +150,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 	// no new row, no reply prefill.
 	if draftID, err := strconv.ParseInt(r.URL.Query().Get("draft"), 10, 64); err == nil && draftID > 0 {
 		if d, err := s.store.DraftByID(draftID); err == nil && d != nil {
-			s.renderDraft(w, view, prefs, d)
+			s.renderDraft(r.Context(), w, view, prefs, d)
 			return
 		}
 	}
@@ -175,7 +180,7 @@ func (s *Server) handleComposeNew(w http.ResponseWriter, r *http.Request) {
 // renderDraft opens a stored draft in compose: its fields, its kept files, and
 // the layout its kind asks for. view supplies what the request knows (CSRF,
 // accounts, prefs) and the draft supplies the rest.
-func (s *Server) renderDraft(w http.ResponseWriter, view composeView, prefs store.Prefs, d *store.Draft) {
+func (s *Server) renderDraft(ctx context.Context, w http.ResponseWriter, view composeView, prefs store.Prefs, d *store.Draft) {
 	refs := ""
 	if d.InReplyTo != "" {
 		// NOTE: a reopened draft only remembers its immediate parent, not the
@@ -195,12 +200,22 @@ func (s *Server) renderDraft(w http.ResponseWriter, view composeView, prefs stor
 	if err != nil {
 		slog.Error("compose: draft attachments", "draft", d.ID, "err", err)
 	}
-	s.renderCompose(w, composeView{
+	out := composeView{
 		CSRF: view.CSRF, Accounts: view.Accounts, DraftID: d.ID, Account: d.Account, From: from,
 		To: d.To, Cc: d.Cc, Bcc: d.Bcc, Subject: d.Subject, Body: d.Body, Mode: mode,
 		Kind: d.Kind, InReplyTo: d.InReplyTo, References: refs, UndoSendDelay: view.UndoSendDelay,
 		Layout: layoutForKind(prefs, d.Kind), Autosave: view.Autosave, Attachments: atts,
-	})
+		ForwardSourceID: d.ForwardSourceID, ForwardAttachments: d.ForwardAttachments,
+		ForwardAttachmentsInitialized: d.ForwardAttachmentsInitialized,
+	}
+	if d.Kind == "forward" && d.ForwardSourceID > 0 && !d.ForwardAttachmentsInitialized {
+		if orig, err := s.store.MessageByID(d.ForwardSourceID); err == nil && orig != nil && orig.Account == d.Account {
+			s.loadForwardAttachments(ctx, &out, orig)
+		} else {
+			out.ForwardAttachmentsError = "Original attachments are no longer available. You can still forward the message without them."
+		}
+	}
+	s.renderCompose(w, out)
 }
 
 // adoptAndOpen opens a draft that lives only in the mailbox — written on the
@@ -222,7 +237,7 @@ func (s *Server) adoptAndOpen(w http.ResponseWriter, r *http.Request, view compo
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	s.renderDraft(w, view, prefs, d)
+	s.renderDraft(r.Context(), w, view, prefs, d)
 }
 
 // mailtoPrefill fills view's address, subject and body fields from a mailto:
@@ -292,6 +307,12 @@ func (s *Server) prefillReply(ctx context.Context, view *composeView, orig *stor
 		// reply repeats back to its own author, and a forward with the message
 		// cut out of it is not a forward.
 		view.Body = forwardBody(view.Mode, orig, from, text, htmlBody)
+		view.ForwardSourceID = orig.ID
+		if orig.HasAttachment {
+			s.loadForwardAttachments(ctx, view, orig)
+		} else {
+			view.ForwardAttachmentsInitialized = true
+		}
 	} else {
 		view.Body = mail.QuoteOriginal(view.Mode, prefs.ReplyQuote, prefs.ReplyQuoteLines,
 			orig.Date, from, text, htmlBody)
@@ -301,6 +322,22 @@ func (s *Server) prefillReply(ctx context.Context, view *composeView, orig *stor
 	// Independent of the quote setting: "quote nothing" is about what the
 	// recipient reads, not about what the assistant is allowed to see.
 	view.ThreadContext = s.aiThreadContext(orig, text)
+}
+
+func (s *Server) loadForwardAttachments(ctx context.Context, view *composeView, orig *store.Message) {
+	atts, err := s.mail.Attachments(ctx, orig)
+	if err != nil {
+		slog.Warn("compose: could not list forward attachments", "message", orig.ID, "err", err)
+		view.ForwardAttachmentsError = "Original attachments are temporarily unavailable. Reopening this draft will try again; you can also forward without them."
+		return
+	}
+	view.ForwardAttachmentsInitialized = true
+	view.ForwardAttachments = nil
+	for _, a := range atts {
+		view.ForwardAttachments = append(view.ForwardAttachments, store.ForwardAttachment{
+			Part: a.Part, Filename: a.Filename, ContentType: a.MediaType, Size: a.Size,
+		})
+	}
 }
 
 // quoteSource reads the original's text and HTML for the quote. A body that
@@ -409,6 +446,11 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+	forwardAttachments, err := parseForwardAttachments(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	id, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
 	// The From menu posts an address; store which account owns it.
 	account := r.PostFormValue("account")
@@ -422,7 +464,9 @@ func (s *Server) handleComposeDraftSave(w http.ResponseWriter, r *http.Request) 
 		To: r.PostFormValue("to"), Cc: r.PostFormValue("cc"), Bcc: r.PostFormValue("bcc"),
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"),
 		InReplyTo: r.PostFormValue("in_reply_to"), Kind: r.PostFormValue("kind"),
-		Mode: r.PostFormValue("mode"),
+		Mode:            r.PostFormValue("mode"),
+		ForwardSourceID: parseForwardSource(r), ForwardAttachments: forwardAttachments,
+		ForwardAttachmentsInitialized: parseForwardInitialized(r),
 	}
 	if err := s.store.UpsertDraft(d); err != nil {
 		slog.Error("compose: draft save", "err", err)
@@ -722,6 +766,11 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	forwardAttachments, err := parseForwardAttachments(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 	draftID, _ := strconv.ParseInt(r.PostFormValue("draft_id"), 10, 64)
 	view := composeView{
 		CSRF: auth.EnsureCSRF(w, r, s.secure), DraftID: draftID, Accounts: s.cfg.Accounts,
@@ -729,6 +778,8 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		Subject: r.PostFormValue("subject"), Body: r.PostFormValue("body"), Kind: r.PostFormValue("kind"),
 		Mode:      r.PostFormValue("mode"),
 		InReplyTo: r.PostFormValue("in_reply_to"), References: r.PostFormValue("references"),
+		ForwardSourceID: parseForwardSource(r), ForwardAttachments: forwardAttachments,
+		ForwardAttachmentsInitialized: parseForwardInitialized(r),
 	}
 	// Keep the window in whatever layout it was opened in — and the draft's kept
 	// files listed — across an error re-render.
@@ -757,11 +808,23 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		s.renderCompose(w, view)
 		return
 	}
+	sendAt := time.Now().Add(time.Duration(s.store.GetPrefs().UndoSendDelay) * time.Second)
+	scheduled := false
+	if r.PostFormValue("send_mode") == "schedule" {
+		t, err := time.Parse(time.RFC3339, r.PostFormValue("send_at"))
+		if err != nil {
+			view.Error = "Pick a valid date and time to schedule."
+			s.renderCompose(w, view)
+			return
+		}
+		sendAt = t
+		scheduled = true
+	}
 	// The draft's kept files go out first, then whatever was picked since the
 	// last save: the send attaches exactly what the compose window shows.
 	atts, attErr := s.draftAttachments(draftID)
+	var fresh []mail.OutAttachment
 	if attErr == "" {
-		var fresh []mail.OutAttachment
 		fresh, attErr = readAttachments(r)
 		atts = append(atts, fresh...)
 	}
@@ -769,6 +832,16 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		view.Error = attErr
 		s.renderCompose(w, view)
 		return
+	}
+	if len(view.ForwardAttachments) > 0 {
+		original, err := s.forwardAttachments(r.Context(), view.Account, view.ForwardSourceID, view.ForwardAttachments, atts)
+		if err != "" {
+			view.Error = err
+			s.preserveComposeFailure(&view, fresh)
+			s.renderCompose(w, view)
+			return
+		}
+		atts = append(atts, original...)
 	}
 	in := mail.ComposeInput{
 		To: to, Cc: mail.SplitAddrList(view.Cc), Bcc: mail.SplitAddrList(view.Bcc),
@@ -782,6 +855,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.mail.Send(r.Context(), view.Account, in); err != nil {
 			slog.Error("compose: send", "account", view.Account, "err", err)
 			view.Error = "Could not send: " + err.Error()
+			s.preserveComposeFailure(&view, fresh)
 			s.renderCompose(w, view)
 			return
 		}
@@ -791,18 +865,6 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sendAt := time.Now().Add(time.Duration(s.store.GetPrefs().UndoSendDelay) * time.Second)
-	scheduled := false
-	if r.PostFormValue("send_mode") == "schedule" {
-		t, err := time.Parse(time.RFC3339, r.PostFormValue("send_at"))
-		if err != nil {
-			view.Error = "Pick a valid date and time to schedule."
-			s.renderCompose(w, view)
-			return
-		}
-		sendAt = t
-		scheduled = true
-	}
 	o := &store.Outbox{
 		Account: view.Account, From: view.From, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
 		Subject: view.Subject, Body: view.Body, Mode: view.Mode,
@@ -812,6 +874,7 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.EnqueueOutbox(o); err != nil {
 		slog.Error("compose: enqueue", "err", err)
 		view.Error = "Could not queue the message: " + err.Error()
+		s.preserveComposeFailure(&view, fresh)
 		s.renderCompose(w, view)
 		return
 	}
@@ -822,6 +885,147 @@ func (s *Server) handleComposeSend(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Mimux-Outbox-Id", strconv.FormatInt(o.ID, 10))
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// preserveComposeFailure turns the current form into (or updates) a local
+// draft after uploads have been consumed from the multipart request. Browsers
+// cannot restore a FileList after re-rendering, so keeping those files in draft
+// storage makes any later fetch, send, or enqueue failure recoverable.
+func (s *Server) preserveComposeFailure(view *composeView, fresh []mail.OutAttachment) {
+	d := &store.Draft{
+		ID: view.DraftID, Account: view.Account, To: view.To, Cc: view.Cc, Bcc: view.Bcc,
+		Subject: view.Subject, Body: view.Body, InReplyTo: view.InReplyTo, Kind: view.Kind, Mode: view.Mode,
+		ForwardSourceID: view.ForwardSourceID, ForwardAttachments: view.ForwardAttachments,
+		ForwardAttachmentsInitialized: view.ForwardAttachmentsInitialized,
+	}
+	if err := s.store.UpsertDraft(d); err != nil {
+		slog.Error("compose: preserve after failure", "err", err)
+		view.Error += " We also could not save the draft locally; keep this window open and try Save draft."
+		return
+	}
+	view.DraftID = d.ID
+	if msg := s.keepDraftAttachments(d.ID, fresh); msg != "" {
+		s.mail.Toast(msg)
+	}
+	view.Attachments, _ = s.store.DraftAttachments(d.ID)
+	s.publishDraft(d)
+}
+
+func parseForwardSource(r *http.Request) int64 {
+	id, _ := strconv.ParseInt(r.PostFormValue("forward_source_id"), 10, 64)
+	return id
+}
+
+func parseForwardInitialized(r *http.Request) bool {
+	return r.PostFormValue("forward_attachments_initialized") == "1"
+}
+
+// parseForwardAttachments reads the server-rendered metadata attached to each
+// checked chip. It is only presentation/persistence data: send validates every
+// part against a fresh BODYSTRUCTURE before it fetches any bytes.
+func parseForwardAttachments(r *http.Request) ([]store.ForwardAttachment, error) {
+	values := r.PostForm["forward_attachment"]
+	if len(values) > 0 && (parseForwardSource(r) <= 0 || !parseForwardInitialized(r)) {
+		return nil, fmt.Errorf("original attachment selection is missing its source; reload the draft and try again")
+	}
+	if len(values) > 100 {
+		return nil, fmt.Errorf("too many original attachments were selected; remove some and try again")
+	}
+	out := make([]store.ForwardAttachment, 0, len(values))
+	seen := map[string]bool{}
+	for _, value := range values {
+		var a store.ForwardAttachment
+		if len(value) > 4096 || json.Unmarshal([]byte(value), &a) != nil || len(a.Part) == 0 || len(a.Part) > 16 || len(a.Filename) > 512 || len(a.ContentType) > 255 {
+			return nil, fmt.Errorf("an original attachment selection is invalid; reload the draft and try again")
+		}
+		valid := true
+		parts := make([]string, len(a.Part))
+		for i, n := range a.Part {
+			if n <= 0 {
+				valid = false
+				break
+			}
+			parts[i] = strconv.Itoa(n)
+		}
+		key := strings.Join(parts, ".")
+		if !valid || seen[key] {
+			return nil, fmt.Errorf("an original attachment selection is invalid or duplicated; reload the draft and try again")
+		}
+		seen[key] = true
+		out = append(out, a)
+	}
+	return out, nil
+}
+
+func samePart(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func exceedsAttachmentLimit(total int64, declared uint32) bool {
+	return declared > 0 && total+int64(declared) > maxAttachTotal
+}
+
+// forwardAttachments resolves selected original parts only when Send is
+// pressed. Returning an error before enqueue/send leaves the compose window and
+// its draft intact. Queued messages receive the fetched bytes, so later IMAP
+// availability cannot break undo-send or scheduled delivery.
+func (s *Server) forwardAttachments(ctx context.Context, account string, sourceID int64, selected []store.ForwardAttachment, existing []mail.OutAttachment) ([]mail.OutAttachment, string) {
+	msg, err := s.store.MessageByID(sourceID)
+	if err != nil || msg == nil || msg.Account != account {
+		return nil, "Could not find the original message's attachments. Your draft is safe."
+	}
+	available, err := s.mail.Attachments(ctx, msg)
+	if err != nil {
+		return nil, "Could not check the original attachments. Check your connection and try again — your draft is safe."
+	}
+	var total int64
+	for _, a := range existing {
+		total += int64(len(a.Data))
+	}
+	out := make([]mail.OutAttachment, 0, len(selected))
+	for _, wanted := range selected {
+		var found *mail.Attachment
+		for i := range available {
+			if samePart(available[i].Part, wanted.Part) {
+				found = &available[i]
+				break
+			}
+		}
+		if found == nil {
+			return nil, fmt.Sprintf("The original attachment %q is no longer available. Remove it or try again — your draft is safe.", wanted.Filename)
+		}
+		// BODYSTRUCTURE size is available before the part bytes are requested.
+		// Reject known-oversized selections here so a hostile or accidental huge
+		// attachment cannot be buffered into process memory merely to discover it
+		// exceeds the compose limit. Keep the actual decoded-size check below too.
+		if exceedsAttachmentLimit(total, found.Size) {
+			return nil, fmt.Sprintf("Attachments exceed the %dMB limit. Remove %q and try again — your draft is safe.", maxAttachTotal>>20, found.Filename)
+		}
+		data, mediaType, filename, fetchErr := s.mail.Attachment(ctx, msg, found.Part)
+		if fetchErr != nil {
+			return nil, fmt.Sprintf("Could not fetch the original attachment %q. Try again — your draft is safe.", found.Filename)
+		}
+		total += int64(len(data))
+		if total > maxAttachTotal {
+			return nil, fmt.Sprintf("Attachments exceed the %dMB limit. Your draft is safe.", maxAttachTotal>>20)
+		}
+		if filename == "" {
+			filename = found.Filename
+		}
+		if mediaType == "" {
+			mediaType = found.MediaType
+		}
+		out = append(out, mail.OutAttachment{Filename: filename, ContentType: mediaType, Data: data})
+	}
+	return out, ""
 }
 
 // draftAttachments loads a draft's kept files in the form the send path

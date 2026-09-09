@@ -58,6 +58,8 @@
       {{/* No hidden "mode": the format selector in the toolbar row carries it. */}}
       <input type="hidden" name="in_reply_to" value="{{.InReplyTo}}">
       <input type="hidden" name="references" value="{{.References}}">
+      <input type="hidden" name="forward_source_id" value="{{.ForwardSourceID}}">
+      <input type="hidden" name="forward_attachments_initialized" value="{{if .ForwardAttachmentsInitialized}}1{{else}}0{{end}}">
       <input type="hidden" name="send_mode" id="compose-send-mode" value="later">
       <input type="hidden" name="send_at" id="compose-send-at" value="">
 
@@ -162,6 +164,35 @@
              re-rendered out of band by every save and every removal, so this
              row always shows what the draft actually holds. */}}
         {{template "compose_attachments" (dict "DraftID" .DraftID "Attachments" .Attachments)}}
+
+        {{if or .ForwardAttachments .ForwardAttachmentsError}}
+        <section class="mt-2 space-y-1.5" aria-labelledby="forward-attachments-heading">
+          <div class="flex items-center gap-2">
+            <h3 id="forward-attachments-heading" class="text-xs font-medium text-zinc-300">From original message</h3>
+            {{if .ForwardAttachments}}<span class="text-[11px] text-zinc-500">Selected attachments are fetched when you send</span>{{end}}
+          </div>
+          {{with .ForwardAttachmentsError}}<p class="text-xs text-amber-300" role="status">{{.}}</p>{{end}}
+          <div class="flex flex-wrap gap-1.5">
+          {{range .ForwardAttachments}}
+            <div data-forward-attachment class="inline-flex max-w-full items-center gap-1.5 rounded-md border border-indigo-500/25 bg-indigo-500/10 py-1 pl-2 pr-1 text-xs text-zinc-200">
+              <label class="inline-flex min-w-0 cursor-pointer items-center gap-1.5">
+                <input type="checkbox" name="forward_attachment" value="{{toJSON .}}" checked
+                  onchange="onForwardAttachmentCheck(this)" class="shrink-0 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+                <svg class="h-3.5 w-3.5 shrink-0 text-indigo-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13"/></svg>
+                <span data-forward-name class="min-w-0 max-w-[12rem] truncate" title="{{.Filename}}">{{.Filename}}</span>
+              </label>
+              <span class="shrink-0 text-zinc-500">{{humanBytes .ByteSize}}</span>
+              <button type="button" onclick="toggleForwardAttachment(this)"
+                title="Remove original attachment" aria-label="Remove original attachment {{.Filename}}"
+                data-filename="{{.Filename}}" class="shrink-0 rounded px-1 py-0.5 text-[11px] text-zinc-500 transition-colors duration-150 hover:bg-zinc-700 hover:text-red-400">
+                <span data-forward-action>Remove</span>
+              </button>
+            </div>
+          {{end}}
+          </div>
+        </section>
+        <p id="forward-attachment-status" class="sr-only" aria-live="polite"></p>
+        {{end}}
 
         {{/* Attachment list: one chip per file picked but not yet saved,
              filename inline-editable (the typed name is what gets uploaded —

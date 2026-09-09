@@ -3,6 +3,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -10,17 +11,20 @@ import (
 // write-through cache of the account's IMAP Drafts folder: saving writes here
 // first and publishes in the background (see mail.Manager.PushDraft).
 type Draft struct {
-	ID        int64
-	Account   string
-	To        string
-	Cc        string
-	Bcc       string
-	Subject   string
-	Body      string
-	InReplyTo string
-	Kind      string // new|reply|reply_all|forward
-	Mode      string // plain|html|markdown — which editor authored Body
-	UpdatedAt time.Time
+	ID                            int64
+	Account                       string
+	To                            string
+	Cc                            string
+	Bcc                           string
+	Subject                       string
+	Body                          string
+	InReplyTo                     string
+	Kind                          string // new|reply|reply_all|forward
+	Mode                          string // plain|html|markdown — which editor authored Body
+	ForwardSourceID               int64
+	ForwardAttachments            []ForwardAttachment
+	ForwardAttachmentsInitialized bool
+	UpdatedAt                     time.Time
 
 	// MessageID is the draft's identity across revisions: every save appends a
 	// new copy to Drafts and expunges the old one, so the UID churns and this
@@ -34,6 +38,18 @@ type Draft struct {
 	IMAPDirty bool // this content is not on the server yet; the worker retries it
 }
 
+// ForwardAttachment identifies a selected attachment on the message being
+// forwarded. It deliberately contains no bytes: those are fetched only when
+// Send is pressed, then copied into the durable outbox when delivery is queued.
+type ForwardAttachment struct {
+	Part        []int  `json:"part"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"content_type"`
+	Size        uint32 `json:"size"`
+}
+
+func (a ForwardAttachment) ByteSize() int64 { return int64(a.Size) }
+
 // UpsertDraft inserts a new draft (ID == 0, the assigned id is written back)
 // or updates one in place, bumping updated_at either way. Every write marks the
 // row imap_dirty: the content just changed, so the published revision is stale
@@ -44,11 +60,19 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	now := time.Now().UTC().Format(time.RFC3339)
 	d.UpdatedAt, _ = time.Parse(time.RFC3339, now)
 	d.IMAPDirty = true
+	forwardJSON := ""
+	if len(d.ForwardAttachments) > 0 {
+		b, err := json.Marshal(d.ForwardAttachments)
+		if err != nil {
+			return err
+		}
+		forwardJSON = string(b)
+	}
 	if d.ID == 0 {
 		res, err := s.DB.Exec(`
-			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, updated_at, imap_dirty)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, now)
+			INSERT INTO drafts (account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, imap_dirty)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+			d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now)
 		if err != nil {
 			return err
 		}
@@ -61,21 +85,24 @@ func (s *Store) UpsertDraft(d *Draft) error {
 	}
 	_, err := s.DB.Exec(`
 		UPDATE drafts SET account = ?, to_addresses = ?, cc_addresses = ?, bcc_addresses = ?,
-			subject = ?, body = ?, in_reply_to = ?, kind = ?, mode = ?, updated_at = ?, imap_dirty = 1 WHERE id = ?`,
-		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, now, d.ID)
+			subject = ?, body = ?, in_reply_to = ?, kind = ?, mode = ?, forward_source_id = ?, forward_attachments = ?, forward_attachments_initialized = ?, updated_at = ?, imap_dirty = 1 WHERE id = ?`,
+		d.Account, d.To, d.Cc, d.Bcc, d.Subject, d.Body, d.InReplyTo, d.Kind, d.Mode, d.ForwardSourceID, forwardJSON, d.ForwardAttachmentsInitialized, now, d.ID)
 	return err
 }
 
-const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, updated_at, message_id, folder_id, uid, imap_dirty`
+const draftCols = `id, account, to_addresses, cc_addresses, bcc_addresses, subject, body, in_reply_to, kind, mode, forward_source_id, forward_attachments, forward_attachments_initialized, updated_at, message_id, folder_id, uid, imap_dirty`
 
 func scanDraft(sc interface{ Scan(...any) error }) (*Draft, error) {
 	d := &Draft{}
-	var updated string
-	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &d.Mode, &updated,
+	var updated, forwardJSON string
+	if err := sc.Scan(&d.ID, &d.Account, &d.To, &d.Cc, &d.Bcc, &d.Subject, &d.Body, &d.InReplyTo, &d.Kind, &d.Mode, &d.ForwardSourceID, &forwardJSON, &d.ForwardAttachmentsInitialized, &updated,
 		&d.MessageID, &d.FolderID, &d.UID, &d.IMAPDirty); err != nil {
 		return nil, err
 	}
 	d.UpdatedAt, _ = time.Parse(time.RFC3339, updated)
+	if forwardJSON != "" {
+		_ = json.Unmarshal([]byte(forwardJSON), &d.ForwardAttachments)
+	}
 	return d, nil
 }
 
