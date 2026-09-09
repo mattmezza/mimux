@@ -69,7 +69,9 @@ backed up everything.
 - **Search**: instant local full-text search plus on-demand deep IMAP server
   search, streamed back live over SSE as each account answers.
 - **Compose**: reply, reply-all, forward over SMTP — plain text, rich text or
-  Markdown — with undo-send, scheduled send and optional autosave.
+  Markdown — with a quote-aware attachment reminder, visible sending feedback,
+  undo-send, scheduled send and optional autosave. A forward starts with the
+  original attachments selected and lets the sender remove them before sending.
 - **Drafts live in the mailbox.** A saved draft is written to SQLite first and
   published to the account's IMAP Drafts folder behind the request, so it is
   waiting in your other clients; a slow or unreachable server costs a retry on
@@ -79,16 +81,20 @@ backed up everything.
   leaving a second beside it.
 - **Filters & rules**: conditions → actions (move, label, forward, mark read,
   star, delete, notify), run server-side on incoming mail.
-- **Keyboard-first**: j/k navigation, e archive, R reply, / search, ? for the
-  full shortcut list.
+- **Keyboard-first**: a customizable shortcut map (j/k navigation, e archive,
+  R reply, / search by default); Settings → Keybindings edits it and Keyboard
+  Help (default: ?) shows the current map.
 - **PWA & notifications**: installable app with offline fallback; Web Push with
   end-to-end encrypted payloads from your own server, or a POST to an ntfy topic.
 - **Calendar invites** render inline; accept or decline in place.
-- **AI compose/reply and translate**, optional and bring-your-own-key
-  (OpenRouter, Google Translate). Off by default; keys stay in your database.
-- **Settings is one page per section** — appearance, reading, composing, quick
-  actions, notifications, syncing, search, accounts, signatures, templates, API,
-  webhooks, integrations, backup, licence — each at its own URL.
+- **AI compose/reply, message and thread summaries, and translate**, optional
+  and bring-your-own-key (OpenRouter, Google Translate). Thread summaries have
+  independent enablement, model and default detail settings; keys stay in your
+  database.
+- **Settings is one page per section** — appearance, reading, keybindings,
+  composing, quick actions, notifications, syncing, search, accounts,
+  signatures, templates, API, webhooks, integrations, backup, licence — each at
+  its own URL.
 - **Backup = cp**: all state in one SQLite file. Settings → Backup & restore
   also exports a portable JSON copy of the configuration: accounts with their
   credentials and OAuth tokens, preferences, filters, signatures, templates,
@@ -103,19 +109,20 @@ interfaces are the same product underneath, authenticated by the same scoped API
 tokens from Settings → API:
 
 - **REST API**: accounts, folders, messages (including archive/spam/trash,
-  labels and attachment download), search — local or an async deep-search job —
+  labels, attachment download, raw headers and .eml download), search — local or an async deep-search job —
   drafts, send, filters, token introspection and the whole webhooks family, over
   plain HTTP. Self-documented — the binary serves its own OpenAPI spec at
   `/api/v1/openapi.json`, rendered at <https://docs.mimux.dev>.
 - **MCP server** at `/api/mcp` (streamable HTTP, stateless; plus a stdio bridge
-  via `mimux mcp`): nine tools — `list_accounts`, `list_folders`, `search_mail`,
-  `read_message`, `mark_read`, `star_message`, `move_message`, `draft_reply`,
-  `send_draft` — plus a `mimux://inbox/summary` resource. The tool list is built
+  via `mimux mcp`): tools for reading raw messages and making reviewable .eml
+  forward drafts alongside inbox, search, triage and send-draft operations —
+  plus a `mimux://inbox/summary` resource. The tool list is built
   per request from the token's scopes, so a credential that cannot do something
   is never shown the tool for it.
 - **CLI** (`mimux mail`): a thin HTTP client of a running instance — `login`,
   `use`, `logout`, `whoami`, `accounts`, `folders`, `list`, `search`, `read`,
-  `mark-read`, `star`, `move`, `draft`, `send`, `webhooks listen`. It mirrors the
+  `header`, `download`, `mark-read`, `star`, `move`, `draft`, `forward-eml`,
+  `send`, `webhooks listen`. It mirrors the
   MCP tools one for one, in plain text or `--json`, so the inbox pipes into jq,
   an LLM, or the next script. `mimux mail login <url>` opens a browser to approve
   a token (authorization code with PKCE over a loopback port) — nothing is
