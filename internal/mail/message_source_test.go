@@ -3,6 +3,8 @@ package mail
 
 import (
 	"context"
+	"github.com/mattmezza/mimux/internal/store"
+	"strings"
 	"testing"
 )
 
@@ -32,5 +34,23 @@ func TestRawReturnsExactMessage(t *testing.T) {
 	}
 	if string(raw) != foldedRaw {
 		t.Errorf("Raw changed the source:\n got %q\nwant %q", raw, foldedRaw)
+	}
+}
+
+func TestRawAttachmentRejectsDeclaredOversizeBeforeFetch(t *testing.T) {
+	m := &Manager{}
+	_, err := m.RawAttachment(context.Background(), &store.Message{Size: MaxAttachTotal + 1})
+	if err == nil || !strings.Contains(err.Error(), "attachment limit") {
+		t.Fatalf("oversize preflight: %v", err)
+	}
+}
+
+func TestValidateCombinedAttachmentSize(t *testing.T) {
+	atts := []OutAttachment{{Data: make([]byte, MaxAttachTotal)}, {Data: []byte("x")}}
+	if err := ValidateAttachmentSize(atts[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateAttachmentSize(atts); err == nil {
+		t.Fatal("combined size beyond cap accepted")
 	}
 }

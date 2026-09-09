@@ -483,7 +483,7 @@ func (a *api) mcpDraftForwardEML(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil || orig == nil {
 		return nil, nil, fmt.Errorf("no message with id %d", in.ID)
 	}
-	raw, err := a.mail.Raw(ctx, orig)
+	raw, err := a.mail.RawAttachment(ctx, orig)
 	if err != nil {
 		return nil, nil, fmt.Errorf("couldn't fetch raw message: %w", err)
 	}
@@ -525,6 +525,27 @@ func (a *api) mcpSendDraft(ctx context.Context, _ *mcp.CallToolRequest, in sendD
 		for _, at := range kept {
 			in2.Attachments = append(in2.Attachments, mail.OutAttachment{Filename: at.Filename, ContentType: at.ContentType, Data: at.Data})
 		}
+	}
+	if d.ForwardEMLID > 0 {
+		orig, err := a.store.MessageByID(d.ForwardEMLID)
+		if err != nil || orig == nil {
+			return nil, nil, fmt.Errorf("original message is no longer available; the draft has not been sent")
+		}
+		raw, err := a.mail.RawAttachment(ctx, orig)
+		if err != nil {
+			return nil, nil, err
+		}
+		in2.Attachments = append(in2.Attachments, mail.OutAttachment{Filename: mail.MessageFilename(orig.Subject, orig.ID), ContentType: "message/rfc822", Data: raw})
+	}
+	if len(d.ForwardAttachments) > 0 {
+		atts, err := a.mail.ForwardAttachments(ctx, account, d.ForwardSourceID, d.ForwardAttachments, in2.Attachments)
+		if err != "" {
+			return nil, nil, fmt.Errorf("%s", err)
+		}
+		in2.Attachments = append(in2.Attachments, atts...)
+	}
+	if err := mail.ValidateAttachmentSize(in2.Attachments); err != nil {
+		return nil, nil, err
 	}
 	if len(in2.To) == 0 {
 		return nil, nil, fmt.Errorf("draft has no recipients")

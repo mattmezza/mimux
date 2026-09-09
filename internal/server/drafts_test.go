@@ -3,6 +3,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -135,6 +136,125 @@ func TestDraftKeepsItsAttachments(t *testing.T) {
 	got, _ := s.store.DraftByID(id)
 	if got == nil || !got.IMAPDirty {
 		t.Errorf("after removing a file the draft = %+v, want it owing a fresh push", got)
+	}
+}
+
+func TestForwardAttachmentSelectionPersistsAndRenders(t *testing.T) {
+	s := testServer(t)
+	ref := store.ForwardAttachment{Part: []int{2, 1}, Filename: "report.pdf", ContentType: "application/pdf", Size: 4096}
+	b, _ := json.Marshal(ref)
+	fields := url.Values{
+		"draft_id": {"0"}, "account": {"Personal"}, "to": {"ada@example.com"},
+		"subject": {"Fwd: report"}, "body": {"see report"}, "kind": {"forward"}, "mode": {"plain"},
+		"forward_source_id": {"77"}, "forward_attachments_initialized": {"1"}, "forward_attachment": {string(b)},
+	}
+	rec := httptest.NewRecorder()
+	s.handleComposeDraftSave(rec, composeUpload(t, "/compose/draft", fields, "", ""))
+	drafts, _ := s.store.ListDrafts()
+	if len(drafts) != 1 || drafts[0].ForwardSourceID != 77 || len(drafts[0].ForwardAttachments) != 1 {
+		t.Fatalf("saved forward selection = %+v", drafts)
+	}
+	rec = httptest.NewRecorder()
+	s.handleComposeNew(rec, httptest.NewRequest("GET", "/compose?draft="+strconv.FormatInt(drafts[0].ID, 10), nil))
+	body := rec.Body.String()
+	for _, want := range []string{"From original message", "report.pdf", `name="forward_attachment"`, `checked`, `data-forward-attachment`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("reopened forward missing %q", want)
+		}
+	}
+}
+
+func TestForwardFetchFailurePreservesDraftAndFreshUploads(t *testing.T) {
+	s := testServer(t)
+	ref := store.ForwardAttachment{Part: []int{2}, Filename: "missing.pdf", ContentType: "application/pdf", Size: 20}
+	b, _ := json.Marshal(ref)
+	fields := url.Values{
+		"draft_id": {"0"}, "from": {"me@gmail.com"}, "to": {"ada@example.com"},
+		"subject": {"Fwd: missing"}, "body": {"important edits"}, "kind": {"forward"}, "mode": {"plain"},
+		"send_mode": {"later"}, "forward_source_id": {"999999"}, "forward_attachment": {string(b)},
+		"forward_attachments_initialized": {"1"},
+	}
+	rec := httptest.NewRecorder()
+	s.handleComposeSend(rec, composeUpload(t, "/compose", fields, "notes.txt", "do not lose me"))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "draft is safe") {
+		t.Fatalf("failure response = %d: %s", rec.Code, rec.Body.String())
+	}
+	drafts, _ := s.store.ListDrafts()
+	if len(drafts) != 1 || drafts[0].Body != "important edits" || len(drafts[0].ForwardAttachments) != 1 {
+		t.Fatalf("preserved draft = %+v", drafts)
+	}
+	atts, _ := s.store.DraftAttachments(drafts[0].ID)
+	if len(atts) != 1 || atts[0].Filename != "notes.txt" || string(atts[0].Data) != "do not lose me" {
+		t.Fatalf("preserved fresh uploads = %+v", atts)
+	}
+	if queued, _ := s.store.ListScheduled(); len(queued) != 0 {
+		t.Fatal("failed forward was queued")
+	}
+}
+
+func TestPostReadFailurePreservesOrdinaryFreshUploads(t *testing.T) {
+	s := testServer(t)
+	view := composeView{Account: "Personal", To: "ada@example.com", Subject: "unsent", Body: "keep this", Kind: "new", Mode: "plain"}
+	s.preserveComposeFailure(&view, []mail.OutAttachment{{Filename: "notes.txt", ContentType: "text/plain", Data: []byte("keep me")}})
+	if view.DraftID == 0 {
+		t.Fatal("failed compose did not become a recoverable draft")
+	}
+	atts, err := s.store.DraftAttachments(view.DraftID)
+	if err != nil || len(atts) != 1 || atts[0].Filename != "notes.txt" || string(atts[0].Data) != "keep me" {
+		t.Fatalf("preserved uploads = %+v, %v", atts, err)
+	}
+}
+
+func TestForwardAttachmentSelectionFailsClosed(t *testing.T) {
+	valid, _ := json.Marshal(store.ForwardAttachment{Part: []int{2}, Filename: "report.pdf"})
+	tests := []struct {
+		name   string
+		values url.Values
+	}{
+		{"malformed", url.Values{"forward_source_id": {"77"}, "forward_attachments_initialized": {"1"}, "forward_attachment": {"{"}}},
+		{"missing source", url.Values{"forward_attachments_initialized": {"1"}, "forward_attachment": {string(valid)}}},
+		{"not initialized", url.Values{"forward_source_id": {"77"}, "forward_attachment": {string(valid)}}},
+		{"duplicate part", url.Values{"forward_source_id": {"77"}, "forward_attachments_initialized": {"1"}, "forward_attachment": {string(valid), string(valid)}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/compose/draft", strings.NewReader(tt.values.Encode()))
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := parseForwardAttachments(r); err == nil {
+				t.Fatalf("selection accepted: %+v", got)
+			}
+		})
+	}
+}
+
+func TestForwardAttachmentDeclaredSizePreflight(t *testing.T) {
+	if !exceedsAttachmentLimit(maxAttachTotal-1, 2) {
+		t.Fatal("declared size crossing the limit was not rejected before fetch")
+	}
+	if exceedsAttachmentLimit(maxAttachTotal-1, 1) || exceedsAttachmentLimit(maxAttachTotal, 0) {
+		t.Fatal("valid boundary or unknown declared size was rejected")
+	}
+}
+
+func TestForwardAttachmentControlsRemainReversibleAndAnnounced(t *testing.T) {
+	s := testServer(t)
+	d := &store.Draft{
+		Account: "Personal", Kind: "forward", ForwardSourceID: 77, ForwardAttachmentsInitialized: true,
+		ForwardAttachments: []store.ForwardAttachment{{Part: []int{2}, Filename: "report.pdf", Size: 20}},
+	}
+	if err := s.store.UpsertDraft(d); err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	s.handleComposeNew(rec, httptest.NewRequest("GET", "/compose?draft="+strconv.FormatInt(d.ID, 10), nil))
+	body := rec.Body.String()
+	for _, want := range []string{"<label", "toggleForwardAttachment(this)", "forward-attachment-status", `aria-live="polite"`, "data-forward-action"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("forward controls missing %q", want)
+		}
 	}
 }
 

@@ -281,7 +281,7 @@ func (a *api) handleForwardEML(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	raw, err := a.mail.Raw(r.Context(), orig)
+	raw, err := a.mail.RawAttachment(r.Context(), orig)
 	if err != nil {
 		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the raw message — the account may be offline.")
 		return

@@ -392,3 +392,27 @@ func TestBridgeTargetUsesStoredLogin(t *testing.T) {
 		t.Fatalf("MIMUX_TOKEN = %q", token)
 	}
 }
+
+func TestMCPSendDraftDoesNotDropUnresolvedForwards(t *testing.T) {
+	_, a, st := mcpSession(t, "mail:send")
+	for _, eml := range []bool{false, true} {
+		d := &store.Draft{Account: "a1", To: "ada@example.test", Kind: "forward"}
+		if eml {
+			d.ForwardEMLID = 999999
+		} else {
+			d.ForwardSourceID = 999999
+			d.ForwardAttachmentsInitialized = true
+			d.ForwardAttachments = []store.ForwardAttachment{{Part: []int{2}, Filename: "report.pdf"}}
+		}
+		if err := st.UpsertDraft(d); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := a.mcpSendDraft(t.Context(), nil, sendDraftArgs{DraftID: d.ID})
+		if err == nil || !strings.Contains(strings.ToLower(err.Error()), "original message") {
+			t.Fatalf("missing source reached send: %v", err)
+		}
+		if kept, _ := st.DraftByID(d.ID); kept == nil {
+			t.Fatal("failed forward deleted draft")
+		}
+	}
+}
