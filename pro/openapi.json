@@ -493,6 +493,31 @@
         }
       }
     },
+    "/v1/messages/{id}/headers": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "get": {
+        "tags": ["Messages"], "operationId": "getMessageHeaders", "summary": "Get complete message headers",
+        "description": "Returns the original ordered/folded header block and a parsed field map. **Scope: `mail:read`.**", "x-required-scope": "mail:read",
+        "responses": { "200": { "description": "Raw and parsed headers.", "content": { "application/json": { "schema": { "type": "object", "properties": { "raw": { "type": "string" }, "parsed": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } } } } } } }, "404": { "$ref": "#/components/responses/NotFound" }, "502": { "$ref": "#/components/responses/InternalError" } }
+      }
+    },
+    "/v1/messages/{id}/raw": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "get": {
+        "tags": ["Messages"], "operationId": "getRawMessage", "summary": "Download original message",
+        "description": "Returns the exact RFC 822 bytes without changing message flags. **Scope: `mail:read`.**", "x-required-scope": "mail:read",
+        "responses": { "200": { "description": "Original message.", "content": { "message/rfc822": { "schema": { "type": "string", "format": "binary" } } } }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
+    "/v1/messages/{id}/forward-eml": {
+      "parameters": [{ "$ref": "#/components/parameters/MessageID" }],
+      "post": {
+        "tags": ["Drafts"], "operationId": "draftForwardAsEML", "summary": "Draft a forward with the original attached",
+        "description": "Creates a reviewable draft and never sends it. **Scope: `mail:send`.**", "x-required-scope": "mail:send",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "properties": { "to": { "type": "array", "items": { "type": "string" } }, "cc": { "type": "array", "items": { "type": "string" } }, "bcc": { "type": "array", "items": { "type": "string" } }, "body": { "type": "string" }, "account": { "type": "string" } } } } } },
+        "responses": { "201": { "description": "Draft created; not sent." }, "404": { "$ref": "#/components/responses/NotFound" } }
+      }
+    },
     "/v1/messages/{id}/attachments/{n}": {
       "parameters": [
         { "$ref": "#/components/parameters/MessageID" },

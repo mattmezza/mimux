@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">mimux — Simple Mail</title>
+  <desc id="desc">Self-hosted email, beautifully unified.</desc>
+  <defs>
+    <radialGradient id="glow" cx="28%" cy="48%" r="55%">
+      <stop offset="0" stop-color="#312e81" stop-opacity=".42"/>
+      <stop offset="1" stop-color="#18181b" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#09090b" flood-opacity=".45"/>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="#18181b"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <g transform="translate(94 150) scale(.64)" filter="url(#shadow)">
+    <rect x="0" y="0" width="420" height="330" rx="54" fill="#6366f1"/>
+    <path d="M18 48 184 184q26 22 52 0L402 48" fill="none" stroke="#312e81" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+    <path fill="#4ade80" d="M234 348c13-114 72-181 188-190-11 111-72 174-176 181l-18 35-20-10 26-50c34-49 76-85 127-108-56 19-101 53-127 92z"/>
+  </g>
+  <text x="454" y="292" fill="#fafafa" font-family="Inter,Arial,sans-serif" font-size="112" font-weight="700" letter-spacing="-5">mimux</text>
+  <text x="460" y="362" fill="#d4d4d8" font-family="Inter,Arial,sans-serif" font-size="31">Self-hosted email, beautifully unified.</text>
+</svg>

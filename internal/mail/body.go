@@ -10,10 +10,13 @@ import (
 	"io"
 	"mime/quotedprintable"
 	"net/textproto"
+	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/emersion/go-message"
 	_ "github.com/emersion/go-message/charset" // register non-UTF-8 charsets
+	readability "github.com/go-shiori/go-readability"
 	"golang.org/x/net/html"
 
 	"github.com/mattmezza/mimux/internal/store"
@@ -36,7 +39,10 @@ type messageBody struct {
 	// headers is the message's whole header block, verbatim (see headerBlock).
 	// The warmer's full fetch fills it for free on the inbox and Drafts, so most
 	// messages answer Headers with no extra IMAP at all.
-	headers string
+	headers      string
+	articleMu    sync.Mutex
+	articleText  string
+	articleReady bool
 }
 
 // bodyDTO is the exported, gob-encodable form of messageBody used to persist a
@@ -51,6 +57,8 @@ type bodyDTO struct {
 	ListUnsubscribe     string
 	ListUnsubscribePost string
 	Headers             string
+	ArticleText         string
+	ArticleReady        bool
 }
 
 type inlineDTO struct {
@@ -64,7 +72,8 @@ func encodeBody(b *messageBody) ([]byte, error) {
 		HTML: b.htmlContent, Text: b.textContent, Inline: map[string]inlineDTO{},
 		Calendar:        b.calendar,
 		ListUnsubscribe: b.listUnsubscribe, ListUnsubscribePost: b.listUnsubscribePost,
-		Headers: b.headers,
+		Headers:     b.headers,
+		ArticleText: b.articleText, ArticleReady: b.articleReady,
 	}
 	for k, v := range b.inline {
 		dto.Inline[k] = inlineDTO{Mime: v.mime, Data: v.data}
@@ -86,7 +95,8 @@ func decodeBody(blob []byte) (*messageBody, error) {
 		htmlContent: dto.HTML, textContent: dto.Text, inline: map[string]inlinePart{},
 		calendar:        dto.Calendar,
 		listUnsubscribe: dto.ListUnsubscribe, listUnsubscribePost: dto.ListUnsubscribePost,
-		headers: dto.Headers,
+		headers:     dto.Headers,
+		articleText: dto.ArticleText, articleReady: dto.ArticleReady,
 	}
 	for k, v := range dto.Inline {
 		b.inline[k] = inlinePart{mime: v.Mime, data: v.Data}
@@ -127,6 +137,59 @@ func (m *Manager) PlainText(ctx context.Context, msg *store.Message) (string, er
 		src = b.textContent
 	}
 	return collapseWS(stripHTML(src)), nil
+}
+
+// ArticleText returns summary-grade message text. A substantive plain-text
+// alternative remains authoritative; HTML-only newsletters are distilled to
+// their main content so navigation and footer chrome do not consume the model
+// budget. The result (including a fallback) is persisted with the parsed body.
+func (m *Manager) ArticleText(ctx context.Context, msg *store.Message) (string, error) {
+	b, err := m.parsedBody(ctx, msg, false)
+	if err != nil {
+		return "", err
+	}
+	b.articleMu.Lock()
+	defer b.articleMu.Unlock()
+	if b.articleReady {
+		return b.articleText, nil
+	}
+
+	plain := strings.TrimSpace(b.textContent)
+	htmlSrc := strings.TrimSpace(b.htmlContent)
+	if !looksHTML(plain) && usefulPlainAlternative(plain) {
+		b.articleText = plain
+	} else if htmlSrc != "" || looksHTML(plain) {
+		if htmlSrc == "" {
+			htmlSrc = plain
+		}
+		base, _ := url.Parse("https://email.invalid/")
+		if article, extractErr := readability.FromReader(strings.NewReader(htmlSrc), base); extractErr == nil {
+			b.articleText = collapseWS(article.TextContent)
+		}
+		if len([]rune(b.articleText)) < 80 {
+			b.articleText = collapseWS(stripHTML(htmlSrc))
+		}
+	} else {
+		b.articleText = plain
+	}
+	b.articleReady = true
+	if blob, encodeErr := encodeBody(b); encodeErr == nil {
+		_ = m.st.SaveMessageBody(msg.ID, blob)
+	}
+	return b.articleText, nil
+}
+
+func usefulPlainAlternative(s string) bool {
+	if strings.TrimSpace(s) == "" {
+		return false
+	}
+	l := strings.ToLower(collapseWS(s))
+	for _, boilerplate := range []string{"view this email in html", "view this message in html", "html-capable email client", "view in your browser"} {
+		if strings.Contains(l, boilerplate) && len([]rune(l)) < 500 {
+			return false
+		}
+	}
+	return true
 }
 
 // QuoteSource returns a message's body in the two forms a reply or forward
@@ -171,12 +234,18 @@ func (m *Manager) Headers(ctx context.Context, msg *store.Message) (raw string, 
 		raw = string(hdr)
 		// A copy, not a write through the pointer: the LRU hands the same
 		// *messageBody to everyone, and render reads it concurrently.
-		patched := *b
-		patched.headers = raw
-		if blob, err := encodeBody(&patched); err == nil {
+		b.articleMu.Lock()
+		patched := &messageBody{
+			htmlContent: b.htmlContent, textContent: b.textContent, inline: b.inline,
+			calendar: b.calendar, calendarInline: b.calendarInline,
+			listUnsubscribe: b.listUnsubscribe, listUnsubscribePost: b.listUnsubscribePost,
+			headers: raw, articleText: b.articleText, articleReady: b.articleReady,
+		}
+		b.articleMu.Unlock()
+		if blob, err := encodeBody(patched); err == nil {
 			_ = m.st.SaveMessageBody(msg.ID, blob) // best-effort cache
 		}
-		m.bodies.put(msg.ID, &patched)
+		m.bodies.put(msg.ID, patched)
 	}
 	return raw, parseHeaders(raw), nil
 }

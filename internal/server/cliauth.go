@@ -137,7 +137,7 @@ func (s *Server) handleCLIAuthForm(w http.ResponseWriter, r *http.Request) {
 	if label == "" {
 		label = cliDefaultLabel
 	}
-	s.render(w, "cli_auth", map[string]any{
+	s.renderRequest(w, r, "cli_auth", map[string]any{
 		"CSRF":      auth.EnsureCSRF(w, r, s.secure),
 		"Nonce":     nonce,
 		"Port":      port,
@@ -205,7 +205,7 @@ func (s *Server) handleCLIAuthApprove(w http.ResponseWriter, r *http.Request) {
 	// --no-browser: there is no loopback listener to redirect to, so the code
 	// goes on the page for the human to paste back into the terminal.
 	if r.PostFormValue("nb") == "1" {
-		s.render(w, "cli_auth", map[string]any{
+		s.renderRequest(w, r, "cli_auth", map[string]any{
 			"CSRF": auth.EnsureCSRF(w, r, s.secure),
 			"Code": code, "Label": tok.Label, "Pro": s.proView(),
 		})
