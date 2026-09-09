@@ -281,6 +281,15 @@
               <span class="text-xs text-zinc-500">(labels always show when reading a message)</span>
             </label>
 
+            <label class="flex items-start gap-2">
+              <input type="checkbox" name="day_separators" value="1" {{if .Prefs.DaySeparators}}checked{{end}}
+                class="mt-0.5 rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
+              <span>
+                <span class="block text-sm text-zinc-200">Group messages by day</span>
+                <span class="block text-xs text-zinc-500">Show subtle Today, Yesterday, and date dividers using the server's local time.</span>
+              </span>
+            </label>
+
             <label class="flex items-center gap-2">
               <input type="checkbox" name="dark_messages" value="1" {{if .Prefs.DarkMessages}}checked{{end}}
                 class="rounded border-zinc-600 bg-zinc-800 text-indigo-500 focus:ring-indigo-500">
