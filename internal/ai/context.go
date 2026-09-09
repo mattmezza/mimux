@@ -73,8 +73,14 @@ func BuildThreadContext(recent, earlier []Msg) string {
 	sortedRecent := slices.Clone(recent)
 	slices.SortFunc(sortedRecent, func(a, b Msg) int { return b.Date.Compare(a.Date) })
 	var head []string
-	for _, m := range sortedRecent {
-		head = append(head, renderMsg("Recent message in this conversation", m, &budget, budget))
+	for i, m := range sortedRecent {
+		if budget <= contextFloor {
+			break
+		}
+		// Reserve a share for every recent turn: one long newsletter must
+		// neither crowd out all other participants nor make the budget negative.
+		limit := budget / (len(sortedRecent) - i)
+		head = append(head, renderMsg("Recent message in this conversation", m, &budget, limit))
 	}
 	slices.Reverse(head)
 
@@ -107,7 +113,7 @@ func renderMsg(label string, m Msg, budget *int, limit int) string {
 		fmt.Fprintf(&b, "Subject: %s\n", m.Subject)
 	}
 	fmt.Fprintf(&b, "\n%s\n", text)
-	*budget -= b.Len()
+	*budget -= len([]rune(b.String()))
 	return b.String()
 }
 

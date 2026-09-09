@@ -59,6 +59,12 @@ func (m *Manager) fetchRaw(ctx context.Context, msg *store.Message) ([]byte, err
 	return m.fetchRawOn(ctx, nil, msg)
 }
 
+// Raw returns the original RFC 822 message bytes verbatim. BODY.PEEK keeps the
+// operation read-only: exporting or attaching a message never changes flags.
+func (m *Manager) Raw(ctx context.Context, msg *store.Message) ([]byte, error) {
+	return m.fetchRaw(ctx, msg)
+}
+
 // fetchHeaders fetches only the header block — what patching a body blob cached
 // before headers were stored needs, without dragging the whole message back.
 func (m *Manager) fetchHeaders(ctx context.Context, msg *store.Message) ([]byte, error) {

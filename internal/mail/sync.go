@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"mime"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message"
 
 	"github.com/mattmezza/mimux/internal/store"
 )
@@ -525,7 +527,7 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		MessageID:     env.MessageID,
 		InReplyTo:     strings.Join(env.InReplyTo, " "),
 		Refs:          parseRefsHeader(buf.FindBodySection(refsHeaderSection)),
-		Subject:       env.Subject,
+		Subject:       decodeHeader(env.Subject),
 		Date:          env.Date,
 		Size:          buf.RFC822Size,
 		ToAddresses:   joinAddrs(env.To),
@@ -546,7 +548,7 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		m.Date = buf.InternalDate
 	}
 	if len(env.From) > 0 {
-		m.FromName = env.From[0].Name
+		m.FromName = decodeHeader(env.From[0].Name)
 		m.FromAddress = addrString(env.From[0])
 	}
 	// Snippet from the first body part.
@@ -554,6 +556,19 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		m.Snippet = partSnippet(snip, buf.BodyStructure)
 	}
 	return m
+}
+
+// decodeHeader decodes RFC 2047 encoded-words left untouched by an IMAP
+// server's ENVELOPE response. go-message's charset reader extends the standard
+// decoder beyond UTF-8/ISO-8859-1 to common legacy charsets such as Windows-1252.
+// A bad or unknown charset leaves the complete original value intact.
+func decodeHeader(s string) string {
+	d := mime.WordDecoder{CharsetReader: message.CharsetReader}
+	decoded, err := d.DecodeHeader(s)
+	if err != nil {
+		return s
+	}
+	return decoded
 }
 
 // part1 returns the top-level body-structure node for IMAP part number 1
@@ -592,10 +607,7 @@ func hasAttachment(bs imap.BodyStructure) bool {
 		if !ok {
 			return true
 		}
-		if d := sp.Disposition(); d != nil && strings.EqualFold(d.Value, "attachment") {
-			found = true
-		}
-		if sp.Filename() != "" && !strings.HasPrefix(sp.MediaType(), "text/") {
+		if isAttachmentPart(sp) {
 			found = true
 		}
 		return true

@@ -11,7 +11,7 @@ import (
 // NOTE: no body hash — a message's body is immutable; a re-fetch that really
 // changed it would keep the old summary until the row is deleted.
 func SummaryCacheKey(messageID int64, level string) string {
-	return strconv.FormatInt(messageID, 10) + ":" + level
+	return "v2:" + strconv.FormatInt(messageID, 10) + ":" + level
 }
 
 // ThreadSummaryCacheKey keys a cached whole-thread AI summary on the thread's
@@ -19,7 +19,7 @@ func SummaryCacheKey(messageID int64, level string) string {
 // SummaryCacheKey for that same message id — the latest message of a thread
 // is also a valid summarize target on its own, and the two summaries differ.
 func ThreadSummaryCacheKey(latestMessageID int64, level string) string {
-	return "t" + strconv.FormatInt(latestMessageID, 10) + ":" + level
+	return "tv2:" + strconv.FormatInt(latestMessageID, 10) + ":" + level
 }
 
 // SummaryCached returns a cached summary, ok=false on miss.
