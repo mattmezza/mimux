@@ -17,6 +17,17 @@
   </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#18181b">
+  <meta property="og:title" content="mimux — Simple Mail">
+  <meta property="og:description" content="Self-hosted email, beautifully unified.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="mimux">
+  <meta property="og:locale" content="en_US">
+  <meta property="og:url" content="{{.OGOrigin}}">
+  <meta property="og:image" content="{{.OGOrigin}}/static/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="mimux — Simple Mail">
+  <meta name="twitter:description" content="Self-hosted email, beautifully unified.">
+  <meta name="twitter:image" content="{{.OGOrigin}}/static/og-image.png">
   <!-- htmx snapshots each page into localStorage for Back navigation. At the
        default depth of 10 a large inbox blows the ~5MB quota, and every save
        then throws htmx:historyCacheError — which also kills the #message-list
