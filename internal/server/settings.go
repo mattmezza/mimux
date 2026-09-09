@@ -308,6 +308,7 @@ func (s *Server) applyReading(p *store.Prefs, r *http.Request) {
 	p.ShowAccountBadge = r.PostFormValue("show_account_badge") != ""
 	p.ShowAttachMarker = r.PostFormValue("show_attach_marker") != ""
 	p.ShowListLabels = r.PostFormValue("show_list_labels") != ""
+	p.DaySeparators = r.PostFormValue("day_separators") != ""
 	p.DarkMessages = r.PostFormValue("dark_messages") != ""
 	p.RememberMsgTheme = r.PostFormValue("remember_msg_theme") != ""
 	// The avatar dependents (favicon/shape/hide-on-mobile) are disabled in the

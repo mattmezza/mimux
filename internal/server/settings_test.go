@@ -236,6 +236,20 @@ func TestPreviewSectionSave(t *testing.T) {
 	}
 }
 
+func TestDaySeparatorsSetting(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	r := settingsRouter(s)
+	if body := renderSection(t, s, "reading"); !strings.Contains(body, `name="day_separators"`) || !strings.Contains(body, `name="day_separators" value="1" checked`) {
+		t.Fatalf("reading settings missing checked day separator toggle: %s", body)
+	}
+	if rec := postSettings(t, r, url.Values{"section": {"reading"}}); rec.Code != http.StatusSeeOther {
+		t.Fatalf("save = %d: %s", rec.Code, rec.Body.String())
+	}
+	if s.store.GetPrefs().DaySeparators {
+		t.Fatal("unchecked day separator setting was not saved")
+	}
+}
+
 // TestUnknownSettingsSection: a made-up section is a 404, not a page that
 // renders nothing, and a made-up section on the save path is refused rather
 // than silently applying every section.

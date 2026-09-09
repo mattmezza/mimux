@@ -101,10 +101,12 @@
    where it lives in the closed drawer) hid every single result while the
    header still claimed "N local results". Search states unread/starred with
    its own is: operators. --- */
-[data-filter="unread"] #message-list-items li[data-message-row]:not([data-unread]),
+[data-filter="unread"] #message-list-items li[data-message-row]:not([data-mid]):not([data-unread]),
 [data-filter="starred"] #message-list-items li[data-message-row]:not([data-starred]) {
   display: none;
 }
+[data-filter="unread"] #message-list-items [data-day-group]:not(:has(li[data-message-row][data-unread])):not(:has(li[data-message-row].just-read)),
+[data-filter="starred"] #message-list-items [data-day-group]:not(:has(li[data-message-row][data-starred])) { display: none; }
 /* …and with a filter on, hide the load-more sentinel too: nearly every appended
    row is filtered away, which leaves the sentinel still on screen after the
    swap, which auto-loads the next page, all the way to the bottom of the
@@ -403,6 +405,9 @@ html, #message-list { overscroll-behavior-x: contain; }
 .htmx-request .htmx-indicator {
   opacity: 1;
   transition-delay: 250ms;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-reading-skeleton] .animate-pulse { animation: none; }
 }
 
 /* "Syncing…" pill in the message list header. Visible for exactly one reason,
