@@ -102,12 +102,12 @@ document.addEventListener("htmx:beforeRequest", (e) => {
   const path = e.detail.requestConfig?.path || "";
   const template = document.getElementById(path.startsWith("/t/") ? "reading-skeleton-thread" : "reading-skeleton-single");
   if (template && /^\/(?:messages|t)\//.test(path)) e.detail.target.replaceChildren(template.content.cloneNode(true));
-  armReadingWait(e.detail.target);
+  armReadingWait(e.detail.target, e.detail.xhr);
 });
 document.addEventListener("htmx:afterRequest", (e) => {
   const pane = e.detail?.target;
   if (pane?.id !== "reading-pane") return;
-  clearReadingWait();
+  clearReadingWait(e.detail.xhr);
   if (!e.detail.failed || !pane.querySelector("[data-reading-skeleton]")) return;
   pane.innerHTML = '<div role="alert" class="m-auto p-6 text-center text-sm text-red-300">Couldn\'t load this message. Please try again.</div>';
 });
@@ -120,22 +120,29 @@ document.addEventListener("htmx:afterRequest", (e) => {
 // hint is "waiting for the sync", which is the only reason a pane request
 // outlives the network, and the response replaces the whole skeleton anyway.
 const READING_WAIT_MS = 2500;
-let readingWaitTimer = null;
+// Keyed on the request's own XHR (htmx carries the same one on htmx:beforeRequest
+// and htmx:afterRequest), not a single module-global: two pane requests can be in
+// flight at once — click message A, then B before A answers — and only the request
+// that armed a timer may clear it. One global meant A's response cancelled B's
+// timer, so a pane stuck behind the sync dropped back to an unexplained skeleton,
+// which is the one thing this hint exists to prevent.
+const readingWaits = new Map();
 
-function clearReadingWait() {
-  if (readingWaitTimer === null) return;
-  clearTimeout(readingWaitTimer);
-  readingWaitTimer = null;
+function clearReadingWait(xhr) {
+  const timer = readingWaits.get(xhr);
+  if (timer === undefined) return;
+  clearTimeout(timer);
+  readingWaits.delete(xhr);
 }
 
-function armReadingWait(scope) {
-  clearReadingWait();
+function armReadingWait(scope, xhr) {
+  clearReadingWait(xhr);
   const hint = scope?.querySelector?.("[data-reading-waiting]");
   if (!hint) return;
-  readingWaitTimer = setTimeout(() => {
-    readingWaitTimer = null;
+  readingWaits.set(xhr, setTimeout(() => {
+    readingWaits.delete(xhr);
     hint.hidden = false;
-  }, READING_WAIT_MS);
+  }, READING_WAIT_MS));
 }
 
 // The active quick filter, read from its canonical DOM reflection (the

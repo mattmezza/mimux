@@ -261,8 +261,26 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	// open, a server-side search — gets the connection here rather than after the
 	// folder's reconciliation. This is the yield that matters most, because the
 	// fetch above is the part that grows with new mail.
-	if err := a.yield(ctx, c); err != nil {
+	served, err := a.yield(ctx, c)
+	if err != nil {
 		return changed, err
+	}
+	if served {
+		// A command drained above SELECTs its own mailbox on this connection and
+		// leaves it selected (TestSelectInboxAfterReadOnlyCommand) — an inbox body
+		// open while the sweep works through Archive is exactly the interaction
+		// this yield exists to serve. Everything below is UID work on f:
+		// backfilling and reconciling against whatever mailbox is selected would
+		// store another folder's mail as this one's, and delete this one's rows as
+		// expunged. So put f back. Unconditionally, and without trusting
+		// c.Mailbox() to have caught up with the drained SELECT yet (same test),
+		// and without re-reading the selection: sel.NumMessages stays the count
+		// this pass opened with, which setBaselineCount compares the next cycle's
+		// arrivals against. One extra round trip, only on a pass that served a
+		// command.
+		if _, err := c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait(); err != nil {
+			return changed, err
+		}
 	}
 
 	// Flag updates for existing messages (CONDSTORE only, cheap).

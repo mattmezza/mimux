@@ -4,12 +4,16 @@ package mail
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 
 	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // TestYieldDrainsTheQueue: yield is what puts a queued command on the worker's
@@ -23,11 +27,15 @@ func TestYieldDrainsTheQueue(t *testing.T) {
 	ran := false
 	a.cmds <- cmd{fn: func(*imapclient.Client) error { ran = true; return nil }, done: make(chan error, 1)}
 
-	if err := a.yield(context.Background(), nil); err != nil {
+	served, err := a.yield(context.Background(), nil)
+	if err != nil {
 		t.Fatalf("yield = %v", err)
 	}
 	if !ran {
 		t.Error("yield did not run the queued command: an interactive body open would still be waiting")
+	}
+	if !served {
+		t.Error("yield ran a command but did not report serving one: the pass it interrupted cannot know its folder needs re-selecting")
 	}
 }
 
@@ -41,7 +49,7 @@ func TestYieldStopsOnCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := a.yield(ctx, nil); err == nil {
+	if _, err := a.yield(ctx, nil); err == nil {
 		t.Error("yield returned nil on a cancelled context")
 	}
 }
@@ -339,6 +347,26 @@ func TestQueuedCommandReportsBusyWhenTheWorkerNeverDrains(t *testing.T) {
 	}
 }
 
+// TestFetchNoticeNamesTheBusyAccount: every surface that reports a failed fetch
+// — the reading pane, the HTTP API, the MCP tools — takes its sentence from
+// FetchNotice, so the busy case has to be told apart from a real network failure
+// in one place rather than four.
+func TestFetchNoticeNamesTheBusyAccount(t *testing.T) {
+	busy := FetchNotice("body", errors.Join(ErrBusy, context.DeadlineExceeded))
+	for _, want := range []string{"busy syncing", "body", "Try again"} {
+		if !strings.Contains(busy, want) {
+			t.Errorf("busy notice = %q, want it to contain %q", busy, want)
+		}
+	}
+	other := FetchNotice("body", errors.New("connection refused"))
+	if strings.Contains(other, "busy syncing") {
+		t.Errorf("generic notice = %q, want no sync talk for a real failure", other)
+	}
+	if !strings.Contains(other, "offline") {
+		t.Errorf("generic notice = %q, want the network story kept", other)
+	}
+}
+
 // TestCancelledRequestIsNotBusy: a request the browser abandoned must not be
 // dressed up as a busy account.
 func TestCancelledRequestIsNotBusy(t *testing.T) {
@@ -354,4 +382,129 @@ func TestCancelledRequestIsNotBusy(t *testing.T) {
 	if errors.Is(err, ErrBusy) {
 		t.Fatalf("a cancelled request reported %v, want the plain context error", err)
 	}
+}
+
+// archiveUnderInterruptedPass syncs Archive and INBOX onto an in-memory server,
+// then runs one deep pass over Archive with the interactive command the mid-pass
+// yield exists to serve \u2014 a read-only SELECT of the inbox, i.e. a body open
+// there \u2014 queued to land on that yield. It returns the store, Archive, and what
+// Archive held before the pass.
+//
+// The two callers differ only in which mailbox holds more messages, which is
+// what decides which of the pass's two O(mailbox) stages runs against the wrong
+// one.
+func archiveUnderInterruptedPass(t *testing.T, archiveSubjects, inboxSubjects []string) (*store.Store, *store.Folder, map[uint32]bool) {
+	t.Helper()
+	st := testStore(t)
+	inboxMsgs := make([]string, 0, len(inboxSubjects))
+	for _, s := range inboxSubjects {
+		inboxMsgs = append(inboxMsgs, testMessage("ada@example.com", s))
+	}
+	c, user := newTestIMAPUser(t, inboxMsgs...)
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	for _, s := range archiveSubjects {
+		deliver(t, user, "Archive", testMessage("bob@example.com", s))
+	}
+	if _, err := a.syncFolders(c); err != nil {
+		t.Fatal(err)
+	}
+	archive, inbox := folderByName(t, st, "acct", "Archive"), folderByName(t, st, "acct", "INBOX")
+	for _, f := range []*store.Folder{archive, inbox} {
+		if _, err := a.syncFolder(context.Background(), c, f, c.Caps()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before, err := st.FolderUIDs(archive.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A body open in the inbox, queued while the sweep is working through
+	// Archive: it SELECTs its own mailbox on the worker's connection and leaves
+	// it selected.
+	a.cmds <- cmd{
+		fn: func(conn *imapclient.Client) error {
+			_, err := conn.Select(inbox.Name, &imap.SelectOptions{ReadOnly: true}).Wait()
+			return err
+		},
+		done: make(chan error, 1),
+	}
+	// Force the deep pass, as the 30-minute interval (or a restart) would.
+	delete(a.sweep.deep, archive.ID)
+	if _, err := a.syncFolder(context.Background(), c, archive, c.Caps()); err != nil {
+		t.Fatal(err)
+	}
+	return st, archive, before
+}
+
+// TestYieldKeepsTheSyncedFolderSelected: a command drained mid-pass SELECTs its
+// own mailbox on this connection and leaves it selected (see
+// TestSelectInboxAfterReadOnlyCommand). Everything after syncFolder's yield is
+// UID work on the folder being synced, so the pass has to put it back first \u2014
+// otherwise it reconciles Archive against the inbox, and rows for mail that is
+// still on the server are deleted (and, with announce on, announced as deleted).
+func TestYieldKeepsTheSyncedFolderSelected(t *testing.T) {
+	st, archive, before := archiveUnderInterruptedPass(t,
+		[]string{"arch-one", "arch-two", "arch-three"}, []string{"inbox-one"})
+	after, err := st.FolderUIDs(archive.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameUIDs(before, after) {
+		t.Errorf("Archive's stored UIDs went %v -> %v: the pass reconciled against the mailbox the drained command selected, and nothing was deleted on the server",
+			sortedUIDs(before), sortedUIDs(after))
+	}
+}
+
+// TestYieldDoesNotBackfillFromTheDrainedCommandsMailbox: the mirror image.
+// backfillWindow on the wrong mailbox stores that mailbox's messages as the
+// synced folder's \u2014 the inbox's mail filed under Archive, announced as arrivals.
+func TestYieldDoesNotBackfillFromTheDrainedCommandsMailbox(t *testing.T) {
+	st, archive, before := archiveUnderInterruptedPass(t,
+		[]string{"arch-one"}, []string{"inbox-one", "inbox-two", "inbox-three"})
+	after, err := st.FolderUIDs(archive.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !sameUIDs(before, after) {
+		t.Errorf("Archive's stored UIDs went %v -> %v: the pass stored the mailbox the drained command selected as Archive's",
+			sortedUIDs(before), sortedUIDs(after))
+	}
+}
+
+func folderByName(t *testing.T, st *store.Store, account, name string) *store.Folder {
+	t.Helper()
+	all, err := st.ListFolders(account)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range all {
+		if all[i].Name == name {
+			return &all[i]
+		}
+	}
+	t.Fatalf("no %s folder", name)
+	return nil
+}
+
+func sameUIDs(a, b map[uint32]bool) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for uid := range a {
+		if !b[uid] {
+			return false
+		}
+	}
+	return true
+}
+
+func sortedUIDs(uids map[uint32]bool) []uint32 {
+	out := make([]uint32, 0, len(uids))
+	for uid := range uids {
+		out = append(out, uid)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }

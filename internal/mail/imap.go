@@ -420,7 +420,7 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 		// Yield between folders: this sweep runs on reconnect and can be long on
 		// a big account, and a body open queued behind it used to wait for all of
 		// it (or give up at submitTimeout). Same reasoning as sweepFolders.
-		if err := a.yield(ctx, c); err != nil {
+		if _, err := a.yield(ctx, c); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
@@ -483,7 +483,7 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 	// finished the full sweep and this re-reads the inbox before settling in.
 	sync := true
 	for {
-		if err := a.drain(c); err != nil {
+		if _, err := a.drain(c); err != nil {
 			return err
 		}
 		// A trip round this loop is a sync only when something asked for one:
@@ -590,7 +590,7 @@ func (a *account) sweepFolders(ctx context.Context, c *imapclient.Client, caps i
 	var rest []store.Folder
 	for i := range folders {
 		if folders[i].SpecialUse == "inbox" {
-			if err := a.yield(ctx, c); err != nil {
+			if _, err := a.yield(ctx, c); err != nil {
 				return changed, "", err
 			}
 			got, err := a.syncFolder(ctx, c, &folders[i], caps)
@@ -615,7 +615,7 @@ func (a *account) sweepFolders(ctx context.Context, c *imapclient.Client, caps i
 		}
 	}
 	for i := start; i < len(rest); i++ {
-		if err := a.yield(ctx, c); err != nil {
+		if _, err := a.yield(ctx, c); err != nil {
 			return changed, "", err
 		}
 		got, err := a.syncFolder(ctx, c, &rest[i], caps)
@@ -653,9 +653,14 @@ func (a *account) sweepFolders(ctx context.Context, c *imapclient.Client, caps i
 // Ordering is preserved and nothing is added to the connection model: the
 // command still runs on the worker's own connection (see submitRO), which is why
 // this is safe on providers that cap concurrent connections per account.
-func (a *account) yield(ctx context.Context, c *imapclient.Client) error {
+//
+// It reports whether it served a command, because a served command SELECTs its
+// own mailbox on this connection and leaves it selected. A yield between folders
+// does not care — the next syncFolder SELECTs. A yield *inside* a pass does: see
+// the re-SELECT in syncFolder.
+func (a *account) yield(ctx context.Context, c *imapclient.Client) (served bool, err error) {
 	if err := ctx.Err(); err != nil {
-		return err
+		return false, err
 	}
 	return a.drain(c)
 }
@@ -715,14 +720,18 @@ func (a *account) waitWork(ctx context.Context, poll time.Duration) (sync bool) 
 }
 
 // drain runs every queued command against the connection, reporting each
-// result to its caller.
-func (a *account) drain(c *imapclient.Client) error {
+// result to its caller. served says whether it ran anything: the commands it
+// drains SELECT their own mailbox on this connection and leave it selected
+// (TestSelectInboxAfterReadOnlyCommand), which a caller about to do UID work on
+// a folder of its own has to account for.
+func (a *account) drain(c *imapclient.Client) (served bool, err error) {
 	for {
 		select {
 		case cm := <-a.cmds:
 			cm.done <- cm.fn(c)
+			served = true
 		default:
-			return nil
+			return served, nil
 		}
 	}
 }
@@ -808,6 +817,23 @@ const submitTimeout = 30 * time.Second
 // connect-backoff), not broken. Callers that talk to a user (the reading pane)
 // use it to say something true instead of "could not load".
 var ErrBusy = errors.New("the account is busy syncing")
+
+// FetchNotice is the sentence a caller reports when a fetch for one part of a
+// message failed — the reading pane, the HTTP API, the MCP tools. what names the
+// part ("body", "headers", "raw message", "attachments").
+//
+// The busy case is the one worth naming, and it is the reason this lives next to
+// ErrBusy rather than in each surface: a fetch that ran out of submitTimeout
+// queued behind a sync sweep is not an offline account, and it is the failure a
+// user with a large mailbox meets most often. Every surface that reports a fetch
+// failure says it the same way, so none of them tells the network story for a
+// queue problem.
+func FetchNotice(what string, err error) string {
+	if errors.Is(err, ErrBusy) {
+		return "This account is busy syncing, so the " + what + " could not be loaded. Try again in a moment."
+	}
+	return "Couldn't fetch the " + what + " — the account may be offline."
+}
 
 // sleepOrWake waits out the connect backoff, but cuts it short when someone asks
 // for a refresh, so an explicit refresh of a broken account retries now instead

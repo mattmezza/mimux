@@ -636,6 +636,9 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("refresh") == "1"
 	body, _, err := s.mail.Body(r.Context(), msg, allow, force)
 	if err != nil {
+		// #nosec G705 -- the notice is one of mail.FetchNotice's two constant
+		// sentences. No message content, and nothing a caller supplied, reaches
+		// this body; the taint analysis just cannot see through the call.
 		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#a1a1aa;padding:12px">` + bodyFetchNotice(err) + `</body>`))
 		return
 	}
@@ -648,15 +651,10 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 }
 
 // bodyFetchNotice is what the reading pane's iframe says when a body fetch
-// failed. The busy case is the one worth naming: a command that ran out of
-// submitTimeout queued behind a sync sweep is not an offline account, and it is
-// the failure a user is most likely to meet — big accounts are where sweeps are
-// long enough to eat the budget. See mail.ErrBusy.
+// failed. The wording is mail.FetchNotice's, so the pane, the HTTP API and the
+// MCP tools all tell the same story about the same failure — see mail.ErrBusy.
 func bodyFetchNotice(err error) string {
-	if errors.Is(err, mail.ErrBusy) {
-		return "This account is busy syncing, so the message could not be loaded. Try again in a moment."
-	}
-	return "Could not load this message. The account may be offline."
+	return mail.FetchNotice("message", err)
 }
 
 // translatedBody returns the same sanitized document with its human-readable
