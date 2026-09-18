@@ -250,6 +250,30 @@ type account struct {
 
 	mu     sync.Mutex
 	status AccountStatus
+
+	// sweep is the sync loop's own bookkeeping: where a budgeted sweep stopped
+	// (see sweepFolders), which folders have had a deep pass, and the server's
+	// message count per folder as of the last cycle that reconciled it — the
+	// free expunge signal syncFolder reads out of SELECT. Worker-goroutine state:
+	// session/steady own it, and the only other drivers of syncFolder (the
+	// commands submit drains, tests) run one at a time.
+	sweep sweepState
+}
+
+// sweepState is the state a sweep carries between cycles. Its maps are created
+// lazily, so a fresh account (and every test) starts from "nothing known yet".
+type sweepState struct {
+	// resume is the folder a truncated sweep stopped before; "" means the next
+	// sweep starts at the top of the rotation.
+	resume string
+	// deep is when each folder last had a deep pass — the whole-mailbox
+	// reconciliation that heals gaps and re-baselines the expunge signal.
+	deep map[int64]time.Time
+	// counts is the server's message count for each folder as of the last cycle
+	// that reconciled it. The next cycle compares it with SELECT's count to tell
+	// "nothing left the mailbox" (cheap, every cycle) from "something did"
+	// (worth the whole-mailbox UID diff).
+	counts map[int64]uint32
 }
 
 func (a *account) getStatus() AccountStatus {
@@ -393,8 +417,14 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 	}
 	anyChanged := false
 	for i := range folders {
-		if ctx.Err() != nil {
-			return nil
+		// Yield between folders: this sweep runs on reconnect and can be long on
+		// a big account, and a body open queued behind it used to wait for all of
+		// it (or give up at submitTimeout). Same reasoning as sweepFolders.
+		if err := a.yield(ctx, c); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
 		}
 		changed, err := a.syncFolder(ctx, c, &folders[i], caps)
 		if err != nil {
@@ -414,10 +444,10 @@ func (a *account) session(ctx context.Context, c *imapclient.Client) error {
 	return a.steady(ctx, c, caps)
 }
 
-// syncedFolders is the set the steady loop walks, INBOX LAST. Order matters
-// twice over: the folder the user is looking at should be the freshest thing in
-// the cycle, and waitIdle idles on whatever happens to be selected — so the
-// cycle has to finish on the inbox for IDLE to mean "tell me about new mail".
+// syncedFolders is the set the steady loop walks, INBOX LAST. The steady loop
+// hoists the inbox back to the front itself (see sweepFolders) — this order is
+// what the budgeted rotation over the remaining folders follows, and it keeps a
+// folder ticked in Settings → Syncing behind the ones already being visited.
 func (a *account) syncedFolders() ([]store.Folder, error) {
 	folders, err := a.m.st.SyncedFolders(a.cfg.Name)
 	if err != nil {
@@ -479,21 +509,11 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 			// Re-read the set every cycle, like the poll interval below: ticking a
 			// folder in Settings → Syncing takes effect on the next cycle, without
 			// a reconnect.
-			folders, err := a.syncedFolders()
+			changed, resume, err := a.sweepFolders(ctx, c, caps, a.sweep.resume, sweepBudget)
 			if err != nil {
 				return err
 			}
-			changed := false
-			for i := range folders {
-				if ctx.Err() != nil {
-					return nil
-				}
-				got, err := a.syncFolder(ctx, c, &folders[i], caps)
-				if err != nil {
-					return err
-				}
-				changed = changed || got
-			}
+			a.sweep.resume = resume
 			if changed {
 				a.signalListChanged() // one per cycle, whatever changed where
 			}
@@ -502,6 +522,14 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 		// Re-read the poll interval each cycle so the "Check every N minutes"
 		// setting takes effect without a restart.
 		poll := a.pollInterval()
+		// A sweep that ran out of budget still has the rest of the set to visit:
+		// come back for it soon instead of waiting out a whole poll interval.
+		// It waits like any other cycle rather than sleeping the gap out, which
+		// is what keeps a queued command prompt — and keeps a read-only one from
+		// dragging a sync in behind it (see submitRO).
+		if a.sweep.resume != "" {
+			poll = sweepResumeDelay
+		}
 		if idleOK {
 			if err := a.selectInbox(c); err != nil {
 				return err
@@ -517,6 +545,119 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 			return nil
 		}
 	}
+}
+
+// sweepBudget bounds one steady-state sweep. A sweep that runs longer than this
+// stops between folders and the next cycle picks up where it left off, so the
+// account reports "ok" on a schedule instead of sitting on "syncing" for as long
+// as its biggest mailbox takes. It is a backstop, not the fix: the per-folder
+// work in syncFolder is what makes a sweep fit in the budget on a big account.
+const sweepBudget = 20 * time.Second
+
+// sweepResumeDelay is the poll a cycle uses while a sweep still has folders to
+// visit. Short enough that the rotation keeps moving on an account whose set
+// cannot fit in one budget, long enough that the status badge spends real time on
+// "ok" between passes rather than blinking on a loop.
+const sweepResumeDelay = 5 * time.Second
+
+// sweepFolders walks the account's synced set for one cycle. It is what the
+// steady loop calls instead of looping over syncedFolders itself, for two
+// reasons that are the same reason:
+//
+//   - it yields to the command queue between folders (syncFolder yields inside
+//     one), so an interactive command — a body open, a server-side search —
+//     never waits out the whole sweep. It used to wait for all of it, then fail
+//     at submitTimeout, which is what left the reading pane on its skeleton;
+//   - it stops at the cycle's budget and reports where to resume, so the sweep
+//     is bounded no matter how many folders the account exposes or how large
+//     they are.
+//
+// The inbox is swept first, ahead of the rotation, and every cycle: it is the
+// folder whose freshness anyone notices, and once a sweep can be cut short,
+// "last in the stored order" would mean "last in a rotation several cycles
+// long". Ending the cycle on the inbox is no longer needed either — selectInbox
+// is what puts IDLE back on the mailbox new mail arrives in.
+//
+// from is the resume point ("" = start at the top); the returned resume is ""
+// once the whole set has been visited.
+func (a *account) sweepFolders(ctx context.Context, c *imapclient.Client, caps imap.CapSet, from string, budget time.Duration) (changed bool, resume string, err error) {
+	folders, err := a.syncedFolders()
+	if err != nil {
+		return false, "", err
+	}
+	deadline := time.Now().Add(budget)
+
+	var rest []store.Folder
+	for i := range folders {
+		if folders[i].SpecialUse == "inbox" {
+			if err := a.yield(ctx, c); err != nil {
+				return changed, "", err
+			}
+			got, err := a.syncFolder(ctx, c, &folders[i], caps)
+			if err != nil {
+				return changed, "", err
+			}
+			changed = changed || got
+			continue
+		}
+		rest = append(rest, folders[i])
+	}
+
+	start := 0
+	if from != "" {
+		// A folder that is gone from the set (deselected, renamed) drops the
+		// resume point rather than the sweep: start over.
+		for i := range rest {
+			if rest[i].Name == from {
+				start = i
+				break
+			}
+		}
+	}
+	for i := start; i < len(rest); i++ {
+		if err := a.yield(ctx, c); err != nil {
+			return changed, "", err
+		}
+		got, err := a.syncFolder(ctx, c, &rest[i], caps)
+		if err != nil {
+			return changed, "", err
+		}
+		changed = changed || got
+		// The budget is checked between folders, never inside one: a folder is
+		// the unit of work here, and the yields inside syncFolder are what keep a
+		// queued command from waiting on it.
+		if time.Now().After(deadline) && i+1 < len(rest) {
+			// Park on the inbox before handing the rest to the next cycle: the
+			// sweep is what moved the connection off it, and everything after it —
+			// IDLE, and the reconnect path that mirrors it — waits on the mailbox
+			// new mail arrives in. Cheap and idempotent: selectInbox is a local
+			// row read and a name compare when nothing moved.
+			if err := a.selectInbox(c); err != nil {
+				return changed, "", err
+			}
+			return changed, rest[i+1].Name, nil
+		}
+	}
+	if err := a.selectInbox(c); err != nil {
+		return changed, "", err
+	}
+	return changed, "", nil
+}
+
+// yield gives the command queue a turn in the middle of a sweep. It is drain
+// plus the context check the sweeps would otherwise do at their next folder
+// boundary: an interactive command queued while the worker is inside a sync gets
+// the connection now — between a folder's fetch and its reconciliation, or
+// between two folders — instead of at the end of the sweep.
+//
+// Ordering is preserved and nothing is added to the connection model: the
+// command still runs on the worker's own connection (see submitRO), which is why
+// this is safe on providers that cap concurrent connections per account.
+func (a *account) yield(ctx context.Context, c *imapclient.Client) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return a.drain(c)
 }
 
 // syncSettings resolves this account's effective sync-interval/max-per-sync/
@@ -636,18 +777,37 @@ func (a *account) enqueue(ctx context.Context, fn func(*imapclient.Client) error
 			a.signalNudge()
 		}
 	case <-ctx.Done():
-		return ctx.Err()
+		return busyErr(ctx.Err())
 	}
 	select {
 	case err := <-cm.done:
 		return err
 	case <-ctx.Done():
-		return ctx.Err()
+		return busyErr(ctx.Err())
 	}
+}
+
+// busyErr turns the caller's deadline into the answer the UI can explain. The
+// budget is submitTimeout, and the only way to spend it is the worker not getting
+// to the queue — a sweep that is still running, or a connection stuck in
+// backoff. "Busy" is the honest description of the first, which is the one a
+// user actually hits: opening a message while a big account syncs. A cancelled
+// request (the browser navigated away) is left as it is.
+func busyErr(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("%w: %w", ErrBusy, err)
+	}
+	return err
 }
 
 // submitTimeout bounds a queued IMAP command end-to-end (enqueue + execution).
 const submitTimeout = 30 * time.Second
+
+// ErrBusy is what a queued command reports when it ran out of submitTimeout
+// without the worker ever reaching it — the account is mid-sweep (or wedged in
+// connect-backoff), not broken. Callers that talk to a user (the reading pane)
+// use it to say something true instead of "could not load".
+var ErrBusy = errors.New("the account is busy syncing")
 
 // sleepOrWake waits out the connect backoff, but cuts it short when someone asks
 // for a refresh, so an explicit refresh of a broken account retries now instead

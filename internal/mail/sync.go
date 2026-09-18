@@ -126,10 +126,79 @@ func syncUIDValidity(st *store.Store, f *store.Folder, serverUV uint32) (reset b
 	return reset, nil
 }
 
+// folderDeepPassInterval is how often a folder gets a deep pass — the
+// whole-mailbox SEARCH + UID diff that heals gaps left by the initial window and
+// re-baselines the expunge signal. It used to be every folder, every cycle, and
+// that is the cost this issue is about: on an account that exposes a folder per
+// label, with a very large All Mail, a sweep moved tens of thousands of UIDs per
+// folder per cycle, the provider throttled it, and the sweep ran for minutes.
+//
+// Nothing about correctness rides on the interval: arrivals and deletions are
+// both still noticed on the cycle they happen (see expungesLikely — the count
+// catches a deletion even when an arrival masks it, because the arrivals are
+// accounted for by name). What the deep pass adds is the static half — messages
+// an earlier, narrower window skipped — and a periodic full re-baseline, so a
+// mailbox that drifts out of step with its count cannot stay that way.
+const folderDeepPassInterval = 30 * time.Minute
+
+// deepDue reports whether this folder is owed a deep pass. It is a peek, not a
+// claim: the pass is stamped by markDeep once it has actually run, so a pass cut
+// short by a dropped connection is retried on the next cycle instead of being
+// skipped for the whole interval.
+func (a *account) deepDue(folderID int64) bool {
+	t, ok := a.sweep.deep[folderID]
+	return !ok || time.Since(t) >= folderDeepPassInterval
+}
+
+// markDeep records that a folder's deep pass has run. A folder the store has
+// never seen gets one through firstFull, but it is stamped here too — the two
+// paths must not both fire.
+func (a *account) markDeep(folderID int64) {
+	if a.sweep.deep == nil {
+		a.sweep.deep = map[int64]time.Time{}
+	}
+	a.sweep.deep[folderID] = time.Now()
+}
+
+// baselineCount is the server's message count for a folder as of the last cycle
+// that reconciled it (0 when nothing is known yet — see expungesLikely).
+func (a *account) baselineCount(folderID int64) uint32 { return a.sweep.counts[folderID] }
+
+func (a *account) setBaselineCount(folderID int64, n uint32) {
+	if a.sweep.counts == nil {
+		a.sweep.counts = map[int64]uint32{}
+	}
+	a.sweep.counts[folderID] = n
+}
+
+// expungesLikely reads the SELECT snapshot for the one question worth asking
+// every cycle: did anything leave this mailbox? The store and the mailbox move
+// together while the loop keeps up, so the server's count should equal what it
+// held last cycle plus the arrivals this cycle fetched; a shortfall is a
+// deletion, and only then is the O(mailbox) UID diff worth its cost.
+//
+// A count *above* baseline+arrivals is not a deletion: it is a mailbox that grew
+// outside our window (see windowStartUID — messages mimux deliberately never
+// stored), which the next deep pass re-baselines. A baseline of 0 means nothing
+// is known yet — a folder still in its first cycle, which is a deep pass anyway.
+func expungesLikely(baseline uint32, arrivals int, now uint32) bool {
+	if baseline == 0 {
+		return false
+	}
+	return int(baseline)+arrivals > int(now)
+}
+
 // syncFolder selects a folder and incrementally syncs new messages, flag
-// changes (CONDSTORE) and — on a full pass — expunged messages. It reports
-// whether the folder's stored list actually changed (new/flag/expunge) so the
-// caller can signal the browser to refresh — coalesced to one signal per cycle.
+// changes (CONDSTORE) and expunged messages. It reports whether the folder's
+// stored list actually changed (new/flag/expunge) so the caller can signal the
+// browser to refresh — coalesced to one signal per cycle.
+//
+// The shape of a cycle is "cheap by default": the new-UID window and the
+// CONDSTORE flag diff are proportional to what changed, and the two O(mailbox)
+// passes — backfillWindow's SEARCH and reconcileExpunged's UID diff — run on a
+// deep pass only. Everything a cycle skips, it either knows is unnecessary
+// (nothing arrived, nothing can have left: see expungesLikely) or picks up on
+// the next deep pass.
 func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store.Folder, caps imap.CapSet) (changed bool, err error) {
 	condstore := caps.Has(imap.CapCondStore)
 	sel, err := c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait()
@@ -146,6 +215,13 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		return false, err
 	}
 	firstFull := maxUID == 0 || reset
+	if reset {
+		// A UIDVALIDITY change renumbers the mailbox: any count we were holding
+		// describes a folder that no longer exists, so drop the baseline and let
+		// this pass (which is deep, firstFull) re-establish it.
+		a.setBaselineCount(f.ID, 0)
+	}
+	deep := firstFull || a.deepDue(f.ID)
 
 	// Window of new UIDs to fetch.
 	var start imap.UID
@@ -181,6 +257,14 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	}
 	changed = newCount > 0
 
+	// Yield before the rest of the pass: whatever is queued — an interactive body
+	// open, a server-side search — gets the connection here rather than after the
+	// folder's reconciliation. This is the yield that matters most, because the
+	// fetch above is the part that grows with new mail.
+	if err := a.yield(ctx, c); err != nil {
+		return changed, err
+	}
+
 	// Flag updates for existing messages (CONDSTORE only, cheap).
 	if condstore && !firstFull && f.HighestModSeq > 0 {
 		flagsChanged, err := a.fetchFlagChanges(c, f)
@@ -190,28 +274,48 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		changed = changed || flagsChanged
 	}
 
-	// Heal older gaps — e.g. left by a previous UIDNext-based window that skipped
-	// older messages still present on the server (see windowStartUID) — by
-	// fetching any of the newest server messages we don't have yet. It costs an
-	// extra SEARCH, and the diff is empty once caught up. Used to be inbox-only
-	// because the inbox was all the steady state ever re-read; now the caller
-	// decides which folders are worth a cycle, and every one of them wants the
-	// same healing.
-	if !firstFull {
-		if got, _ := a.backfillWindow(ctx, c, f); got > 0 {
-			changed = true
+	if deep {
+		// Heal older gaps — e.g. left by a previous UIDNext-based window that
+		// skipped older messages still present on the server (see
+		// windowStartUID) — by fetching any of the newest server messages we
+		// don't have yet. It costs an extra SEARCH and a diff against every
+		// stored UID, so it belongs on the deep pass, not on every cycle: what it
+		// heals is static, and a gap that appears later is healed by the next one.
+		// Used to be inbox-only because the inbox was all the steady state ever
+		// re-read; now the caller decides which folders are worth a cycle, and
+		// every one of them wants the same healing.
+		if !firstFull {
+			if got, _ := a.backfillWindow(ctx, c, f); got > 0 {
+				changed = true
+			}
 		}
-	}
 
-	// Reconcile expunged messages. Every cycle, not just the first pass: mail
-	// deleted (or moved away) in another client has to leave mimux too, and this
-	// is the only thing that notices. On the first pass it costs nothing —
-	// everything stored was just fetched — and it announces nothing.
-	expunged, err := a.reconcileExpunged(c, f, !firstFull)
-	if err != nil {
-		return changed, err
+		// Reconcile expunged messages. A deep pass always does: on a folder's
+		// first pass it costs nothing — everything stored was just fetched — and
+		// it announces nothing; on a later one it is the periodic catch-up.
+		expunged, err := a.reconcileExpunged(c, f, !firstFull)
+		if err != nil {
+			return changed, err
+		}
+		changed = changed || expunged
+		a.markDeep(f.ID)
+	} else if expungesLikely(a.baselineCount(f.ID), newCount, sel.NumMessages) {
+		// Mail deleted (or moved away) in another client has to leave mimux too.
+		// The count is the cheap way to hear about it without asking the server
+		// for every UID — which is what this used to cost, in every folder, on
+		// every cycle. When it says something left, this is the cycle to pay for
+		// finding out which UIDs.
+		expunged, err := a.reconcileExpunged(c, f, true)
+		if err != nil {
+			return changed, err
+		}
+		changed = changed || expunged
 	}
-	changed = changed || expunged
+	// Re-baseline from the server's own answer, whatever happened above —
+	// including the case where the count moved for a reason this cycle could not
+	// act on. The signal can never drift: the next cycle compares against what
+	// the mailbox held at the end of this one.
+	a.setBaselineCount(f.ID, sel.NumMessages)
 
 	if condstore && sel.HighestModSeq > 0 {
 		_ = a.m.st.SetFolderModSeq(f.ID, sel.HighestModSeq)
