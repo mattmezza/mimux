@@ -69,11 +69,35 @@ description: The mimux model — point one Go binary at the IMAP/SMTP mailboxes 
   inbox, Sent and Drafts to begin with, plus whatever else you tick per account
   in <em>Settings &rarr; Syncing</em>. That is what makes mail you sent from
   your phone turn up here within the cycle rather than on the next reconnect.
-  Each extra folder costs a round of IMAP traffic every cycle, so the list is a
-  choice rather than "everything"; folders outside it are re-read whenever the
-  connection is re-established. The inbox comes last in the cycle and is the
-  mailbox IDLE waits on, and it always syncs &mdash; it is the one folder the
-  unread badge and notifications assume is current.
+  The inbox goes first in every cycle and is the mailbox IDLE waits on, and it
+  always syncs &mdash; it is the one folder the unread badge and notifications
+  assume is current.
+</p>
+
+<p>
+  What a folder costs per cycle is proportional to what changed in it: new mail
+  is fetched by UID, flag changes come from <strong>CONDSTORE</strong> where the
+  server offers it, and a message deleted elsewhere is noticed from the
+  mailbox's own message count. The expensive half &mdash; searching a whole
+  folder and diffing every UID against what is stored &mdash; runs on a
+  <strong>deep pass</strong> instead of on every cycle: on the first pass of a
+  folder mimux has not synced yet &mdash; a folder you have just ticked in
+  <em>Settings &rarr; Syncing</em>, or one whose <strong>UIDVALIDITY</strong>
+  changed under it &mdash; and every 30 minutes after that. That is what keeps an
+  account with a very large All Mail from spending every cycle moving tens of
+  thousands of UIDs over the wire, which is what providers throttle. Folders
+  outside the set are re-read whenever the connection is re-established.
+</p>
+
+<p>
+  A cycle is also <strong>bounded</strong>. A set too big to walk in one go
+  stops at a time budget and resumes from where it stopped on the next one, so
+  such an account reports &ldquo;ok&rdquo; on a schedule rather than sitting on
+  &ldquo;syncing&rdquo; for minutes. A foreground command queued while a sweep is
+  running is served between the sweep's own steps, and if a body fetch does end
+  up waiting behind a sync the reading pane says so instead of showing a
+  loading skeleton indefinitely &mdash; and a real message, with a retry, if the
+  wait runs out.
 </p>
 
 <p>

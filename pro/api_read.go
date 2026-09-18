@@ -345,7 +345,7 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if bodyErr != nil {
-		out.BodyError = "Couldn't fetch the body — the account may be offline."
+		out.BodyError = mail.FetchNotice("body", bodyErr)
 	} else {
 		out.Body = &body
 	}
@@ -353,7 +353,7 @@ func (a *api) handleGetMessage(w http.ResponseWriter, r *http.Request) {
 	if wantHeaders != "" {
 		raw, parsed, err := a.mail.Headers(r.Context(), msg)
 		if err != nil {
-			out.HeadersError = "Couldn't fetch the headers — the account may be offline."
+			out.HeadersError = mail.FetchNotice("headers", err)
 		} else {
 			var headers headersJSON
 			if wantHeaders == "raw" || wantHeaders == "both" {
@@ -386,7 +386,7 @@ func (a *api) handleMessageHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, parsed, err := a.mail.Headers(r.Context(), msg)
 	if err != nil {
-		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the headers — the account may be offline.")
+		apiError(w, http.StatusBadGateway, "upstream", mail.FetchNotice("headers", err))
 		return
 	}
 	writeJSON(w, map[string]any{"raw": raw, "parsed": parsed})
@@ -399,7 +399,7 @@ func (a *api) handleRawMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	raw, err := a.mail.Raw(r.Context(), msg)
 	if err != nil {
-		apiError(w, http.StatusBadGateway, "upstream", "Couldn't fetch the raw message — the account may be offline.")
+		apiError(w, http.StatusBadGateway, "upstream", mail.FetchNotice("raw message", err))
 		return
 	}
 	w.Header().Set("Content-Type", "message/rfc822")
@@ -425,7 +425,7 @@ func (a *api) handleAttachment(w http.ResponseWriter, r *http.Request) {
 	}
 	atts, err := a.mail.Attachments(r.Context(), msg)
 	if err != nil {
-		apiError(w, http.StatusBadGateway, "upstream", "Couldn't list attachments — the account may be offline.")
+		apiError(w, http.StatusBadGateway, "upstream", mail.FetchNotice("attachments", err))
 		return
 	}
 	if n >= len(atts) {
