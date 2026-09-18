@@ -102,12 +102,41 @@ document.addEventListener("htmx:beforeRequest", (e) => {
   const path = e.detail.requestConfig?.path || "";
   const template = document.getElementById(path.startsWith("/t/") ? "reading-skeleton-thread" : "reading-skeleton-single");
   if (template && /^\/(?:messages|t)\//.test(path)) e.detail.target.replaceChildren(template.content.cloneNode(true));
+  armReadingWait(e.detail.target);
 });
 document.addEventListener("htmx:afterRequest", (e) => {
   const pane = e.detail?.target;
-  if (pane?.id !== "reading-pane" || !e.detail.failed || !pane.querySelector("[data-reading-skeleton]")) return;
+  if (pane?.id !== "reading-pane") return;
+  clearReadingWait();
+  if (!e.detail.failed || !pane.querySelector("[data-reading-skeleton]")) return;
   pane.innerHTML = '<div role="alert" class="m-auto p-6 text-center text-sm text-red-300">Couldn\'t load this message. Please try again.</div>';
 });
+
+// A reading-pane request can queue behind a sync sweep, and the worker will not
+// get to it until the sweep yields (see sweepFolders in internal/mail). That is
+// usually milliseconds; on a large account it can be the whole submitTimeout,
+// and a pulsing skeleton for 30 seconds is a lie about what is happening. Past
+// a couple of seconds, say it. Nothing here guesses at the server's queue: the
+// hint is "waiting for the sync", which is the only reason a pane request
+// outlives the network, and the response replaces the whole skeleton anyway.
+const READING_WAIT_MS = 2500;
+let readingWaitTimer = null;
+
+function clearReadingWait() {
+  if (readingWaitTimer === null) return;
+  clearTimeout(readingWaitTimer);
+  readingWaitTimer = null;
+}
+
+function armReadingWait(scope) {
+  clearReadingWait();
+  const hint = scope?.querySelector?.("[data-reading-waiting]");
+  if (!hint) return;
+  readingWaitTimer = setTimeout(() => {
+    readingWaitTimer = null;
+    hint.hidden = false;
+  }, READING_WAIT_MS);
+}
 
 // The active quick filter, read from its canonical DOM reflection (the
 // :data-filter attribute Alpine sets on the inbox root). "" when not on the inbox.

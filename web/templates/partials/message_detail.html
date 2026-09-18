@@ -86,8 +86,23 @@
        endpoint reuses the cached parsed body (no extra IMAP fetch) and renders
        empty when there's no invite. */}}
   <div hx-get="/messages/{{$m.ID}}/invite" hx-trigger="load" hx-swap="outerHTML"></div>
+  {{if .Busy}}
+  {{/* The pane's own body fetch spent submitTimeout queued behind a sync sweep
+       (see mail.ErrBusy). Saying so beats handing the work to an iframe that
+       will do exactly the same thing again: the retry re-runs the pane, and by
+       then the sweep that was in the way has usually finished. */}}
+  <div class="flex-1 flex items-center justify-center p-6" role="alert">
+    <div class="max-w-sm text-center text-sm text-zinc-400">
+      <p>This account is busy syncing, so the message wasn't loaded.</p>
+      <button type="button"
+        class="mt-3 px-3 py-1.5 rounded-md text-xs bg-zinc-700 hover:bg-zinc-600 text-zinc-100 transition-colors duration-150"
+        hx-get="/messages/{{$m.ID}}" hx-target="#reading-pane" hx-swap="innerHTML settle:150ms">Try again</button>
+    </div>
+  </div>
+  {{else}}
   <iframe id="body-frame" onload="applyBodyTheme(this)" sandbox="allow-popups allow-popups-to-escape-sandbox allow-same-origin" src="/messages/{{$m.ID}}/body"
           class="flex-1 w-full border-0 bg-white" title="Message body"></iframe>
+  {{end}}
   {{if .Unsub.Kind}}
   <div id="unsub-modal-{{$m.ID}}" hidden
        class="fixed inset-0 z-50 bg-zinc-950/70 flex items-center justify-center p-4"

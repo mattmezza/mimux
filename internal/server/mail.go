@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"html"
 	"html/template"
 	"log/slog"
@@ -590,11 +591,16 @@ func (s *Server) handleMessage(w http.ResponseWriter, r *http.Request) {
 	unsub, _ := s.mail.UnsubscribeInfo(r.Context(), msg)
 	qaBar, qaMenu := s.quickActionLists(prefs.QuickActions, nil)
 	folders, _ := s.store.ListFolders(msg.Account)
+	// Busy is the err worth naming on screen: the fetch gave up queued behind a
+	// sync sweep (mail.ErrBusy), which the pane renders as a message and a retry
+	// instead of an iframe that would hit the same queue. Any other error is left
+	// to the iframe's own fetch to report.
 	s.renderPartial(w, "message_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Msg":              msg,
 		"Blocked":          blocked && !allow,
 		"BodyErr":          err != nil,
+		"Busy":             errors.Is(err, mail.ErrBusy),
 		"Folders":          folders,
 		"CurrentFolder":    msg.FolderID,
 		"MarkReadDelay":    prefs.MarkReadDelay,
@@ -630,7 +636,7 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 	force := r.URL.Query().Get("refresh") == "1"
 	body, _, err := s.mail.Body(r.Context(), msg, allow, force)
 	if err != nil {
-		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#a1a1aa;padding:12px">Could not load this message. The account may be offline.</body>`))
+		_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><body style="font:14px system-ui;color:#a1a1aa;padding:12px">` + bodyFetchNotice(err) + `</body>`))
 		return
 	}
 	if r.URL.Query().Get("tr") == "1" {
@@ -639,6 +645,18 @@ func (s *Server) handleMessageBody(w http.ResponseWriter, r *http.Request) {
 	}
 	// #nosec G705 -- body is sanitized by the two-pass sanitizer and served under a strict CSP inside a sandboxed iframe.
 	_, _ = w.Write([]byte(body))
+}
+
+// bodyFetchNotice is what the reading pane's iframe says when a body fetch
+// failed. The busy case is the one worth naming: a command that ran out of
+// submitTimeout queued behind a sync sweep is not an offline account, and it is
+// the failure a user is most likely to meet — big accounts are where sweeps are
+// long enough to eat the budget. See mail.ErrBusy.
+func bodyFetchNotice(err error) string {
+	if errors.Is(err, mail.ErrBusy) {
+		return "This account is busy syncing, so the message could not be loaded. Try again in a moment."
+	}
+	return "Could not load this message. The account may be offline."
 }
 
 // translatedBody returns the same sanitized document with its human-readable
