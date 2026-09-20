@@ -544,12 +544,21 @@ func (a *account) steadyWithBudget(ctx context.Context, c *imapclient.Client, ca
 		if a.sweep.resume != "" {
 			poll = sweepResumeDelay
 		}
+		if ctx.Err() != nil {
+			return nil
+		}
 		if idleOK {
 			if err := a.selectInbox(c); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return err
 			}
 			var err error
 			if sync, err = a.waitIdle(ctx, c, poll); err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
 				return err
 			}
 		} else {
