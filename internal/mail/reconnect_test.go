@@ -4,6 +4,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func runReconnect(t *testing.T, a *account, c *imapclient.Client, budget time.Du
 	cancel()
 	select {
 	case err := <-done:
-		if err != nil {
+		if err != nil && !errors.Is(err, context.Canceled) {
 			t.Fatalf("session: %v", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -86,7 +87,7 @@ func TestReconnectResumesInSameSession(t *testing.T) {
 		return err == nil && len(uids) == 1
 	})
 	cancel()
-	if err := <-done; err != nil {
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 }
