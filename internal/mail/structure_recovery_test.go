@@ -21,7 +21,7 @@ func scriptedIMAP(t *testing.T, handler func(string) string) *imapclient.Client 
 	t.Helper()
 	client, server := net.Pipe()
 	go func() {
-		defer server.Close()
+		defer func() { _ = server.Close() }()
 		_, _ = fmt.Fprint(server, "* OK ready\r\n")
 		rd := bufio.NewScanner(server)
 		for rd.Scan() {

@@ -577,7 +577,7 @@ func (a *account) enrichStructure(f *store.Folder, uid uint32, snippet []byte) e
 		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(time.Hour))
 		return err
 	}
-	defer c.Close()
+	defer func() { _ = c.Close() }()
 	if _, err = c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(time.Hour))
 		return err

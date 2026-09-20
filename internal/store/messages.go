@@ -108,7 +108,7 @@ func (s *Store) DueStructures(folderID int64, now time.Time, limit int) ([]uint3
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var uids []uint32
 	for rows.Next() {
 		var uid uint32
