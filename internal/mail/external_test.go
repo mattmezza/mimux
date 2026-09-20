@@ -210,7 +210,7 @@ func TestReconcileDeletesVanishedAndAnnounces(t *testing.T) {
 
 	events, unsubscribe := m.Subscribe()
 	defer unsubscribe()
-	removed, err := a.reconcileExpunged(c, inbox, true)
+	removed, err := a.reconcileExpunged(context.Background(), c, inbox, true, c.Caps().Has(imap.CapCondStore))
 	if err != nil || !removed {
 		t.Fatalf("reconcileExpunged = %v, %v; want it to report a removal", removed, err)
 	}
@@ -267,7 +267,7 @@ func TestReconcileSparesTheRowMidMove(t *testing.T) {
 
 	events, unsubscribe := m.Subscribe()
 	defer unsubscribe()
-	if _, err := a.reconcileExpunged(c, inbox, true); err != nil {
+	if _, err := a.reconcileExpunged(context.Background(), c, inbox, true, c.Caps().Has(imap.CapCondStore)); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := st.MessageByID(msg.ID); got == nil {

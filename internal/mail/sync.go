@@ -127,7 +127,7 @@ func syncUIDValidity(st *store.Store, f *store.Folder, serverUV uint32) (reset b
 }
 
 // folderDeepPassInterval is how often a folder gets a deep pass — the
-// whole-mailbox SEARCH + UID diff that heals gaps left by the initial window and
+// batched search + UID diff that heals gaps left by the initial window and
 // re-baselines the expunge signal. It used to be every folder, every cycle, and
 // that is the cost this issue is about: on an account that exposes a folder per
 // label, with a very large All Mail, a sweep moved tens of thousands of UIDs per
@@ -296,14 +296,18 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// Heal older gaps — e.g. left by a previous UIDNext-based window that
 		// skipped older messages still present on the server (see
 		// windowStartUID) — by fetching any of the newest server messages we
-		// don't have yet. It costs an extra SEARCH and a diff against every
+		// don't have yet. It costs sequence-window SEARCHes and a diff against every
 		// stored UID, so it belongs on the deep pass, not on every cycle: what it
 		// heals is static, and a gap that appears later is healed by the next one.
 		// Used to be inbox-only because the inbox was all the steady state ever
 		// re-read; now the caller decides which folders are worth a cycle, and
 		// every one of them wants the same healing.
 		if !firstFull {
-			if got, _ := a.backfillWindow(ctx, c, f); got > 0 {
+			got, err := a.backfillWindow(ctx, c, f, sel.NumMessages, condstore)
+			if err != nil {
+				return changed, err
+			}
+			if got > 0 {
 				changed = true
 			}
 		}
@@ -311,7 +315,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// Reconcile expunged messages. A deep pass always does: on a folder's
 		// first pass it costs nothing — everything stored was just fetched — and
 		// it announces nothing; on a later one it is the periodic catch-up.
-		expunged, err := a.reconcileExpunged(c, f, !firstFull)
+		expunged, err := a.reconcileExpunged(ctx, c, f, !firstFull, condstore)
 		if err != nil {
 			return changed, err
 		}
@@ -323,7 +327,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// for every UID — which is what this used to cost, in every folder, on
 		// every cycle. When it says something left, this is the cycle to pay for
 		// finding out which UIDs.
-		expunged, err := a.reconcileExpunged(c, f, true)
+		expunged, err := a.reconcileExpunged(ctx, c, f, true, condstore)
 		if err != nil {
 			return changed, err
 		}
@@ -374,10 +378,27 @@ func (a *account) windowStartUID(c *imapclient.Client, uidNext imap.UID) imap.UI
 	return uids[0]
 }
 
+// deepBatchSize bounds the number of messages one deep-pass command asks the
+// server to scan or return before the worker checks its interactive queue.
+const deepBatchSize = 256
+
+// yieldFolder serves queued commands and restores the pass's selected mailbox.
+// A drained command may SELECT any folder, so every yield inside UID work needs
+// this guard, even when the next command is only a SEARCH.
+func (a *account) yieldFolder(ctx context.Context, c *imapclient.Client, f *store.Folder, condstore bool) error {
+	served, err := a.yield(ctx, c)
+	if err != nil || !served {
+		return err
+	}
+	_, err = c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait()
+	return err
+}
+
 // backfillWindow fetches any of the newest MaxMessagesPerSync messages present
 // on the server that aren't stored yet, healing gaps left by an older/narrower
-// window without a manual re-sync. Cheap once caught up (a SEARCH + empty diff).
-func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *store.Folder) (int, error) {
+// window without a manual re-sync. Search and fetch are batched so the worker
+// can serve interactive commands during a deep pass.
+func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *store.Folder, count uint32, condstore bool) (int, error) {
 	_, maxPerSync, months, _ := a.syncSettings()
 	limit := uint32(maxPerSync) // #nosec G115 -- small positive admin-config value
 	if limit == 0 {
@@ -387,11 +408,27 @@ func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *s
 	if months > 0 {
 		crit.Since = time.Now().AddDate(0, -months, 0)
 	}
-	data, err := c.UIDSearch(crit, nil).Wait()
-	if err != nil {
-		return 0, err
+	// Search newest sequence windows first. UID gaps can be arbitrarily large on
+	// Gmail, while sequence windows cap the number of messages in each command.
+	// Only the newest limit matching UIDs are needed. The opening SELECT count is
+	// a snapshot; arrivals during this pass belong to the next cycle.
+	uids := make([]imap.UID, 0, limit)
+	for end := count; end > 0 && len(uids) < int(limit); {
+		start := uint32(1)
+		if end > deepBatchSize {
+			start = end - deepBatchSize + 1
+		}
+		crit.SeqNum = []imap.SeqSet{{{Start: start, Stop: end}}}
+		data, err := c.UIDSearch(crit, nil).Wait()
+		if err != nil {
+			return 0, err
+		}
+		uids = append(uids, data.AllUIDs()...)
+		if err := a.yieldFolder(ctx, c, f, condstore); err != nil {
+			return 0, err
+		}
+		end = start - 1
 	}
-	uids := data.AllUIDs()
 	if len(uids) == 0 {
 		return 0, nil
 	}
@@ -412,9 +449,29 @@ func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *s
 	if len(missing) == 0 {
 		return 0, nil
 	}
-	// Announces: past the first pass, a message that turns up in the healing diff
-	// is one this install missed, not one it is backfilling.
-	return a.fetchSet(ctx, c, f, missing, true)
+	// Bound the body/envelope FETCH as well. UIDSet ranges can otherwise turn a
+	// small command into thousands of fetched messages before the next yield.
+	var fetched int
+	for i := 0; i < len(uids); i += deepBatchSize {
+		end := min(i+deepBatchSize, len(uids))
+		var batch imap.UIDSet
+		for _, uid := range uids[i:end] {
+			if !existed[uint32(uid)] {
+				batch.AddNum(uid)
+			}
+		}
+		if len(batch) > 0 {
+			n, err := a.fetchSet(ctx, c, f, batch, true)
+			fetched += n
+			if err != nil {
+				return fetched, err
+			}
+		}
+		if err := a.yieldFolder(ctx, c, f, condstore); err != nil {
+			return fetched, err
+		}
+	}
+	return fetched, nil
 }
 
 // fetchSet fetches envelope/flags/bodystructure + a snippet part for an explicit
@@ -526,38 +583,46 @@ func (a *account) fetchFlagChanges(c *imapclient.Client, f *store.Folder) (bool,
 // longer reports, and reports whether it removed any (which is what makes the
 // open lists refresh, via the caller's signalListChanged).
 //
-// The FETCH is bounded below by the lowest UID actually stored rather than by
-// 1:*: every stored row sits at or above it, and mail below it is mail mimux
-// never had and has no opinion about.
+// FETCH asks only for stored UIDs, in batches. Mail mimux never stored does
+// not need to be transferred just to detect which stored messages vanished.
 //
 // announce carries the webhook event for each removal. It is off for a folder's
 // first pass — everything stored was just fetched, so there is nothing to find,
 // and a fresh install must not fire a delivery per message — and it is dropped
 // for a batch over the external-change burst limit, which is a reconnect
 // catching up rather than someone deleting four hundred messages by hand.
-func (a *account) reconcileExpunged(c *imapclient.Client, f *store.Folder, announce bool) (bool, error) {
+func (a *account) reconcileExpunged(ctx context.Context, c *imapclient.Client, f *store.Folder, announce, condstore bool) (bool, error) {
 	stored, err := a.m.st.FolderUIDs(f.ID)
 	if err != nil || len(stored) == 0 {
 		return false, err
 	}
-	start := uint32(0)
+	uids := make([]uint32, 0, len(stored))
 	for uid := range stored {
-		if start == 0 || uid < start {
-			start = uid
-		}
+		uids = append(uids, uid)
 	}
-	msgs, err := c.Fetch(imap.UIDSet{{Start: imap.UID(start), Stop: 0}}, &imap.FetchOptions{UID: true}).Collect()
-	if err != nil {
-		return false, err
-	}
-	live := map[uint32]bool{}
-	for _, buf := range msgs {
-		live[uint32(buf.UID)] = true
-	}
+	sort.Slice(uids, func(i, j int) bool { return uids[i] < uids[j] })
 	var gone []uint32
-	for uid := range stored {
-		if !live[uid] {
-			gone = append(gone, uid)
+	for i := 0; i < len(uids); i += deepBatchSize {
+		end := min(i+deepBatchSize, len(uids))
+		var batch imap.UIDSet
+		for _, uid := range uids[i:end] {
+			batch.AddNum(imap.UID(uid))
+		}
+		msgs, err := c.Fetch(batch, &imap.FetchOptions{UID: true}).Collect()
+		if err != nil {
+			return false, err
+		}
+		live := make(map[uint32]bool, len(msgs))
+		for _, buf := range msgs {
+			live[uint32(buf.UID)] = true
+		}
+		for _, uid := range uids[i:end] {
+			if !live[uid] {
+				gone = append(gone, uid)
+			}
+		}
+		if err := a.yieldFolder(ctx, c, f, condstore); err != nil {
+			return false, err
 		}
 	}
 	if len(gone) == 0 {
