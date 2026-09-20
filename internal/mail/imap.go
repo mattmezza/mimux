@@ -471,10 +471,6 @@ func (a *account) selectInbox(c *imapclient.Client) error {
 	return err
 }
 
-func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.CapSet) error {
-	return a.steadyWithBudget(ctx, c, caps, sweepBudget)
-}
-
 func (a *account) steadyWithBudget(ctx context.Context, c *imapclient.Client, caps imap.CapSet, budget time.Duration) error {
 	idleOK := caps.Has(imap.CapIdle)
 	// IDLE needs an inbox to watch. Accounts without one still need poll cycles
