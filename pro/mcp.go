@@ -264,7 +264,7 @@ func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in rea
 		Attachments   []map[string]any    `json:"attachments,omitempty"`
 	}{messageJSON: toMessageJSON(*msg)}
 	if err != nil {
-		out.BodyError = "Couldn't fetch the body — the account may be offline."
+		out.BodyError = mail.FetchNotice("body", err)
 	} else {
 		runes := []rune(body)
 		if in.Offset < 0 || in.Offset > len(runes) {
@@ -282,7 +282,7 @@ func (a *api) mcpReadMessage(ctx context.Context, _ *mcp.CallToolRequest, in rea
 		raw, parsed, herr := a.mail.Headers(ctx, msg)
 		switch {
 		case herr != nil:
-			out.HeadersError = "Couldn't fetch the headers — the account may be offline."
+			out.HeadersError = mail.FetchNotice("headers", herr)
 		case in.Headers == "parsed":
 			out.HeadersParsed = parsed
 		case in.Headers == "raw":

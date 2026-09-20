@@ -53,6 +53,11 @@
 {{define "reading_skeleton"}}
 <div data-reading-skeleton role="status" aria-live="polite" aria-label="Loading message" class="w-full h-full overflow-hidden text-zinc-500">
   <span class="sr-only">Loading message…</span>
+  {{/* Revealed by app.js (armReadingWait) a couple of seconds in, when the
+       request is still open. A pane that will sit here for 30s because a sync
+       sweep holds the connection has to say so rather than pulse like it is
+       about to arrive. */}}
+  <p data-reading-waiting hidden class="px-4 pt-3 text-xs text-zinc-500">Waiting for this account to finish syncing…</p>
   <div class="p-4 border-b border-zinc-800 animate-pulse">
     <div class="flex items-center gap-3"><div class="w-9 h-9 rounded-full bg-zinc-800 shrink-0"></div><div class="flex-1 space-y-2"><div class="h-4 w-3/4 max-w-xl rounded bg-zinc-800"></div><div class="h-3 w-1/2 max-w-sm rounded bg-zinc-800"></div></div></div>
   </div>
