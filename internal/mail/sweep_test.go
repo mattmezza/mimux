@@ -473,6 +473,76 @@ func TestYieldDoesNotBackfillFromTheDrainedCommandsMailbox(t *testing.T) {
 	}
 }
 
+// The first reconciliation batch must give a queued read the connection, then
+// restore Archive before fetching the second batch. The queued read deliberately
+// selects INBOX, whose UID set differs from Archive's.
+func TestDeepReconcileYieldsBetweenBatchesAndRestoresFolder(t *testing.T) {
+	st, c, a, archive, inbox := largeArchiveForDeepPass(t)
+	expungeOnServer(t, c, archive.Name, imap.UID(deepBatchSize+1))
+	if _, err := c.Select(archive.Name, nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	a.cmds <- cmd{fn: func(conn *imapclient.Client) error {
+		ran = true
+		_, err := conn.Select(inbox.Name, &imap.SelectOptions{ReadOnly: true}).Wait()
+		return err
+	}, done: make(chan error, 1)}
+	changed, err := a.reconcileExpunged(context.Background(), c, archive, false, c.Caps().Has(imap.CapCondStore))
+	if err != nil || !changed || !ran {
+		t.Fatalf("reconcile: changed=%v, err=%v, command ran=%v", changed, err, ran)
+	}
+	got, err := st.FolderUIDs(archive.ID)
+	if err != nil || len(got) != deepBatchSize || got[uint32(deepBatchSize+1)] {
+		t.Fatalf("Archive UIDs after reconcile: len=%d, deleted UID present=%v, err=%v", len(got), got[uint32(deepBatchSize+1)], err)
+	}
+}
+
+// Backfill searches the newest sequence window first. A queued read after that
+// window must run before the next search, and the next search must use Archive.
+func TestDeepBackfillYieldsBetweenSearchWindowsAndRestoresFolder(t *testing.T) {
+	st, c, a, archive, inbox := largeArchiveForDeepPass(t)
+	if err := st.DeleteMessageByUID(archive.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Select(archive.Name, nil).Wait(); err != nil {
+		t.Fatal(err)
+	}
+	ran := false
+	a.cmds <- cmd{fn: func(conn *imapclient.Client) error {
+		ran = true
+		_, err := conn.Select(inbox.Name, &imap.SelectOptions{ReadOnly: true}).Wait()
+		return err
+	}, done: make(chan error, 1)}
+	got, err := a.backfillWindow(context.Background(), c, archive, deepBatchSize+1, c.Caps().Has(imap.CapCondStore))
+	if err != nil || !ran || got != 1 {
+		t.Fatalf("backfill: got=%d, err=%v, command ran=%v", got, err, ran)
+	}
+	if msg, _ := st.MessageByFolderUID(archive.ID, 1); msg == nil {
+		t.Fatal("backfill missed the older Archive UID after the queued read changed mailboxes")
+	}
+}
+
+func largeArchiveForDeepPass(t *testing.T) (*store.Store, *imapclient.Client, *account, *store.Folder, *store.Folder) {
+	t.Helper()
+	st := testStore(t)
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "inbox"))
+	for i := 0; i < deepBatchSize+1; i++ {
+		deliver(t, user, "Archive", testMessage("ada@example.com", "archive"))
+	}
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	if _, err := a.syncFolders(c); err != nil {
+		t.Fatal(err)
+	}
+	archive := folderByName(t, st, "acct", "Archive")
+	inbox := folderByName(t, st, "acct", "INBOX")
+	if _, err := a.syncFolder(context.Background(), c, archive, c.Caps()); err != nil {
+		t.Fatal(err)
+	}
+	return st, c, a, archive, inbox
+}
+
 func folderByName(t *testing.T, st *store.Store, account, name string) *store.Folder {
 	t.Helper()
 	all, err := st.ListFolders(account)

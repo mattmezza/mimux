@@ -130,8 +130,8 @@
   What a folder costs per cycle is proportional to what changed in it: new mail
   is fetched by UID, flag changes come from <strong>CONDSTORE</strong> where the
   server offers it, and a message deleted elsewhere is noticed from the
-  mailbox's own message count. The expensive half &mdash; searching a whole
-  folder and diffing every UID against what is stored &mdash; runs on a
+  mailbox's own message count. The expensive half &mdash; checking older messages
+  for gaps and comparing stored UIDs with the server &mdash; runs on a
   <strong>deep pass</strong> instead of on every cycle: on the first pass of a
   folder mimux has not synced yet &mdash; a folder you have just ticked in
   <em>Settings &rarr; Syncing</em>, or one whose <strong>UIDVALIDITY</strong>
@@ -139,6 +139,12 @@
   account with a very large All Mail from spending every cycle moving tens of
   thousands of UIDs over the wire, which is what providers throttle. Folders
   outside the set are re-read whenever the connection is re-established.
+</p>
+
+<p>
+  A deep pass checks mail in batches and serves queued reading actions between
+  batches. This keeps opening a message responsive while a large folder is
+  being reconciled.
 </p>
 
 <p>
