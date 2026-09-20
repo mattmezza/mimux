@@ -4,6 +4,7 @@ package mail
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"mime"
 	"sort"
@@ -251,11 +252,22 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	// happened at startup, before LastSync was stamped — now ticking a folder in
 	// Settings starts one on a long-running account, and a year of Archive must
 	// not arrive as a year of notifications and webhook deliveries.
+	due, err := a.m.st.DueStructures(f.ID, time.Now(), 10)
+	if err != nil {
+		return false, err
+	}
 	newCount, err := a.fetchSet(ctx, c, f, imap.UIDSet{{Start: start, Stop: 0}}, !firstFull)
 	if err != nil {
 		return false, err
 	}
 	changed = newCount > 0
+	for _, uid := range due {
+		if err := a.enrichStructure(f, uid, nil); err != nil {
+			slog.Warn("message BODYSTRUCTURE retry failed", "account", a.cfg.Name, "folder", f.Name, "uid", uid, "err", err)
+		} else {
+			changed = true
+		}
+	}
 
 	// Yield before the rest of the pass: whatever is queued — an interactive body
 	// open, a server-side search — gets the connection here rather than after the
@@ -481,13 +493,12 @@ func (a *account) backfillWindow(ctx context.Context, c *imapclient.Client, f *s
 // anyone about (see signalNewMessage). Off for a folder's first full pass.
 func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.Folder, set imap.UIDSet, announce bool) (int, error) {
 	opts := &imap.FetchOptions{
-		UID:           true,
-		Flags:         true,
-		Envelope:      true,
-		InternalDate:  true,
-		RFC822Size:    true,
-		BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-		BodySection:   []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
+		UID:          true,
+		Flags:        true,
+		Envelope:     true,
+		InternalDate: true,
+		RFC822Size:   true,
+		BodySection:  []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
 	}
 	msgs, err := c.Fetch(set, opts).Collect()
 	if err != nil {
@@ -509,7 +520,11 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 		if isNew {
 			n++
 		}
-		if err := a.m.st.UpsertMessage(messageFromBuffer(a.cfg.Name, f.ID, buf, prevLabels)); err != nil {
+		m := messageFromBuffer(a.cfg.Name, f.ID, buf, prevLabels)
+		// BODY[1] has no trustworthy transfer encoding without BODYSTRUCTURE.
+		m.Snippet = ""
+		m.StructureUnknown = true
+		if err := a.m.st.UpsertMessage(m); err != nil {
 			return n, err
 		}
 		if isNew {
@@ -521,7 +536,75 @@ func (a *account) fetchSet(ctx context.Context, c *imapclient.Client, f *store.F
 			}
 		}
 	}
+	// The decoder closes its connection on a malformed BODYSTRUCTURE. Use a
+	// separate connection so the main metadata pass and later folders survive.
+	var structureConn *imapclient.Client
+	defer func() {
+		if structureConn != nil {
+			_ = structureConn.Close()
+		}
+	}()
+	for _, buf := range msgs {
+		if buf.Envelope == nil || !a.m.st.StructureRetryDue(f.ID, uint32(buf.UID), time.Now()) {
+			continue
+		}
+		if a.cfg.IMAPHost == "" && a.connectFn == nil {
+			continue
+		}
+		if structureConn == nil {
+			structureConn, err = a.connect()
+			if err == nil {
+				_, err = structureConn.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait()
+			}
+			if err != nil {
+				slog.Warn("message structure connection unavailable", "account", a.cfg.Name, "folder", f.Name, "uid", uint32(buf.UID), "err", err)
+				_ = a.m.st.SetStructureRetry(f.ID, uint32(buf.UID), time.Now().Add(time.Hour))
+				break
+			}
+		}
+		if err := a.enrichStructureOn(structureConn, f, uint32(buf.UID), buf.FindBodySection(snippetSection)); err != nil {
+			slog.Warn("message BODYSTRUCTURE unavailable", "account", a.cfg.Name, "folder", f.Name, "uid", uint32(buf.UID), "err", err)
+			_ = structureConn.Close()
+			structureConn = nil
+		}
+	}
 	return n, nil
+}
+
+func (a *account) enrichStructure(f *store.Folder, uid uint32, snippet []byte) error {
+	c, err := a.connect()
+	if err != nil {
+		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(time.Hour))
+		return err
+	}
+	defer c.Close()
+	if _, err = c.Select(f.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(time.Hour))
+		return err
+	}
+	return a.enrichStructureOn(c, f, uid, snippet)
+}
+
+func (a *account) enrichStructureOn(c *imapclient.Client, f *store.Folder, uid uint32, snippet []byte) error {
+	set := imap.UIDSet{}
+	set.AddNum(imap.UID(uid))
+	data, err := c.Fetch(set, &imap.FetchOptions{UID: true, BodyStructure: &imap.FetchItemBodyStructure{Extended: true}, BodySection: []*imap.FetchItemBodySection{snippetSection}}).Collect()
+	if err != nil {
+		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(24*time.Hour))
+		return err
+	}
+	if len(data) == 0 || data[0].BodyStructure == nil {
+		_ = a.m.st.SetStructureRetry(f.ID, uid, time.Now().Add(24*time.Hour))
+		return fmt.Errorf("UID %d has no BODYSTRUCTURE", uid)
+	}
+	if snippet == nil {
+		snippet = data[0].FindBodySection(snippetSection)
+	}
+	preview := ""
+	if snippet != nil {
+		preview = partSnippet(snippet, data[0].BodyStructure)
+	}
+	return a.m.st.SetMessageStructure(f.ID, uid, hasAttachment(data[0].BodyStructure), preview)
 }
 
 // fetchFlagChanges pulls \Seen/\Flagged/keyword changes since the stored
@@ -739,7 +822,7 @@ func messageFromBuffer(account string, folderID int64, buf *imapclient.FetchMess
 		m.FromAddress = addrString(env.From[0])
 	}
 	// Snippet from the first body part.
-	if snip := buf.FindBodySection(snippetSection); snip != nil {
+	if snip := buf.FindBodySection(snippetSection); snip != nil && buf.BodyStructure != nil {
 		m.Snippet = partSnippet(snip, buf.BodyStructure)
 	}
 	return m

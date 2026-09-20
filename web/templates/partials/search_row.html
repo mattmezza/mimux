@@ -14,7 +14,7 @@
       <span class="ml-auto shrink-0 text-[11px] text-zinc-500" title="{{absTime $m.Date}}">{{relTime $m.Date}}</span>
     </div>
     <div class="truncate {{if $m.IsRead}}text-zinc-400{{else}}text-zinc-100 font-medium{{end}}">
-      {{if $m.HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if $m.Subject}}{{highlight $m.Subject .Terms}}{{else}}(no subject){{end}}
+      {{if $m.StructureUnknown}}<span title="Attachment status unknown">? </span>{{else if $m.HasAttachment}}<span title="Has attachment">📎 </span>{{end}}{{if $m.Subject}}{{highlight $m.Subject .Terms}}{{else}}(no subject){{end}}
     </div>
     <div class="truncate text-zinc-500 text-xs">{{highlight $m.Snippet .Terms}}</div>
     <div class="mt-0.5 flex flex-wrap items-center gap-1">

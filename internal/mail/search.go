@@ -107,7 +107,7 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 	if len(missing) > 0 {
 		a := m.accounts[account]
 		if a != nil {
-			_ = a.submitRO(ctx, func(c *imapclient.Client) error {
+			err := a.submitRO(ctx, func(c *imapclient.Client) error {
 				if _, err := c.Select(folder.Name, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 					return err
 				}
@@ -117,8 +117,7 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 				}
 				opts := &imap.FetchOptions{
 					UID: true, Flags: true, Envelope: true, InternalDate: true, RFC822Size: true,
-					BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
-					BodySection:   []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
+					BodySection: []*imap.FetchItemBodySection{snippetSection, refsHeaderSection},
 				}
 				buffers, err := c.Fetch(set, opts).Collect()
 				if err != nil {
@@ -130,10 +129,18 @@ func (m *Manager) CacheEnvelopes(ctx context.Context, account string, folder *st
 					}
 					// "" prevLabels: this loop only runs for UIDs MessageByFolderUID
 					// already confirmed aren't stored yet, so there is nothing to merge.
-					_ = m.st.UpsertMessage(messageFromBuffer(account, folder.ID, buf, ""))
+					msg := messageFromBuffer(account, folder.ID, buf, "")
+					msg.Snippet = ""
+					msg.StructureUnknown = true
+					if err := m.st.UpsertMessage(msg); err != nil {
+						return err
+					}
 				}
 				return nil
 			})
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	var ids []int64

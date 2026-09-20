@@ -80,7 +80,7 @@
   {{if .Blocked}}{{template "ext_banner" (dict "ID" $m.ID "Scope" "#message-detail")}}{{end}}
   {{if .TranslateEnabled}}{{template "translate_bar" .}}{{template "translate_js" .}}{{end}}
   {{template "summary_bar" .}}{{template "summary_js" .}}
-  {{if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
+  {{if $m.StructureUnknown}}<div class="text-sm text-zinc-500">Attachment status and preview unavailable for this message.</div>{{else if $m.HasAttachment}}<div hx-get="/messages/{{$m.ID}}/attachments" hx-trigger="load" hx-swap="outerHTML"></div>{{end}}
   {{/* Calendar invite card. Always lazy-loaded — whether a message carries an
        inline text/calendar part is only known after parsing its body; the
        endpoint reuses the cached parsed body (no extra IMAP fetch) and renders

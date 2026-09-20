@@ -66,7 +66,7 @@
           {{with receivedAlias .Account .ToAddresses .CcAddresses}}<div><span class="text-zinc-600">Via</span> <span class="text-indigo-300">{{.}}</span> <span class="text-[10px] rounded bg-indigo-500/15 text-indigo-300 px-1 align-middle">alias</span></div>{{end}}
           {{template "label_pills" (dict "M" . "Known" $.Known)}}
         </div>
-        {{if .HasAttachment}}<div class="mb-2" hx-get="/messages/{{.ID}}/attachments" hx-trigger="revealed" hx-swap="outerHTML"></div>{{end}}
+        {{if .StructureUnknown}}<div class="mb-2 text-sm text-zinc-500">Attachment status and preview unavailable for this message.</div>{{else if .HasAttachment}}<div class="mb-2" hx-get="/messages/{{.ID}}/attachments" hx-trigger="revealed" hx-swap="outerHTML"></div>{{end}}
         {{/* External-images banner, lazy like attachments above — whether images
              were blocked is only known once the body is parsed, and we don't want
              to force that fetch for every collapsed message just to check. */}}

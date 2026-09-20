@@ -235,9 +235,10 @@ type cmd struct {
 }
 
 type account struct {
-	cfg  config.Account
-	m    *Manager
-	cmds chan cmd
+	cfg       config.Account
+	m         *Manager
+	connectFn func() (*imapclient.Client, error) // test seam for disposable structure sessions
+	cmds      chan cmd
 	// wake means "sync now": new data announced during IDLE, an explicit
 	// refresh, or a queued command that changes mailbox state. nudge only means
 	// "a read-only command is queued" — it breaks IDLE so the command runs, and
@@ -368,6 +369,9 @@ func (a *account) run(ctx context.Context) {
 }
 
 func (a *account) connect() (*imapclient.Client, error) {
+	if a.connectFn != nil {
+		return a.connectFn()
+	}
 	opts := &imapclient.Options{
 		UnilateralDataHandler: &imapclient.UnilateralDataHandler{
 			// New mail (or flag changes) during IDLE: wake the loop to resync.

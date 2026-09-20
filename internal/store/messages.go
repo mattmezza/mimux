@@ -10,24 +10,25 @@ import (
 )
 
 type Message struct {
-	ID            int64
-	Account       string
-	FolderID      int64
-	UID           uint32
-	MessageID     string
-	InReplyTo     string
-	Refs          string
-	FromName      string
-	FromAddress   string
-	ToAddresses   string
-	CcAddresses   string
-	Subject       string
-	Date          time.Time
-	Size          int64
-	IsRead        bool
-	IsStarred     bool
-	HasAttachment bool
-	Snippet       string
+	ID               int64
+	Account          string
+	FolderID         int64
+	UID              uint32
+	MessageID        string
+	InReplyTo        string
+	Refs             string
+	FromName         string
+	FromAddress      string
+	ToAddresses      string
+	CcAddresses      string
+	Subject          string
+	Date             time.Time
+	Size             int64
+	IsRead           bool
+	IsStarred        bool
+	HasAttachment    bool
+	StructureUnknown bool
+	Snippet          string
 	// GmThrID is Gmail's X-GM-THRID. NOTE: always "" today — nothing can
 	// populate it. go-imap/v2 has no Gmail-extension support in any released
 	// version (beta.8 is the newest tag; upstream master has none either), its
@@ -55,8 +56,8 @@ func (s *Store) UpsertMessage(m *Message) error {
 	_, err := s.DB.Exec(`
 		INSERT INTO messages
 			(account, folder_id, uid, message_id, in_reply_to, refs, from_name, from_address,
-			 to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			 to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels, structure_known)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(folder_id, uid) DO UPDATE SET
 			date = excluded.date,
 			-- A local \Seen flip that hasn't reached the server yet outranks the
@@ -64,29 +65,70 @@ func (s *Store) UpsertMessage(m *Message) error {
 			-- backfill) reverts a message the user already marked read.
 			is_read = CASE WHEN seen_dirty = 1 THEN is_read ELSE excluded.is_read END,
 			is_starred = excluded.is_starred,
-			has_attachment = excluded.has_attachment, snippet = excluded.snippet,
+			has_attachment = CASE WHEN excluded.structure_known = 1 THEN excluded.has_attachment ELSE has_attachment END,
+			snippet = CASE WHEN excluded.structure_known = 1 THEN excluded.snippet ELSE snippet END,
+			structure_known = CASE WHEN excluded.structure_known = 1 THEN 1 ELSE structure_known END,
 			labels = CASE WHEN excluded.labels = '' THEN labels ELSE excluded.labels END`,
 		m.Account, m.FolderID, m.UID, m.MessageID, m.InReplyTo, m.Refs, m.FromName, m.FromAddress,
 		m.ToAddresses, m.CcAddresses, m.Subject, m.Date.UTC().Format(time.RFC3339), m.Size,
-		b2i(m.IsRead), b2i(m.IsStarred), b2i(m.HasAttachment), m.Snippet, m.GmThrID, m.Labels)
+		b2i(m.IsRead), b2i(m.IsStarred), b2i(m.HasAttachment), m.Snippet, m.GmThrID, m.Labels, b2i(!m.StructureUnknown))
 	return err
 }
 
 func scanMessage(sc interface{ Scan(...any) error }) (*Message, error) {
 	m := &Message{}
 	var date string
+	var structureKnown bool
 	err := sc.Scan(&m.ID, &m.Account, &m.FolderID, &m.UID, &m.MessageID, &m.InReplyTo, &m.Refs,
 		&m.FromName, &m.FromAddress, &m.ToAddresses, &m.CcAddresses, &m.Subject, &date, &m.Size,
-		&m.IsRead, &m.IsStarred, &m.HasAttachment, &m.Snippet, &m.GmThrID, &m.Labels)
+		&m.IsRead, &m.IsStarred, &m.HasAttachment, &m.Snippet, &m.GmThrID, &m.Labels, &structureKnown)
 	if err != nil {
 		return nil, err
 	}
 	m.Date, _ = time.Parse(time.RFC3339, date)
+	m.StructureUnknown = !structureKnown
 	return m, nil
 }
 
 const messageCols = `id, account, folder_id, uid, message_id, in_reply_to, refs, from_name,
-	from_address, to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels`
+	from_address, to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels, structure_known`
+
+// StructureRetryDue limits malformed messages to one structure request per day.
+func (s *Store) StructureRetryDue(folderID int64, uid uint32, now time.Time) bool {
+	var known int
+	var retry string
+	if err := s.DB.QueryRow(`SELECT structure_known, structure_retry FROM messages WHERE folder_id=? AND uid=?`, folderID, uid).Scan(&known, &retry); err != nil {
+		return false
+	}
+	return known == 0 && (retry == "" || retry <= now.UTC().Format(time.RFC3339))
+}
+
+func (s *Store) DueStructures(folderID int64, now time.Time, limit int) ([]uint32, error) {
+	rows, err := s.DB.Query(`SELECT uid FROM messages WHERE folder_id=? AND structure_known=0 AND structure_retry <= ? ORDER BY uid LIMIT ?`, folderID, now.UTC().Format(time.RFC3339), limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var uids []uint32
+	for rows.Next() {
+		var uid uint32
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		uids = append(uids, uid)
+	}
+	return uids, rows.Err()
+}
+
+func (s *Store) SetStructureRetry(folderID int64, uid uint32, next time.Time) error {
+	_, err := s.DB.Exec(`UPDATE messages SET structure_retry=? WHERE folder_id=? AND uid=?`, next.UTC().Format(time.RFC3339), folderID, uid)
+	return err
+}
+
+func (s *Store) SetMessageStructure(folderID int64, uid uint32, attachment bool, snippet string) error {
+	_, err := s.DB.Exec(`UPDATE messages SET structure_known=1, structure_retry='', has_attachment=?, snippet=CASE WHEN ?='' THEN snippet ELSE ? END WHERE folder_id=? AND uid=?`, b2i(attachment), snippet, snippet, folderID, uid)
+	return err
+}
 
 func (s *Store) MessageByID(id int64) (*Message, error) {
 	m, err := scanMessage(s.DB.QueryRow(`SELECT `+messageCols+` FROM messages WHERE id = ?`, id))

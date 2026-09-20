@@ -1,0 +1,2 @@
+ALTER TABLE messages ADD COLUMN structure_known INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE messages ADD COLUMN structure_retry TEXT NOT NULL DEFAULT '';

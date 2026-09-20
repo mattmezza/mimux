@@ -73,7 +73,7 @@ func (m *Manager) Attachments(ctx context.Context, msg *store.Message) ([]Attach
 			BodyStructure: &imap.FetchItemBodyStructure{Extended: true},
 		}).Collect()
 		if err != nil {
-			return err
+			return fmt.Errorf("attachments for account %s folder %s UID %d: %w", msg.Account, f.Name, msg.UID, err)
 		}
 		if len(data) == 0 || data[0].BodyStructure == nil {
 			return nil
@@ -123,7 +123,7 @@ func (m *Manager) Attachment(ctx context.Context, msg *store.Message, part []int
 			BodySection:   []*imap.FetchItemBodySection{sec},
 		}).Collect()
 		if e != nil {
-			return e
+			return fmt.Errorf("attachment for account %s folder %s UID %d: %w", msg.Account, f.Name, msg.UID, e)
 		}
 		if len(d) == 0 || len(d[0].BodySection) == 0 {
 			return fmt.Errorf("attachment part not found")
