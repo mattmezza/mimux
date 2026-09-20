@@ -815,6 +815,11 @@ func (s *Server) handleThreadSummary(w http.ResponseWriter, r *http.Request) {
 		s.renderPartial(w, "summary_view", view)
 		return
 	}
+	if strings.TrimSpace(sum) == "" {
+		view["Err"] = "The AI service returned an empty summary. Please try again."
+		s.renderPartial(w, "summary_view", view)
+		return
+	}
 	if err := s.store.SaveSummary(key, sum, truncated); err != nil {
 		slog.Error("summarize thread: cache save", "err", err)
 	}

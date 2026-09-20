@@ -90,6 +90,21 @@ func TestSummaryTemplateCopyAndRequestIsolation(t *testing.T) {
 	}
 }
 
+func TestThreadSummaryHasThreadLevelTarget(t *testing.T) {
+	b, err := appweb.FS.ReadFile("templates/partials/thread_detail.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	target := `<section data-thread-summary`
+	if !strings.Contains(src, `smSummarize(document.querySelector('#message-detail [data-thread-summary] [data-summary-bar]')`) {
+		t.Fatal("thread action does not target the thread summary section")
+	}
+	if i, j := strings.Index(src, target), strings.Index(src, `{{range .Ordered}}`); i < 0 || j < 0 || i > j {
+		t.Fatal("thread summary section must precede the message list")
+	}
+}
+
 // TestHandleThreadSummaryRoute checks the wiring end to end up to (but not
 // including) the AI call: /t/{id}/summary resolves the whole conversation
 // behind id, not just that one message. AIKey is left unset so aiClient's
@@ -125,17 +140,21 @@ func TestHandleThreadSummaryRoute(t *testing.T) {
 	if latestID == 0 {
 		t.Fatal("seed: latest message b@x not found")
 	}
-	// Pre-seed the cache so the handler serves the cached view and never
-	// reaches the AI client — the route/cache-key plumbing is what's under
-	// test here, not the provider call.
+	r := chi.NewRouter()
+	r.Get("/t/{id}/summary", s.handleThreadSummary)
+	// An uncached response with no AI key must be an error fragment that htmx
+	// can display, rather than an empty success that leaves loading in place.
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/t/"+strconv.FormatInt(latestID, 10)+"/summary?level=brief", nil))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "AI is off") {
+		t.Fatalf("uncached error response: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	// Pre-seed the cache to exercise the successful fragment and cache key.
 	key := store.ThreadSummaryCacheKey(latestID, "brief")
 	if err := s.store.SaveSummary(key, "- kickoff and final reply, both covered", false); err != nil {
 		t.Fatal(err)
 	}
-
-	r := chi.NewRouter()
-	r.Get("/t/{id}/summary", s.handleThreadSummary)
-	rec := httptest.NewRecorder()
+	rec = httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/t/"+strconv.FormatInt(latestID, 10)+"/summary?level=brief", nil)
 	r.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {

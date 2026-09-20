@@ -36,6 +36,7 @@
   </div>
   {{if .TranslateEnabled}}{{template "translate_js" .}}{{end}}
   {{template "summary_js" .}}
+  <section data-thread-summary class="shrink-0" aria-label="Thread summary">{{template "summary_bar" .}}</section>
   <div class="flex-1 overflow-y-auto divide-y divide-zinc-800">
     {{/* .Ordered is Thread.Messages in the user's reading order (Settings > Reading); Thread.Messages itself stays oldest-first for RootID/LatestMessage. */}}
     {{range .Ordered}}
@@ -168,7 +169,7 @@
 </button>
 {{else if eq .ID "summarize"}}
 <button type="button" title="Summarize thread" aria-label="Summarize thread"
-  onclick="var f=document.querySelector('#message-detail iframe[src*=&quot;/messages/{{$latest.ID}}/body&quot;]');if(f)smSummarize(f.closest('[data-thread-body]').querySelector('[data-summary-bar]'),{{$latest.ID}},'',true)"
+  onclick="smSummarize(document.querySelector('#message-detail [data-thread-summary] [data-summary-bar]'),{{$latest.ID}},'',true)"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h10.5m-10.5 5.25h7.5M17.25 12l3 3-3 3"/></svg>
   {{if $menu}}<span>Summarize</span>{{end}}

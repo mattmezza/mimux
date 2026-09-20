@@ -4,7 +4,7 @@
      swaps itself for summary_view, which the server renders from the cache or a
      fresh OpenRouter call — so the detail chips are just another request. */}}
 
-{{define "summary_bar"}}<div data-summary-bar class="shrink-0 empty:hidden"></div>{{end}}
+{{define "summary_bar"}}<div data-summary-bar role="status" aria-live="polite" class="shrink-0 empty:hidden"></div>{{end}}
 
 {{define "summary_js"}}
 <script>
@@ -16,14 +16,44 @@ if (!window.smSummarize) {
   // while such a summary is showing); omitted/false stays message-scoped.
   window.smSummarize = function (bar, id, level, thread) {
     if (!bar) return;
+    if (bar.smSummaryXHR) bar.smSummaryXHR.abort();
+    if (bar.smSummaryTimer) clearTimeout(bar.smSummaryTimer);
     bar.className = "shrink-0 flex items-center gap-2 px-4 py-1.5 text-xs border-b bg-zinc-800/60 border-zinc-800 text-zinc-400";
-    bar.textContent = "Summarizing…";
+    bar.textContent = thread ? "Summarizing thread…" : "Summarizing…";
     var base = thread ? "/t/" : "/messages/";
+    var done = false;
+    var fail = function (message) {
+      if (done) return;
+      done = true;
+      clearTimeout(bar.smSummaryTimer);
+      bar.smSummaryXHR = null;
+      bar.className = "shrink-0 flex items-center gap-2 px-4 py-2 text-xs border-b bg-red-500/10 border-red-500/20 text-red-300";
+      bar.textContent = message;
+    };
+    var afterRequest = function (event) {
+      if (event.detail.elt !== bar) return;
+      bar.removeEventListener('htmx:afterRequest', afterRequest);
+      if (!event.detail.successful) fail('Couldn’t load the summary. Please try again.');
+      else { done = true; clearTimeout(bar.smSummaryTimer); }
+    };
+    bar.addEventListener('htmx:afterRequest', afterRequest);
+    bar.addEventListener('htmx:beforeRequest', function (event) {
+      if (event.detail.elt === bar) bar.smSummaryXHR = event.detail.xhr;
+    }, { once: true });
+    bar.smSummaryTimer = setTimeout(function () {
+      var xhr = bar.smSummaryXHR;
+      fail('The summary took too long. Please try again.');
+      if (xhr) xhr.abort();
+    }, 75000);
     htmx.ajax("GET", base + id + "/summary" + (level ? "?level=" + level : ""),
-      { source: bar, target: bar, swap: "outerHTML" });
+      { source: bar, target: bar, swap: "outerHTML" }).catch(function () {
+        fail('Couldn’t load the summary. Please try again.');
+      });
   };
 
   window.smSummaryDismiss = function (bar) {
+    if (bar.smSummaryXHR) bar.smSummaryXHR.abort();
+    if (bar.smSummaryTimer) clearTimeout(bar.smSummaryTimer);
     bar.className = "shrink-0 empty:hidden";
     bar.textContent = "";
   };
@@ -57,12 +87,13 @@ if (!window.smSummarize) {
 {{/* summary_view is the loaded strip. Context: dict ID=<message id>
      Level=<current level> and either Summary(+Truncated) or Err. */}}
 {{define "summary_view"}}
-<div data-summary-bar class="shrink-0 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 px-4 py-2 text-xs border-b
+<div data-summary-bar role="status" aria-live="polite" class="shrink-0 flex flex-col sm:flex-row sm:items-start gap-2 sm:gap-3 px-4 py-2 text-xs border-b
   {{if .Err}}bg-red-500/10 border-red-500/20 text-red-300{{else}}bg-indigo-500/10 border-indigo-500/20 text-indigo-300{{end}}">
   {{if .Err}}
   <span class="flex-1">{{.Err}}</span>
   {{else}}
   <div class="flex-1 min-w-0 space-y-1">
+    {{if .Thread}}<div class="font-semibold text-indigo-200">Thread summary</div>{{end}}
     <div data-summary-text class="whitespace-pre-line break-words">{{.Summary}}</div>
     {{if .Truncated}}<div class="text-indigo-300/60">Summary of the beginning of this {{if .Thread}}conversation{{else}}message{{end}} — it was too long to send in full.</div>{{end}}
   </div>
