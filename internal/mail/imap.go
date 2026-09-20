@@ -266,6 +266,9 @@ type sweepState struct {
 	// resume is the folder a truncated sweep stopped before; "" means the next
 	// sweep starts at the top of the rotation.
 	resume string
+	// reconnect is a pending pass over every discovered folder, including those
+	// excluded from the regular synced set.
+	reconnect bool
 	// deep is when each folder last had a deep pass — the whole-mailbox
 	// reconciliation that heals gaps and re-baselines the expunge signal.
 	deep map[int64]time.Time
@@ -400,48 +403,39 @@ func (a *account) authenticate(c *imapclient.Client) error {
 	}
 }
 
-// session runs the initial full sync of all folders then the steady-state loop
-// over the account's synced set.
+// session starts a bounded pass over all discovered folders, then lets steady
+// finish any remaining reconnect work over subsequent cycles.
 func (a *account) session(ctx context.Context, c *imapclient.Client) error {
+	return a.sessionWithBudget(ctx, c, sweepBudget)
+}
+
+func (a *account) sessionWithBudget(ctx context.Context, c *imapclient.Client, budget time.Duration) error {
 	a.setStatus("syncing", "")
-	// ListFolders already returns the inbox first (sortForSpecial ranks it 0), so
-	// the reconnect sweep starts where the user is looking without re-sorting.
 	folders, err := a.syncFolders(c)
 	if err != nil {
 		return err
 	}
 	caps := c.Caps()
-	hasInbox := false
-	for i := range folders {
-		hasInbox = hasInbox || folders[i].SpecialUse == "inbox"
+	// Preserve an unfinished pass across a connection drop. A fresh process
+	// starts at the inbox and completes the rest in budgeted cycles.
+	if !a.sweep.reconnect {
+		a.sweep.resume = "" // a steady-state resume belongs to a different folder set
 	}
-	anyChanged := false
-	for i := range folders {
-		// Yield between folders: this sweep runs on reconnect and can be long on
-		// a big account, and a body open queued behind it used to wait for all of
-		// it (or give up at submitTimeout). Same reasoning as sweepFolders.
-		if _, err := a.yield(ctx, c); err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
-			return err
+	a.sweep.reconnect = true
+	changed, resume, err := a.sweepFolderSet(ctx, c, caps, folders, a.sweep.resume, budget)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil
 		}
-		changed, err := a.syncFolder(ctx, c, &folders[i], caps)
-		if err != nil {
-			return err
-		}
-		anyChanged = anyChanged || changed
+		return err
 	}
-	if anyChanged {
+	a.sweep.resume = resume
+	a.sweep.reconnect = resume != ""
+	if changed {
 		a.signalListChanged()
 	}
 	a.setStatus("ok", "")
-	if !hasInbox {
-		// No inbox: just idle-poll nothing; wait for shutdown.
-		<-ctx.Done()
-		return nil
-	}
-	return a.steady(ctx, c, caps)
+	return a.steadyWithBudget(ctx, c, caps, budget)
 }
 
 // syncedFolders is the set the steady loop walks, INBOX LAST. The steady loop
@@ -478,10 +472,20 @@ func (a *account) selectInbox(c *imapclient.Client) error {
 }
 
 func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.CapSet) error {
+	return a.steadyWithBudget(ctx, c, caps, sweepBudget)
+}
+
+func (a *account) steadyWithBudget(ctx context.Context, c *imapclient.Client, caps imap.CapSet, budget time.Duration) error {
 	idleOK := caps.Has(imap.CapIdle)
-	// The first trip syncs unconditionally, as it always did: session() has just
-	// finished the full sweep and this re-reads the inbox before settling in.
-	sync := true
+	// IDLE needs an inbox to watch. Accounts without one still need poll cycles
+	// to finish a budgeted reconnect pass.
+	if inbox, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox"); err != nil {
+		return err
+	} else if inbox == nil {
+		idleOK = false
+	}
+	// An unfinished reconnect pass is resumed after the normal short delay.
+	sync := !a.sweep.reconnect
 	for {
 		if _, err := a.drain(c); err != nil {
 			return err
@@ -509,11 +513,25 @@ func (a *account) steady(ctx context.Context, c *imapclient.Client, caps imap.Ca
 			// Re-read the set every cycle, like the poll interval below: ticking a
 			// folder in Settings → Syncing takes effect on the next cycle, without
 			// a reconnect.
-			changed, resume, err := a.sweepFolders(ctx, c, caps, a.sweep.resume, sweepBudget)
+			var changed bool
+			var resume string
+			var err error
+			if a.sweep.reconnect {
+				var folders []store.Folder
+				folders, err = a.m.st.ListFolders(a.cfg.Name)
+				if err == nil {
+					changed, resume, err = a.sweepFolderSet(ctx, c, caps, folders, a.sweep.resume, budget)
+				}
+			} else {
+				changed, resume, err = a.sweepFolders(ctx, c, caps, a.sweep.resume, budget)
+			}
 			if err != nil {
 				return err
 			}
 			a.sweep.resume = resume
+			if a.sweep.reconnect {
+				a.sweep.reconnect = resume != ""
+			}
 			if changed {
 				a.signalListChanged() // one per cycle, whatever changed where
 			}
@@ -585,6 +603,10 @@ func (a *account) sweepFolders(ctx context.Context, c *imapclient.Client, caps i
 	if err != nil {
 		return false, "", err
 	}
+	return a.sweepFolderSet(ctx, c, caps, folders, from, budget)
+}
+
+func (a *account) sweepFolderSet(ctx context.Context, c *imapclient.Client, caps imap.CapSet, folders []store.Folder, from string, budget time.Duration) (changed bool, resume string, err error) {
 	deadline := time.Now().Add(budget)
 
 	var rest []store.Folder
