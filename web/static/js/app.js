@@ -973,6 +973,17 @@ function closeReadingPane() {
 }
 window.closeReadingPane = closeReadingPane;
 
+// htmx snapshots the current page when a detail request pushes its URL. The
+// request has already replaced the pane with a skeleton by then, so Back can
+// restore that skeleton as if it were a message. On mobile, any nonempty pane
+// covers the list. A list URL must always restore the empty pane marker.
+document.addEventListener("htmx:historyRestore", () => {
+  const params = new URLSearchParams(location.search);
+  if (params.has("t") || params.has("m")) return;
+  const pane = document.getElementById("reading-pane");
+  if (pane && !pane.querySelector("#reading-pane-empty")) closeReadingPane();
+});
+
 // The reading pane's header slides out of the way while you scroll down and
 // comes straight back on the first upward scroll (see .hdr-away in app.css) —
 // always one flick away, never eating body height while reading. Same on
