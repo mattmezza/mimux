@@ -408,6 +408,15 @@ func applyIntegrations(c *store.AppConfig, r *http.Request) {
 	c.AIRefineModel = strings.TrimSpace(r.PostFormValue("ai_refine_model"))
 	c.AISummarizeModel = strings.TrimSpace(r.PostFormValue("ai_summarize_model"))
 	c.AIThreadSummarizeModel = strings.TrimSpace(r.PostFormValue("ai_thread_summary_model"))
+	// Reasoning effort: blank means "send no parameter" / "inherit the global".
+	// Value validation lives in store.SaveAppConfig (ValidReasoningEffort) —
+	// the contract is the fixed set, not the form.
+	c.AIReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_reasoning"))
+	c.AIComposeReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_compose_reasoning"))
+	c.AIOptionsReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_options_reasoning"))
+	c.AIRefineReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_refine_reasoning"))
+	c.AISummarizeReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_summarize_reasoning"))
+	c.AIThreadSummarizeReasoningEffort = strings.TrimSpace(r.PostFormValue("ai_thread_summary_reasoning"))
 	c.AIThreadSummaryEnabled = r.PostFormValue("ai_thread_summary_enabled") == "1"
 	c.AITone = r.PostFormValue("ai_tone")
 	c.AIBrevity = r.PostFormValue("ai_brevity")
