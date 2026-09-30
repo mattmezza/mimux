@@ -1113,15 +1113,27 @@
                   return el ? el.value.trim() : "";
                 }
 
+                // Rank by the server-rendered ladder, so the narrowed list keeps
+                // descending effort order whatever order the provider returns.
+                function rank(id) {
+                  var i = ORDER.indexOf(id);
+                  return i < 0 ? ORDER.length : i;
+                }
+
                 // Rewrite the options: inherit, then the model's own ladder (or
                 // the full one when it accepts every value), skipping "none" for
                 // a model that always reasons. A stored value the model no longer
                 // offers stays visible and selected rather than being rewritten.
+                // Re-enabling undoes an earlier "no reasoning options" check.
                 function rebuild(select, allowed, mandatory) {
                   var current = select.value;
-                  var ids = (allowed && allowed.length ? allowed : ORDER).filter(function (id) {
-                    return !(mandatory && id === "none");
-                  });
+                  var ids = (allowed && allowed.length ? allowed : ORDER)
+                    .slice()
+                    .sort(function (a, b) { return rank(a) - rank(b); })
+                    .filter(function (id) { return !(mandatory && id === "none"); });
+                  var mirror = select.parentNode.querySelector("[data-effort-mirror]");
+                  if (mirror) mirror.remove();
+                  select.disabled = false;
                   select.innerHTML = "";
                   select.add(new Option(LABELS[""] || "Default (model's own)", ""));
                   ids.forEach(function (id) { select.add(new Option(LABELS[id] || id, id)); });
@@ -1139,6 +1151,7 @@
                   mirror.type = "hidden";
                   mirror.name = select.name;
                   mirror.value = select.value;
+                  mirror.setAttribute("data-effort-mirror", "");
                   select.parentNode.insertBefore(mirror, select);
                   select.disabled = true;
                   status(card, note);
@@ -1153,8 +1166,16 @@
                   status(card, "Checking\u2026");
                   fetch("/ai/model-reasoning?model=" + encodeURIComponent(model), { headers: { Accept: "application/json" } })
                     .then(function (res) {
-                      if (!res.ok) throw new Error("lookup failed");
-                      return res.json();
+                      return res.json().catch(function () { return {}; }).then(function (body) {
+                        if (!res.ok) {
+                          // The endpoint's own wording is the useful one; a
+                          // network failure has nothing worth showing.
+                          var err = new Error(body.error || "lookup failed");
+                          err.server = true;
+                          throw err;
+                        }
+                        return body;
+                      });
                     })
                     .then(function (info) {
                       if (!info.found) { status(card, "Unknown model — keeping the full list."); return; }
@@ -1167,7 +1188,9 @@
                       if (info.mandatory) bits.push("always reasons");
                       status(card, bits.join(" · "));
                     })
-                    .catch(function () { status(card, "Couldn't check — keeping the full list."); });
+                    .catch(function (err) {
+                      status(card, err && err.server ? err.message : "Couldn't check — keeping the full list.");
+                    });
                 }
 
                 document.addEventListener("click", function (e) {

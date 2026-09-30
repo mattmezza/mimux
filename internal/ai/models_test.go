@@ -3,8 +3,10 @@ package ai
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
@@ -15,6 +17,61 @@ func entry(id string, reasoning *reasoningDescriptor) modelEntry {
 
 func reasoningEntry(efforts []string, def string, enabled, mandatory bool) *reasoningDescriptor {
 	return &reasoningDescriptor{efforts, def, enabled, mandatory}
+}
+
+// The whole lookup path: read the catalogue, find the model, trim its
+// descriptor, and make sure the response carries every field the UI reads.
+func TestModelReasoning_FromCatalogue(t *testing.T) {
+	resetCatalogueCache()
+	t.Cleanup(resetCatalogueCache)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":[
+			{"id":"plain/model"},
+			{"id":"google/gemini-3.5-flash","reasoning":{"supported_efforts":["high","medium","low","minimal"],"default_effort":"medium","default_enabled":true,"mandatory":true}}
+		]}`))
+	}))
+	defer srv.Close()
+
+	old := openRouterModelsURL
+	openRouterModelsURL = srv.URL
+	t.Cleanup(func() { openRouterModelsURL = old })
+
+	c := &Client{APIKey: "k", Model: "google/gemini-3.5-flash", HTTPClient: srv.Client()}
+	got, err := c.ModelReasoning(context.Background(), "  google/gemini-3.5-flash  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Found || !got.SupportsReasoning || !got.Mandatory || !got.DefaultEnabled ||
+		got.DefaultEffort != "medium" || len(got.SupportedEfforts) != 4 {
+		t.Fatalf("got %+v", got)
+	}
+	if got.Model != "google/gemini-3.5-flash" {
+		t.Errorf("model = %q, want it trimmed", got.Model)
+	}
+
+	// The endpoint's contract: every field present, so the UI never has to
+	// guess at a missing one.
+	b, err := json.Marshal(got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"model", "found", "supports_reasoning",
+		"supported_efforts", "default_effort", "default_enabled", "mandatory"} {
+		if !strings.Contains(string(b), `"`+field+`"`) {
+			t.Errorf("response missing %q: %s", field, b)
+		}
+	}
+
+	// A model that exposes no reasoning block at all: found, not capable.
+	got, err = c.ModelReasoning(context.Background(), "plain/model")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !got.Found || got.SupportsReasoning {
+		t.Errorf("plain = %+v", got)
+	}
 }
 
 func TestReasoningFor(t *testing.T) {

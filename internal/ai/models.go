@@ -14,7 +14,9 @@ import (
 
 // openRouterModelsURL is the provider catalogue the reasoning lookup reads. It
 // is OpenRouter's list endpoint — the same provider defaultAPIURL talks to.
-const openRouterModelsURL = "https://openrouter.ai/api/v1/models"
+// NOTE: a var, not a const, so a test can point the whole lookup path at a
+// fixture. Production never reassigns it.
+var openRouterModelsURL = "https://openrouter.ai/api/v1/models"
 
 // modelCatalogueTTL is how long a fetched catalogue is reused. The catalogue is
 // hundreds of entries and changes rarely, so one fetch serves every lookup; a
@@ -38,8 +40,8 @@ type ReasoningInfo struct {
 	Model             string   `json:"model"`
 	Found             bool     `json:"found"`
 	SupportsReasoning bool     `json:"supports_reasoning"`
-	SupportedEfforts  []string `json:"supported_efforts"`
-	DefaultEffort     string   `json:"default_effort,omitempty"`
+	SupportedEfforts  []string `json:"supported_efforts"` // nil = the model accepts every value
+	DefaultEffort     string   `json:"default_effort"`
 	DefaultEnabled    bool     `json:"default_enabled"`
 	Mandatory         bool     `json:"mandatory"`
 }
@@ -67,9 +69,10 @@ type modelEntry struct {
 // NOTE: the mutex is held across the fetch, so concurrent lookups fetch once
 // together rather than stampeding the provider.
 var (
-	catalogueMu sync.Mutex
-	catalogue   []modelEntry
-	catalogueAt time.Time
+	catalogueMu    sync.Mutex
+	catalogue      []modelEntry
+	catalogueAt    time.Time
+	catalogueValid bool // set once a fetch has succeeded; a nil slice is valid
 )
 
 // ModelReasoning returns the reasoning descriptor for one model id.
@@ -81,8 +84,8 @@ var (
 // way this is a convenience layered on the fixed effort set, never a
 // dependency: callers must keep working when it fails.
 func (c *Client) ModelReasoning(ctx context.Context, modelID string) (ReasoningInfo, error) {
-	info := ReasoningInfo{Model: modelID}
 	modelID = strings.TrimSpace(modelID)
+	info := ReasoningInfo{Model: modelID}
 	if modelID == "" {
 		return info, fmt.Errorf("ai: no model given")
 	}
@@ -126,14 +129,14 @@ func reasoningFor(entries []modelEntry, modelID string) ReasoningInfo {
 func catalogued(ctx context.Context, hc *http.Client, url, apiKey string) ([]modelEntry, error) {
 	catalogueMu.Lock()
 	defer catalogueMu.Unlock()
-	if catalogue != nil && time.Since(catalogueAt) < modelCatalogueTTL {
+	if catalogueValid && time.Since(catalogueAt) < modelCatalogueTTL {
 		return catalogue, nil
 	}
 	entries, err := fetchModelEntries(ctx, hc, url, apiKey)
 	if err != nil {
 		return nil, err
 	}
-	catalogue, catalogueAt = entries, time.Now()
+	catalogue, catalogueAt, catalogueValid = entries, time.Now(), true
 	return entries, nil
 }
 
@@ -175,5 +178,5 @@ func fetchModelEntries(ctx context.Context, hc *http.Client, url, apiKey string)
 func resetCatalogueCache() {
 	catalogueMu.Lock()
 	defer catalogueMu.Unlock()
-	catalogue, catalogueAt = nil, time.Time{}
+	catalogue, catalogueAt, catalogueValid = nil, time.Time{}, false
 }

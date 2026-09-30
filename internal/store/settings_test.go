@@ -174,6 +174,9 @@ func TestValidReasoningEffort(t *testing.T) {
 		"medium": true, "low": true, "minimal": true, "none": true}
 	seen := map[string]bool{}
 	for _, e := range AllReasoningEfforts {
+		if seen[e.ID] {
+			t.Errorf("effort %q listed twice", e.ID)
+		}
 		seen[e.ID] = true
 		if e.Label == "" {
 			t.Errorf("effort %q has no label", e.ID)
@@ -182,6 +185,9 @@ func TestValidReasoningEffort(t *testing.T) {
 			t.Errorf("ValidReasoningEffort(%q) = %q", e.ID, got)
 		}
 	}
+	// The set is checked against a literal list, not against itself, so a
+	// value silently dropped from AllReasoningEfforts fails here.
+
 	if len(seen) != len(want) {
 		t.Fatalf("effort set = %v, want %v", seen, want)
 	}

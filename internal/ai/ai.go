@@ -146,8 +146,8 @@ type message struct {
 // The legacy include_reasoning:false mapped to {exclude:true} for the same
 // reason; effort:"none" is what actually turns reasoning off.
 type reasoning struct {
-	Effort  string `json:"effort,omitempty"`
-	Exclude bool   `json:"exclude,omitempty"`
+	Effort  string `json:"effort,omitempty"` // omitempty is a safety net; the caller never builds an empty one
+	Exclude bool   `json:"exclude"`          // always sent: the whole point is to not ship the tokens back
 }
 
 type chatRequest struct {
