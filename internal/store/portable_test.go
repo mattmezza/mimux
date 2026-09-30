@@ -39,6 +39,11 @@ func seedConfig(t *testing.T, s *Store) {
 	look := s.GetAppConfig()
 	look.Accent, look.IconBG, look.IconAccent = "violet", "transparent", "#ff0088"
 	look.IconLeaf, look.IconShape = "#00ddaa", "circle"
+	// The reasoning effort fields ride the same dump — nothing to add when one
+	// is introduced, but a round trip that silently dropped them would be a
+	// real regression.
+	look.AIReasoningEffort = "low"
+	look.AIThreadSummarizeReasoningEffort = "high"
 	if err := s.SaveAppConfig(look); err != nil {
 		t.Fatal(err)
 	}
@@ -152,6 +157,10 @@ func TestConfigRoundTrip(t *testing.T) {
 	if look := dst.GetAppConfig(); look.Accent != "violet" || look.IconBG != "transparent" ||
 		look.IconAccent != "#ff0088" || look.IconLeaf != "#00ddaa" || look.IconShape != "circle" {
 		t.Errorf("appearance not restored: %+v", look)
+	}
+	if look := dst.GetAppConfig(); look.AIReasoningEffort != "low" ||
+		look.ReasoningFor(AIThreadSummarize) != "high" || look.ReasoningFor(AISummarize) != "low" {
+		t.Errorf("reasoning effort not restored: %+v", look)
 	}
 	if !dst.GetPrefs().ShowListLabels {
 		t.Error("ShowListLabels not restored")
