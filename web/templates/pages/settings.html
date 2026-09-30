@@ -946,12 +946,16 @@
                   <button type="button" @click="showA=!showA" class="shrink-0 px-2 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100" x-text="showA ? 'Hide' : 'Show'"></button>
                 </span>
               </label>
-              <label class="block space-y-1">
-                <span class="text-sm text-zinc-200">Default model</span>
-                <input type="text" name="ai_model" value="{{.AppConfig.AIModel}}" placeholder="anthropic/claude-sonnet-4-6"
-                  class="w-full max-w-md rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
-                <span class="block text-xs text-zinc-500">Used by every feature that doesn't pin its own model below.</span>
-              </label>
+              <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2 max-w-md" data-effort-card>
+                <label class="block space-y-1">
+                  <span class="text-sm text-zinc-200">Default model</span>
+                  <input type="text" name="ai_model" data-effort-model data-effort-global value="{{.AppConfig.AIModel}}" placeholder="anthropic/claude-sonnet-4-6"
+                    class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-zinc-100 focus:outline-none focus:border-indigo-500">
+                  <span class="block text-xs text-zinc-500">Used by every feature that doesn't pin its own model below.</span>
+                </label>
+                {{template "reasoning_effort_select" (dict "Name" "ai_reasoning" "Cur" .AppConfig.AIReasoningEffort)}}
+              </div>
+              <p class="text-xs text-zinc-500">Reasoning increases token cost and time-to-first-token. "Off" disables it entirely. It only applies to models that support it — some models always reason and cannot be switched off. Thread summarization benefits most; short mechanical tasks (reply options, refine) rarely do.</p>
 
               {{/* Writing style — shared, because it describes your voice rather
                    than one feature: it is folded into drafts and rewrites, and
@@ -994,21 +998,23 @@
                 <h3 class="text-sm font-semibold text-zinc-100">Per-feature</h3>
                 <p class="text-xs text-zinc-500">Leave a model blank to use the default above — a cheap model is usually enough for summaries, a stronger one for drafts.</p>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2" data-effort-card>
                     <span class="block text-sm text-zinc-200">Compose &amp; reply drafts</span>
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Model</span>
-                      <input type="text" name="ai_compose_model" value="{{.AppConfig.AIComposeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                      <input type="text" name="ai_compose_model" data-effort-model value="{{.AppConfig.AIComposeModel}}" placeholder="{{.AppConfig.AIModel}}"
                         class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                     </label>
+                    {{template "reasoning_effort_select" (dict "Name" "ai_compose_reasoning" "Cur" .AppConfig.AIComposeReasoningEffort)}}
                   </div>
-                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2" data-effort-card>
                     <span class="block text-sm text-zinc-200">Reply options</span>
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Model</span>
-                      <input type="text" name="ai_options_model" value="{{.AppConfig.AIOptionsModel}}" placeholder="{{.AppConfig.AIModel}}"
+                      <input type="text" name="ai_options_model" data-effort-model value="{{.AppConfig.AIOptionsModel}}" placeholder="{{.AppConfig.AIModel}}"
                         class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                     </label>
+                    {{template "reasoning_effort_select" (dict "Name" "ai_options_reasoning" "Cur" .AppConfig.AIOptionsReasoningEffort)}}
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Directions to suggest</span>
                       <select name="ai_reply_options" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
@@ -1020,22 +1026,24 @@
                       </select>
                     </label>
                   </div>
-                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2" data-effort-card>
                     <span class="block text-sm text-zinc-200">Refine draft</span>
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Model</span>
-                      <input type="text" name="ai_refine_model" value="{{.AppConfig.AIRefineModel}}" placeholder="{{.AppConfig.AIModel}}"
+                      <input type="text" name="ai_refine_model" data-effort-model value="{{.AppConfig.AIRefineModel}}" placeholder="{{.AppConfig.AIModel}}"
                         class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                     </label>
+                    {{template "reasoning_effort_select" (dict "Name" "ai_refine_reasoning" "Cur" .AppConfig.AIRefineReasoningEffort)}}
                     <span class="block text-xs text-zinc-500">The Shorter / More formal / Friendlier buttons set the direction of each rewrite.</span>
                   </div>
-                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2" data-effort-card>
                     <span class="block text-sm text-zinc-200">Summarize</span>
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Model</span>
-                      <input type="text" name="ai_summarize_model" value="{{.AppConfig.AISummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                      <input type="text" name="ai_summarize_model" data-effort-model value="{{.AppConfig.AISummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
                         class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                     </label>
+                    {{template "reasoning_effort_select" (dict "Name" "ai_summarize_reasoning" "Cur" .AppConfig.AISummarizeReasoningEffort)}}
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Detail level</span>
                       <select name="ai_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
@@ -1047,7 +1055,7 @@
                     </label>
                     <span class="block text-xs text-zinc-500">Only the starting level — each summary can be switched from its own strip.</span>
                   </div>
-                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2">
+                  <div class="rounded-lg border border-zinc-700 bg-zinc-800/30 p-3 space-y-2" data-effort-card>
                     <label class="flex items-center justify-between gap-3">
                       <span class="text-sm text-zinc-200">Thread summarization</span>
                       <input type="checkbox" name="ai_thread_summary_enabled" value="1" {{if .AppConfig.AIThreadSummaryEnabled}}checked{{end}}
@@ -1055,9 +1063,10 @@
                     </label>
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Model override <span class="text-zinc-600">(optional)</span></span>
-                      <input type="text" name="ai_thread_summary_model" value="{{.AppConfig.AIThreadSummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
+                      <input type="text" name="ai_thread_summary_model" data-effort-model value="{{.AppConfig.AIThreadSummarizeModel}}" placeholder="{{.AppConfig.AIModel}}"
                         class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
                     </label>
+                    {{template "reasoning_effort_select" (dict "Name" "ai_thread_summary_reasoning" "Cur" .AppConfig.AIThreadSummarizeReasoningEffort)}}
                     <label class="block space-y-1">
                       <span class="text-xs text-zinc-400">Default detail level</span>
                       <select name="ai_thread_summary_level" class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
@@ -1073,6 +1082,103 @@
               </div>
               <p class="text-xs text-zinc-500">Keys and settings are saved with the Save button below.</p>
             </div>
+
+            <script>
+              // "Check model support" narrows one card's effort selector to the
+              // model's own supported_efforts. It is a convenience on top of the
+              // fixed set, never a dependency: every failure path keeps the full
+              // list usable, and the lookup only runs on an explicit click.
+              (function () {
+                var cards = document.querySelectorAll("[data-effort-card]");
+                if (!cards.length) return;
+
+                // The ladder and its labels come from the server-rendered
+                // select, so the scale lives in one place (AllReasoningEfforts).
+                var sample = document.querySelector("[data-effort-select]");
+                var ORDER = [], LABELS = {};
+                if (sample) {
+                  Array.prototype.forEach.call(sample.options, function (o) {
+                    LABELS[o.value] = o.textContent;
+                    if (o.value !== "") ORDER.push(o.value);
+                  });
+                }
+
+                function status(card, text) {
+                  var el = card.querySelector("[data-effort-status]");
+                  if (el) el.textContent = text;
+                }
+
+                function globalModel() {
+                  var el = document.querySelector("[data-effort-global]");
+                  return el ? el.value.trim() : "";
+                }
+
+                // Rewrite the options: inherit, then the model's own ladder (or
+                // the full one when it accepts every value), skipping "none" for
+                // a model that always reasons. A stored value the model no longer
+                // offers stays visible and selected rather than being rewritten.
+                function rebuild(select, allowed, mandatory) {
+                  var current = select.value;
+                  var ids = (allowed && allowed.length ? allowed : ORDER).filter(function (id) {
+                    return !(mandatory && id === "none");
+                  });
+                  select.innerHTML = "";
+                  select.add(new Option(LABELS[""] || "Default (model's own)", ""));
+                  ids.forEach(function (id) { select.add(new Option(LABELS[id] || id, id)); });
+                  if (current !== "" && ids.indexOf(current) < 0) {
+                    select.add(new Option((LABELS[current] || current) + " — not supported by this model", current));
+                  }
+                  select.value = current;
+                }
+
+                // A disabled select is not submitted, which would silently wipe
+                // the stored value on the next save — mirror it into a hidden
+                // field first, so the setting round-trips unchanged.
+                function disableSelect(card, select, note) {
+                  var mirror = document.createElement("input");
+                  mirror.type = "hidden";
+                  mirror.name = select.name;
+                  mirror.value = select.value;
+                  select.parentNode.insertBefore(mirror, select);
+                  select.disabled = true;
+                  status(card, note);
+                }
+
+                function check(card) {
+                  var select = card.querySelector("[data-effort-select]");
+                  if (!select) return;
+                  var input = card.querySelector("[data-effort-model]");
+                  var model = input && input.value.trim() ? input.value.trim() : globalModel();
+                  if (!model) { status(card, "Set a model first."); return; }
+                  status(card, "Checking\u2026");
+                  fetch("/ai/model-reasoning?model=" + encodeURIComponent(model), { headers: { Accept: "application/json" } })
+                    .then(function (res) {
+                      if (!res.ok) throw new Error("lookup failed");
+                      return res.json();
+                    })
+                    .then(function (info) {
+                      if (!info.found) { status(card, "Unknown model — keeping the full list."); return; }
+                      if (!info.supports_reasoning) {
+                        disableSelect(card, select, "This model does not expose reasoning options.");
+                        return;
+                      }
+                      rebuild(select, info.supported_efforts, info.mandatory);
+                      var bits = ["Model default: " + (info.default_enabled ? (info.default_effort || "on") : "off")];
+                      if (info.mandatory) bits.push("always reasons");
+                      status(card, bits.join(" · "));
+                    })
+                    .catch(function () { status(card, "Couldn't check — keeping the full list."); });
+                }
+
+                document.addEventListener("click", function (e) {
+                  var t = e.target;
+                  var btn = t && t.closest ? t.closest("[data-effort-check]") : null;
+                  if (!btn) return;
+                  var card = btn.closest("[data-effort-card]");
+                  if (card) check(card);
+                });
+              })();
+            </script>
           </section>
           {{end}}
 
@@ -1131,6 +1237,21 @@
     {{end}}
   </form>
 </div>
+{{end}}
+
+{{define "reasoning_effort_select"}}
+<label class="block space-y-1">
+  <span class="text-xs text-zinc-400">Reasoning effort</span>
+  <select name="{{.Name}}" data-effort-select
+    class="w-full rounded-md bg-zinc-800 border border-zinc-700 px-3 py-1.5 text-sm text-zinc-100 focus:outline-none focus:border-indigo-500">
+    {{$cur := .Cur}}{{range reasoningEfforts}}<option value="{{.ID}}"{{if eq .ID $cur}} selected{{end}}>{{.Label}}</option>{{end}}
+  </select>
+  <span class="flex items-center gap-2">
+    <button type="button" data-effort-check
+      class="shrink-0 px-2 py-1 rounded-md border border-zinc-700 text-xs text-zinc-400 hover:text-zinc-100">Check model support</button>
+    <span data-effort-status class="text-xs text-zinc-500" role="status"></span>
+  </span>
+</label>
 {{end}}
 
 {{define "row_action_select"}}
