@@ -1131,8 +1131,7 @@
                     .slice()
                     .sort(function (a, b) { return rank(a) - rank(b); })
                     .filter(function (id) { return !(mandatory && id === "none"); });
-                  var mirror = select.parentNode.querySelector("[data-effort-mirror]");
-                  if (mirror) mirror.remove();
+                  clearMirrors(select);
                   select.disabled = false;
                   select.innerHTML = "";
                   select.add(new Option(LABELS[""] || "Default (model's own)", ""));
@@ -1143,16 +1142,30 @@
                   select.value = current;
                 }
 
+                // Drop every mirror this selector may have accumulated. A stale
+                // one is worse than none: it sits before the select in the DOM,
+                // so PostFormValue would read its value instead of the chosen
+                // one and the setting would save stale.
+                function clearMirrors(select) {
+                  var mirrors = select.parentNode.querySelectorAll("[data-effort-mirror]");
+                  Array.prototype.forEach.call(mirrors, function (m) { m.remove(); });
+                }
+
                 // A disabled select is not submitted, which would silently wipe
                 // the stored value on the next save — mirror it into a hidden
-                // field first, so the setting round-trips unchanged.
+                // field, so the setting round-trips unchanged. Exactly one mirror
+                // per select: reuse the existing one and refresh its value rather
+                // than appending another on every check.
                 function disableSelect(card, select, note) {
-                  var mirror = document.createElement("input");
-                  mirror.type = "hidden";
-                  mirror.name = select.name;
+                  var mirror = select.parentNode.querySelector("[data-effort-mirror]");
+                  if (!mirror) {
+                    mirror = document.createElement("input");
+                    mirror.type = "hidden";
+                    mirror.name = select.name;
+                    mirror.setAttribute("data-effort-mirror", "");
+                    select.parentNode.insertBefore(mirror, select);
+                  }
                   mirror.value = select.value;
-                  mirror.setAttribute("data-effort-mirror", "");
-                  select.parentNode.insertBefore(mirror, select);
                   select.disabled = true;
                   status(card, note);
                 }
@@ -1178,7 +1191,13 @@
                       });
                     })
                     .then(function (info) {
-                      if (!info.found) { status(card, "Unknown model — keeping the full list."); return; }
+                      if (!info.found) {
+                        // The card may carry a previous model's narrowed ladder;
+                        // "keeping the full list" must actually restore it.
+                        rebuild(select, null, false);
+                        status(card, "Unknown model — keeping the full list.");
+                        return;
+                      }
                       if (!info.supports_reasoning) {
                         disableSelect(card, select, "This model does not expose reasoning options.");
                         return;
@@ -1189,6 +1208,9 @@
                       status(card, bits.join(" · "));
                     })
                     .catch(function (err) {
+                      // Same as the unknown-model path: a failure still has to put
+                      // the full list back, not leave a stale narrowed one behind.
+                      rebuild(select, null, false);
                       status(card, err && err.server ? err.message : "Couldn't check — keeping the full list.");
                     });
                 }
