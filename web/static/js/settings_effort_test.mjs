@@ -141,6 +141,7 @@ function harness(fetchImpl) {
   const tick = () => new Promise((r) => setImmediate(r));
   return {
     globalCard, refineCard, root,
+    async edit(card, value) { card.model.value = value; handlers.input({ target: card.model }); await tick(); },
     async click(card) { handlers.click({ target: card.button }); await tick(); await tick(); await tick(); },
     // What the browser would submit for a field: live, enabled controls in
     // document order — PostFormValue takes the first.
@@ -217,4 +218,61 @@ test("a lookup failure restores the full ladder after a narrow", async () => {
   await h.click(h.refineCard);
   assert.match(h.refineCard.status.textContent, /keeping the full list/);
   assert.deepEqual(h.optionValues(h.refineCard.select), LADDER);
+});
+
+
+test("editing a model re-enables its selector and removes the hidden mirror", async () => {
+  const h = harness(async () => response(noReasoning));
+  h.refineCard.model.value = "plain/model";
+  h.refineCard.select.value = "high";
+  await h.click(h.refineCard);
+  await h.edit(h.refineCard, "reasoning/model");
+  assert.equal(h.refineCard.select.disabled, false);
+  assert.equal(h.mirrorCount(h.refineCard.select), 0);
+  assert.deepEqual(h.optionValues(h.refineCard.select), LADDER);
+  assert.deepEqual(h.submitted("ai_refine_reasoning"), ["high"]);
+  assert.equal(h.refineCard.status.textContent, "");
+});
+
+test("editing the global model resets inherited cards but preserves pinned cards", async () => {
+  const h = harness(async () => response(capable));
+  h.globalCard.model.value = "first/model";
+  await h.click(h.refineCard);
+  await h.edit(h.globalCard, "second/model");
+  assert.deepEqual(h.optionValues(h.refineCard.select), LADDER);
+  h.refineCard.model.value = "pinned/model";
+  await h.click(h.refineCard);
+  const pinned = h.optionValues(h.refineCard.select);
+  await h.edit(h.globalCard, "third/model");
+  assert.deepEqual(h.optionValues(h.refineCard.select), pinned);
+});
+
+test("a stale lookup cannot disable a selector after a model edit", async () => {
+  let resolve;
+  const h = harness(() => new Promise((r) => { resolve = r; }));
+  h.refineCard.model.value = "plain/model";
+  await h.click(h.refineCard);
+  await h.edit(h.refineCard, "reasoning/model");
+  resolve(response(noReasoning));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(h.refineCard.select.disabled, false);
+  assert.deepEqual(h.optionValues(h.refineCard.select), LADDER);
+  assert.equal(h.refineCard.status.textContent, "");
+});
+
+test("an older lookup failure cannot overwrite a newer successful check", async () => {
+  let reject;
+  let calls = 0;
+  const h = harness(() => ++calls === 1 ? new Promise((_, r) => { reject = r; }) : Promise.resolve(response(capable)));
+  h.refineCard.model.value = "reasoning/model";
+  await h.click(h.refineCard);
+  await h.click(h.refineCard);
+  const options = h.optionValues(h.refineCard.select);
+  const status = h.refineCard.status.textContent;
+  reject(new Error("old failure"));
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.deepEqual(h.optionValues(h.refineCard.select), options);
+  assert.equal(h.refineCard.status.textContent, status);
 });

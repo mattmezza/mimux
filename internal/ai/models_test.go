@@ -16,7 +16,7 @@ func entry(id string, reasoning *reasoningDescriptor) modelEntry {
 }
 
 func reasoningEntry(efforts []string, def string, enabled, mandatory bool) *reasoningDescriptor {
-	return &reasoningDescriptor{efforts, def, enabled, mandatory}
+	return &reasoningDescriptor{efforts, def, &enabled, mandatory}
 }
 
 // The whole lookup path: read the catalogue, find the model, trim its
@@ -205,5 +205,29 @@ func TestCatalogueRejectsNonJSON(t *testing.T) {
 
 	if _, err := catalogued(context.Background(), srv.Client(), srv.URL, ""); err == nil {
 		t.Fatal("expected a decode error")
+	}
+}
+
+func TestReasoningForDefaultEnabled(t *testing.T) {
+	for _, tc := range []struct {
+		name, descriptor string
+		want             bool
+	}{
+		{"mandatory omitted default", `{"mandatory":true,"default_effort":"medium"}`, true},
+		{"active effort omitted default", `{"default_effort":"low"}`, true},
+		{"off effort omitted default", `{"default_effort":"none"}`, false},
+		{"explicit off", `{"default_effort":"medium","default_enabled":false}`, false},
+		{"explicit on", `{"default_enabled":true}`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var descriptor reasoningDescriptor
+			if err := json.Unmarshal([]byte(tc.descriptor), &descriptor); err != nil {
+				t.Fatal(err)
+			}
+			got := reasoningFor([]modelEntry{entry("test/model", &descriptor)}, "test/model")
+			if got.DefaultEnabled != tc.want {
+				t.Fatalf("DefaultEnabled = %v, want %v", got.DefaultEnabled, tc.want)
+			}
+		})
 	}
 }

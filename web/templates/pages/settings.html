@@ -1170,11 +1170,33 @@
                   status(card, note);
                 }
 
+                function effectiveModel(card) {
+                  var input = card.querySelector("[data-effort-model]");
+                  return input && input.value.trim() ? input.value.trim() : globalModel();
+                }
+
+                // Editing a model invalidates both its displayed capabilities
+                // and any in-flight lookup, without starting another request.
+                document.addEventListener("input", function (e) {
+                  var input = e.target;
+                  if (!input || !input.matches("[data-effort-model]")) return;
+                  Array.prototype.forEach.call(cards, function (card) {
+                    var own = card.querySelector("[data-effort-model]");
+                    if (own !== input && !(input.matches("[data-effort-global]") && !own.value.trim())) return;
+                    card.effortLookupVersion = (card.effortLookupVersion || 0) + 1;
+                    rebuild(card.querySelector("[data-effort-select]"), null, false);
+                    status(card, "");
+                  });
+                });
+
                 function check(card) {
                   var select = card.querySelector("[data-effort-select]");
                   if (!select) return;
-                  var input = card.querySelector("[data-effort-model]");
-                  var model = input && input.value.trim() ? input.value.trim() : globalModel();
+                  var model = effectiveModel(card);
+                  var version = card.effortLookupVersion = (card.effortLookupVersion || 0) + 1;
+                  function stale() {
+                    return version !== card.effortLookupVersion || model !== effectiveModel(card);
+                  }
                   if (!model) { status(card, "Set a model first."); return; }
                   status(card, "Checking\u2026");
                   fetch("/ai/model-reasoning?model=" + encodeURIComponent(model), { headers: { Accept: "application/json" } })
@@ -1191,6 +1213,7 @@
                       });
                     })
                     .then(function (info) {
+                      if (stale()) return;
                       if (!info.found) {
                         // The card may carry a previous model's narrowed ladder;
                         // "keeping the full list" must actually restore it.
@@ -1208,6 +1231,7 @@
                       status(card, bits.join(" · "));
                     })
                     .catch(function (err) {
+                      if (stale()) return;
                       // Same as the unknown-model path: a failure still has to put
                       // the full list back, not leave a stale narrowed one behind.
                       rebuild(select, null, false);

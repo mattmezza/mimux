@@ -52,7 +52,7 @@ type ReasoningInfo struct {
 type reasoningDescriptor struct {
 	SupportedEfforts []string `json:"supported_efforts"`
 	DefaultEffort    string   `json:"default_effort"`
-	DefaultEnabled   bool     `json:"default_enabled"`
+	DefaultEnabled   *bool    `json:"default_enabled"`
 	Mandatory        bool     `json:"mandatory"`
 }
 
@@ -116,7 +116,13 @@ func reasoningFor(entries []modelEntry, modelID string) ReasoningInfo {
 		info.SupportsReasoning = true
 		info.SupportedEfforts = e.Reasoning.SupportedEfforts
 		info.DefaultEffort = e.Reasoning.DefaultEffort
-		info.DefaultEnabled = e.Reasoning.DefaultEnabled
+		// Older catalogue entries omit default_enabled. Mandatory reasoning
+		// or an active default effort still establishes that it is enabled.
+		info.DefaultEnabled = e.Reasoning.Mandatory ||
+			(e.Reasoning.DefaultEffort != "" && e.Reasoning.DefaultEffort != "none")
+		if e.Reasoning.DefaultEnabled != nil {
+			info.DefaultEnabled = *e.Reasoning.DefaultEnabled
+		}
 		info.Mandatory = e.Reasoning.Mandatory
 		return info
 	}
