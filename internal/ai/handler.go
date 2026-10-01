@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -58,6 +59,27 @@ func Routes(newClient func(store.AIFeature) *Client) chi.Router {
 			draft = mail.SanitizeComposeHTML(draft)
 		}
 		writeJSON(w, map[string]any{"draft": draft, "subject": res.Subject})
+	})
+
+	// GET /ai/model-reasoning?model=<id> — the per-model reasoning descriptor
+	// the Settings UI narrows its effort selector with.
+	//
+	// Served here rather than called from the browser because the provider key
+	// is server-side. Any feature's client works: the key and base URL are
+	// shared, and the model is the query argument.
+	r.Get("/model-reasoning", func(w http.ResponseWriter, r *http.Request) {
+		model := strings.TrimSpace(r.URL.Query().Get("model"))
+		if model == "" {
+			httpErr(w, http.StatusBadRequest, "No model given.")
+			return
+		}
+		info, err := newClient(store.AISummarize).ModelReasoning(r.Context(), model)
+		if err != nil {
+			slog.Error("ai model reasoning", "model", model, "err", err)
+			httpErr(w, http.StatusBadGateway, "Couldn't read the model catalogue \u2014 the full list still works.")
+			return
+		}
+		writeJSON(w, info)
 	})
 
 	// POST /ai/refine — rewrite the current draft (shorter|formal|friendlier).

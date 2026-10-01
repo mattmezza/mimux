@@ -153,6 +153,38 @@ func ValidSummaryLevel(v, def string) string {
 	return def
 }
 
+// AllReasoningEfforts lists the reasoning (chain-of-thought) levels the AI
+// integration accepts, strongest first. The empty ID is the inherit value: it
+// means "send no reasoning parameter at all", i.e. the model's own default —
+// today's behaviour, and the recommended default everywhere.
+//
+// NOTE: this fixed set is the *contract*, not a model's live capability list.
+// The value goes into a JSON request body, so it must never be free text, and
+// a save must not fail just because a capability lookup was unavailable.
+// Narrowing the selector to what a model actually supports is a UI affordance
+// on top of this set (see the /ai/model-reasoning endpoint).
+var AllReasoningEfforts = []struct{ ID, Label string }{
+	{"", "Default (model's own)"},
+	{"max", "Max"},
+	{"xhigh", "Extra high"},
+	{"high", "High"},
+	{"medium", "Medium"},
+	{"low", "Low"},
+	{"minimal", "Minimal"},
+	{"none", "Off — never reason"},
+}
+
+// ValidReasoningEffort returns v when it names an effort (the empty inherit
+// value included), else def.
+func ValidReasoningEffort(v, def string) string {
+	for _, e := range AllReasoningEfforts {
+		if e.ID == v {
+			return v
+		}
+	}
+	return def
+}
+
 // AllQuickActions lists every message action the user can place in the action
 // bar, in the "⋯" menu, or hide entirely — in their default display order.
 var AllQuickActions = []struct{ ID, Label string }{
@@ -568,6 +600,16 @@ type AppConfig struct {
 	AIRefineModel          string
 	AISummarizeModel       string
 	AIThreadSummarizeModel string
+	// Reasoning (chain-of-thought) effort. Blank means "send no reasoning
+	// parameter at all" — the model's own default, i.e. today's behaviour —
+	// which also makes the whole feature purely opt-in. Same inherit-or-global
+	// shape as the models above; see AllReasoningEfforts for the values.
+	AIReasoningEffort                string
+	AIComposeReasoningEffort         string
+	AIOptionsReasoningEffort         string
+	AIRefineReasoningEffort          string
+	AISummarizeReasoningEffort       string
+	AIThreadSummarizeReasoningEffort string
 	// Tone/brevity/language are shared: they describe the user's voice, not one
 	// feature, and refine's own action ("more formal", "warmer") already carries
 	// its per-call direction.
@@ -686,6 +728,38 @@ func (c AppConfig) ModelFor(f AIFeature) string {
 	return c.AIModel
 }
 
+// ReasoningFor resolves the reasoning effort one feature runs on: its own
+// override where set, else the global default. Mirrors ModelFor. Blank means
+// "omit the reasoning parameter", so a global default set in Settings applies
+// everywhere except features the user pins explicitly.
+func (c AppConfig) ReasoningFor(f AIFeature) string {
+	var override string
+	switch f {
+	case AICompose:
+		override = c.AIComposeReasoningEffort
+	case AIOptions:
+		override = c.AIOptionsReasoningEffort
+	case AIRefine:
+		override = c.AIRefineReasoningEffort
+	case AISummarize:
+		override = c.AISummarizeReasoningEffort
+	case AIThreadSummarize:
+		override = c.AIThreadSummarizeReasoningEffort
+	}
+	if override != "" {
+		return override
+	}
+	return c.AIReasoningEffort
+}
+
+// reasoningSetting reads one reasoning-effort setting, re-validated on read:
+// a hand-edited DB row is still untrusted, and anything unknown becomes ""
+// (inherit / no parameter).
+func reasoningSetting(s *Store, key string) string {
+	v, _ := s.getSetting(key)
+	return ValidReasoningEffort(v, "")
+}
+
 func (s *Store) GetAppConfig() AppConfig {
 	c := AppConfig{TranslateTarget: "en", AIModel: defaultAIModel,
 		AITone: "neutral", AIBrevity: "normal", AIReplyOptions: 3, AILanguage: "auto",
@@ -710,6 +784,12 @@ func (s *Store) GetAppConfig() AppConfig {
 	c.AIRefineModel, _ = s.getSetting("ai_refine_model")
 	c.AISummarizeModel, _ = s.getSetting("ai_summarize_model")
 	c.AIThreadSummarizeModel, _ = s.getSetting("ai_thread_summary_model")
+	c.AIReasoningEffort = reasoningSetting(s, "ai_reasoning")
+	c.AIComposeReasoningEffort = reasoningSetting(s, "ai_compose_reasoning")
+	c.AIOptionsReasoningEffort = reasoningSetting(s, "ai_options_reasoning")
+	c.AIRefineReasoningEffort = reasoningSetting(s, "ai_refine_reasoning")
+	c.AISummarizeReasoningEffort = reasoningSetting(s, "ai_summarize_reasoning")
+	c.AIThreadSummarizeReasoningEffort = reasoningSetting(s, "ai_thread_summary_reasoning")
 	if v, ok := s.getSetting("ai_thread_summary_enabled"); ok {
 		c.AIThreadSummaryEnabled = v == "1" || v == "true"
 	}
@@ -783,29 +863,44 @@ func (s *Store) SaveAppConfig(c AppConfig) error {
 	default:
 		c.IconShape = "rounded"
 	}
+	// Reasoning efforts are re-validated on write against the fixed set, so an
+	// invalid value can never reach a request body. Read re-validates too.
+	c.AIReasoningEffort = ValidReasoningEffort(c.AIReasoningEffort, "")
+	c.AIComposeReasoningEffort = ValidReasoningEffort(c.AIComposeReasoningEffort, "")
+	c.AIOptionsReasoningEffort = ValidReasoningEffort(c.AIOptionsReasoningEffort, "")
+	c.AIRefineReasoningEffort = ValidReasoningEffort(c.AIRefineReasoningEffort, "")
+	c.AISummarizeReasoningEffort = ValidReasoningEffort(c.AISummarizeReasoningEffort, "")
+	c.AIThreadSummarizeReasoningEffort = ValidReasoningEffort(c.AIThreadSummarizeReasoningEffort, "")
 	kv := map[string]string{
 		"translate_api_key": c.TranslateAPIKey,
 		"translate_target":  c.TranslateTarget,
 		"ai_openrouter_key": c.AIKey,
 		"ai_model":          c.AIModel,
 		// Overrides are stored as-is: blank means "inherit ai_model".
-		"ai_compose_model":          c.AIComposeModel,
-		"ai_options_model":          c.AIOptionsModel,
-		"ai_refine_model":           c.AIRefineModel,
-		"ai_summarize_model":        c.AISummarizeModel,
-		"ai_thread_summary_model":   c.AIThreadSummarizeModel,
-		"ai_thread_summary_enabled": boolStr(c.AIThreadSummaryEnabled),
-		"ai_tone":                   c.AITone,
-		"ai_brevity":                c.AIBrevity,
-		"ai_reply_options":          strconv.Itoa(c.AIReplyOptions),
-		"ai_language":               c.AILanguage,
-		"ai_summary_level":          c.AISummaryLevel,
-		"ai_thread_summary_level":   c.AIThreadSummaryLevel,
-		"ui_accent":                 c.Accent,
-		"icon_bg":                   c.IconBG,
-		"icon_accent":               c.IconAccent,
-		"icon_leaf":                 c.IconLeaf,
-		"icon_shape":                c.IconShape,
+		"ai_compose_model":        c.AIComposeModel,
+		"ai_options_model":        c.AIOptionsModel,
+		"ai_refine_model":         c.AIRefineModel,
+		"ai_summarize_model":      c.AISummarizeModel,
+		"ai_thread_summary_model": c.AIThreadSummarizeModel,
+		// Reasoning efforts: blank means "send no parameter" / "inherit".
+		"ai_reasoning":                c.AIReasoningEffort,
+		"ai_compose_reasoning":        c.AIComposeReasoningEffort,
+		"ai_options_reasoning":        c.AIOptionsReasoningEffort,
+		"ai_refine_reasoning":         c.AIRefineReasoningEffort,
+		"ai_summarize_reasoning":      c.AISummarizeReasoningEffort,
+		"ai_thread_summary_reasoning": c.AIThreadSummarizeReasoningEffort,
+		"ai_thread_summary_enabled":   boolStr(c.AIThreadSummaryEnabled),
+		"ai_tone":                     c.AITone,
+		"ai_brevity":                  c.AIBrevity,
+		"ai_reply_options":            strconv.Itoa(c.AIReplyOptions),
+		"ai_language":                 c.AILanguage,
+		"ai_summary_level":            c.AISummaryLevel,
+		"ai_thread_summary_level":     c.AIThreadSummaryLevel,
+		"ui_accent":                   c.Accent,
+		"icon_bg":                     c.IconBG,
+		"icon_accent":                 c.IconAccent,
+		"icon_leaf":                   c.IconLeaf,
+		"icon_shape":                  c.IconShape,
 	}
 	for k, v := range kv {
 		if err := s.setSetting(k, v); err != nil {

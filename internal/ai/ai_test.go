@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -177,6 +178,47 @@ func TestChat_CancelledContextSkipsBackoff(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Errorf("attempts = %d, want 1", hits)
+	}
+}
+
+// The reasoning parameter is opt-in and travels on every feature's request:
+// blank sends no field at all (the model's own default — today's behaviour),
+// an effort sends {effort, exclude:true}.
+func TestChat_ReasoningEffort(t *testing.T) {
+	var raw string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		raw = string(b)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	c := &Client{BaseURL: srv.URL, Model: "test-model", HTTPClient: srv.Client()}
+	if _, err := c.Draft(context.Background(), "plain", "", "hi", false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(raw, "reasoning") {
+		t.Errorf("blank effort sent a reasoning field: %s", raw)
+	}
+
+	c.ReasoningEffort = "high"
+	if _, err := c.Draft(context.Background(), "plain", "", "hi", false); err != nil {
+		t.Fatal(err)
+	}
+	// exclude is orthogonal to effort: it hides the tokens from the response,
+	// it does not turn reasoning off.
+	if !strings.Contains(raw, `"reasoning":{"effort":"high","exclude":true}`) {
+		t.Errorf("request body = %s", raw)
+	}
+
+	// "none" is a real value, not an omission: reasoning is explicitly off.
+	c.ReasoningEffort = "none"
+	if _, err := c.Draft(context.Background(), "plain", "", "hi", false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"reasoning":{"effort":"none","exclude":true}`) {
+		t.Errorf("request body = %s", raw)
 	}
 }
 

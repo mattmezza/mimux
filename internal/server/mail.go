@@ -54,6 +54,9 @@ var templateFuncs = template.FuncMap{
 	"humanBytes":     humanBytes,
 	"attachKind":     attachmentKind,
 	"translateLangs": func() []translate.Language { return translate.Languages },
+	// The reasoning scale lives in the store (AllReasoningEfforts), not in the
+	// markup: the same list is the write-time contract, so the two cannot drift.
+	"reasoningEfforts": func() []struct{ ID, Label string } { return store.AllReasoningEfforts },
 }
 
 // toJSON marshals a value to a compact JSON string for embedding in a data-*
@@ -863,6 +866,10 @@ func (s *Server) ownerEmails(messages []store.Message) []string {
 func (s *Server) aiClient(f store.AIFeature) *ai.Client {
 	c := s.store.GetAppConfig()
 	cl := ai.NewClient(c.AIKey, c.ModelFor(f))
+	// The per-task reasoning level travels the same path as the per-task model:
+	// every AI call site already goes through aiClient(feature), so none of them
+	// needs to know this setting exists.
+	cl.ReasoningEffort = c.ReasoningFor(f)
 	cl.Prefs = ai.Prefs{
 		Tone:         c.AITone,
 		Brevity:      c.AIBrevity,

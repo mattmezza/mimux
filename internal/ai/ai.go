@@ -86,11 +86,16 @@ type DraftResult struct {
 // Client talks to an OpenAI-compatible chat completions API — OpenRouter by
 // default, see defaultAPIURL.
 type Client struct {
-	APIKey     string
-	Model      string
-	BaseURL    string // blank is OpenRouter; accepts a base ("http://llama:8080/v1") or a full endpoint
-	Prefs      Prefs
-	HTTPClient *http.Client
+	APIKey string
+	Model  string
+	// ReasoningEffort is one of store.AllReasoningEfforts; "" omits the
+	// reasoning parameter entirely (the model's own default). Set per feature
+	// from AppConfig.ReasoningFor, so the same task always asks for the same
+	// depth without any call site knowing about it.
+	ReasoningEffort string
+	BaseURL         string // blank is OpenRouter; accepts a base ("http://llama:8080/v1") or a full endpoint
+	Prefs           Prefs
+	HTTPClient      *http.Client
 }
 
 // NewClient builds a Client with a sane default timeout.
@@ -127,9 +132,28 @@ type message struct {
 	Content string `json:"content"`
 }
 
+// reasoning is OpenRouter's normalized reasoning control.
+//
+// NOTE: Effort and Exclude are orthogonal — do not conflate them.
+//   - Effort selects how much the model thinks; "none" is the explicit
+//     "never reason" value, not an alias for "low".
+//   - Exclude hides the reasoning tokens from the RESPONSE only. The model
+//     still reasons, the tokens are still billed, and they still count against
+//     max_tokens. mimux reads only choices[0].message.content, so shipping the
+//     reasoning back is pure waste: Exclude is set unconditionally whenever the
+//     parameter is sent. It is an optimisation, not a disable.
+//
+// The legacy include_reasoning:false mapped to {exclude:true} for the same
+// reason; effort:"none" is what actually turns reasoning off.
+type reasoning struct {
+	Effort  string `json:"effort,omitempty"` // omitempty is a safety net; the caller never builds an empty one
+	Exclude bool   `json:"exclude"`          // always sent: the whole point is to not ship the tokens back
+}
+
 type chatRequest struct {
-	Model    string    `json:"model"`
-	Messages []message `json:"messages"`
+	Model     string     `json:"model"`
+	Messages  []message  `json:"messages"`
+	Reasoning *reasoning `json:"reasoning,omitempty"`
 }
 
 type chatResponse struct {
@@ -292,13 +316,24 @@ func (c *Client) chat(ctx context.Context, sysPrompt, userPrompt string) (string
 	if !c.Enabled() {
 		return "", ErrDisabled
 	}
-	body, err := json.Marshal(chatRequest{
+	req := chatRequest{
 		Model: c.Model,
 		Messages: []message{
 			{Role: "system", Content: sysPrompt},
 			{Role: "user", Content: userPrompt},
 		},
-	})
+	}
+	// Blank means today's behaviour: no reasoning field at all, whatever the
+	// provider decides. Only an explicitly configured effort adds the object.
+	//
+	// A non-OpenRouter base URL (a local llama.cpp/Ollama sidecar) has no such
+	// field in its spec: it is ignored, or a strict gateway rejects it. Either
+	// way the outcome surfaces as a normal AI error — never a silent downgrade
+	// — because that is what chatOnce does with a non-200.
+	if c.ReasoningEffort != "" {
+		req.Reasoning = &reasoning{Effort: c.ReasoningEffort, Exclude: true}
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
 	}

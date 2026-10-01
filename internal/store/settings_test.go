@@ -167,6 +167,91 @@ func TestAIModelFor(t *testing.T) {
 	}
 }
 
+func TestValidReasoningEffort(t *testing.T) {
+	// The contract is this fixed set: the empty inherit value plus the seven
+	// OpenRouter efforts, "none" (off) included.
+	want := map[string]bool{"": true, "max": true, "xhigh": true, "high": true,
+		"medium": true, "low": true, "minimal": true, "none": true}
+	seen := map[string]bool{}
+	for _, e := range AllReasoningEfforts {
+		if seen[e.ID] {
+			t.Errorf("effort %q listed twice", e.ID)
+		}
+		seen[e.ID] = true
+		if e.Label == "" {
+			t.Errorf("effort %q has no label", e.ID)
+		}
+		if got := ValidReasoningEffort(e.ID, "junk"); got != e.ID {
+			t.Errorf("ValidReasoningEffort(%q) = %q", e.ID, got)
+		}
+	}
+	// The set is checked against a literal list, not against itself, so a
+	// value silently dropped from AllReasoningEfforts fails here.
+
+	if len(seen) != len(want) {
+		t.Fatalf("effort set = %v, want %v", seen, want)
+	}
+	for id := range want {
+		if !seen[id] {
+			t.Errorf("effort %q missing from AllReasoningEfforts", id)
+		}
+	}
+	// Anything else is replaced by the caller's default, never stored.
+	for _, bad := range []string{"enormous", "NONE", "high ", "true"} {
+		if got := ValidReasoningEffort(bad, "medium"); got != "medium" {
+			t.Errorf("ValidReasoningEffort(%q) = %q, want medium", bad, got)
+		}
+	}
+}
+
+func TestAIReasoningFor(t *testing.T) {
+	s := open(t)
+	// Nothing configured: no reasoning parameter is sent anywhere, which is
+	// exactly today's behaviour and makes the whole feature opt-in.
+	c := s.GetAppConfig()
+	if c.AIReasoningEffort != "" {
+		t.Fatalf("default reasoning effort = %q, want blank", c.AIReasoningEffort)
+	}
+	for _, f := range []AIFeature{AICompose, AIOptions, AIRefine, AISummarize, AIThreadSummarize} {
+		if got := c.ReasoningFor(f); got != "" {
+			t.Fatalf("%s reasoning = %q, want blank", f, got)
+		}
+	}
+	// A global default reaches every feature that does not pin its own; a
+	// per-feature override wins, "none" (off) included.
+	c.AIReasoningEffort = "medium"
+	c.AIThreadSummarizeReasoningEffort = "high"
+	c.AIRefineReasoningEffort = "none"
+	if err := s.SaveAppConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	c = s.GetAppConfig()
+	for f, want := range map[AIFeature]string{
+		AICompose: "medium", AIOptions: "medium", AISummarize: "medium",
+		AIThreadSummarize: "high", AIRefine: "none",
+	} {
+		if got := c.ReasoningFor(f); got != want {
+			t.Errorf("%s reasoning = %q, want %q", f, got, want)
+		}
+	}
+	// Invalid values are dropped on write and on read: they can never reach a
+	// JSON request body.
+	c.AIReasoningEffort = "enormous"
+	c.AIOptionsReasoningEffort = "  "
+	if err := s.SaveAppConfig(c); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetAppConfig(); got.AIReasoningEffort != "" || got.AIOptionsReasoningEffort != "" {
+		t.Errorf("invalid efforts stored: global=%q options=%q", got.AIReasoningEffort, got.AIOptionsReasoningEffort)
+	}
+	if err := s.setSetting("ai_summarize_reasoning", "nope"); err != nil {
+		t.Fatal(err)
+	}
+	if got := s.GetAppConfig().AISummarizeReasoningEffort; got != "" {
+		t.Errorf("hand-edited bad row survived the read: %q", got)
+	}
+}
+
 func TestAIConfigUpgradeFromFlatKeys(t *testing.T) {
 	// An install configured before the per-feature split: only the old flat keys
 	// exist. They must keep working as the shared defaults.
