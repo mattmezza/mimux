@@ -78,9 +78,15 @@ func TestSteadySyncsEverySelectedFolder(t *testing.T) {
 	})
 	eventually(t, "the cycle to finish", func() bool { return a.getStatus().State == "ok" })
 
-	if mbox := c.Mailbox(); mbox == nil || mbox.Name != "INBOX" {
-		t.Errorf("cycle ended on %v, want INBOX selected — IDLE waits on whatever is selected", mbox)
-	}
+	// SELECT's tagged OK unblocks Wait before go-imap records the mailbox
+	// on its reader goroutine. The account can therefore already report "ok"
+	// while Mailbox is still nil (see TestSelectInboxAfterReadOnlyCommand).
+	// Wait for that bookkeeping as well as the completed sync; an incorrect
+	// final selection still fails at the deadline.
+	eventually(t, "the completed cycle to leave INBOX selected", func() bool {
+		mbox := c.Mailbox()
+		return a.getStatus().State == "ok" && mbox != nil && mbox.Name == "INBOX"
+	})
 
 	cancel()
 	select {
