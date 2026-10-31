@@ -108,10 +108,11 @@
    header still claimed "N local results". Search states unread/starred with
    its own is: operators. --- */
 [data-filter="unread"] #message-list-items li[data-message-row]:not([data-mid]):not([data-unread]),
+[data-filter="unread"] #message-list-items li[data-message-row][data-mid].triaged-read,
 [data-filter="starred"] #message-list-items li[data-message-row]:not([data-starred]) {
   display: none;
 }
-[data-filter="unread"] #message-list-items [data-day-group]:not(:has(li[data-message-row][data-unread])):not(:has(li[data-message-row].just-read)),
+[data-filter="unread"] #message-list-items [data-day-group]:not(:has(li[data-message-row][data-unread])),
 [data-filter="starred"] #message-list-items [data-day-group]:not(:has(li[data-message-row][data-starred])) { display: none; }
 /* …and with a filter on, hide the load-more sentinel too: nearly every appended
    row is filtered away, which leaves the sentinel still on screen after the
@@ -124,12 +125,6 @@
 [data-filter="starred"] #list-more {
   display: none;
 }
-/* A message just marked read (while open) stays visible under the Unread filter
-   instead of vanishing mid-read; the next list refresh re-filters it out. */
-[data-filter="unread"] #message-list-items li[data-message-row].just-read {
-  display: flex !important;
-}
-
 /* Brief highlight when a row flips to read, so the change is noticeable. */
 @keyframes read-flash {
   from { background-color: color-mix(in srgb, var(--color-indigo-500, #6366f1) 22%, transparent); }

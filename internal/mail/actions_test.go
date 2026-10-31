@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"testing"
 	"time"
@@ -13,7 +14,7 @@ import (
 
 // TestUserActionsBroadcast: read, star, label and move are the four things a
 // person does to a message, and until they broadcast, every other tab and
-// device stayed wrong until the next sync poll. Each mutation is one new-mail.
+// device stayed wrong until the next sync poll. Read changes carry targeted state; other mutations announce a list change.
 func TestUserActionsBroadcast(t *testing.T) {
 	st := testStore(t)
 	c := newTestIMAP(t, testMessage("alice@example.com", "hi"))
@@ -64,7 +65,21 @@ func TestUserActionsBroadcast(t *testing.T) {
 		}
 		select {
 		case e := <-events:
-			if e.Type != "new-mail" || e.Data != "acct" {
+			if act.name == "read" {
+				var state struct {
+					ID   string `json:"id"`
+					Read bool   `json:"read"`
+				}
+				if e.Type != "read-state" || json.Unmarshal([]byte(e.Data), &state) != nil || state.ID != strconv.FormatInt(msg.ID, 10) {
+					t.Fatalf("invalid targeted read event: %+v", e)
+				}
+				// Broadcast the database truth, including when this IMAP completion
+				// belongs to an older action.
+				current, _ := st.MessageByID(msg.ID)
+				if state.Read != current.IsRead {
+					t.Fatalf("stale read state: %+v", state)
+				}
+			} else if e.Type != "new-mail" || e.Data != "acct" {
 				t.Errorf("%s broadcast %q/%q, want new-mail for the account", act.name, e.Type, e.Data)
 			}
 		case <-time.After(2 * time.Second):

@@ -27,7 +27,7 @@
 
 {{define "message_detail"}}
 {{$m := .Msg}}
-<div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
+<div class="h-full w-full flex flex-col" id="message-detail" data-message-id="{{$m.ID}}" data-is-read="{{if $m.IsRead}}1{{else}}0{{end}}" data-dark-default="{{if .DarkDefault}}1{{else}}0{{end}}" data-remember-theme="{{if .RememberTheme}}1{{else}}0{{end}}" data-mark-read-delay="{{.MarkReadDelay}}"{{if .MarkReadPending}} data-mark-read-pending="1"{{end}} tabindex="-1">
   <div class="shrink-0 border-b border-zinc-800 p-4">
     {{/* Row 1: back (mobile) on the left, quick actions on the right — the
          subject gets its own full-width row below instead of being squeezed. */}}
@@ -205,7 +205,7 @@
 {{else if eq .ID "unread"}}
 {{/* State-aware: normally a message is read on open so this marks it unread;
      under the Unread filter it opens still-unread, so it offers Mark read. */}}
-<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}" hx-post="/messages/{{$m.ID}}/{{if $m.IsRead}}unread{{else}}read{{end}}{{$sub}}" hx-target="#msg-{{$row}}" hx-swap="outerHTML"
+<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}" onclick="toggleMessageRead(this, '{{$m.ID}}')"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
   {{if $menu}}<span>Mark {{if $m.IsRead}}unread{{else}}read{{end}}</span>{{end}}

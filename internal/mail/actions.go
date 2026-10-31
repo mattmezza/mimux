@@ -3,6 +3,7 @@ package mail
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -180,7 +181,16 @@ func (m *Manager) setRead(ctx context.Context, c *imapclient.Client, msg *store.
 	if err := m.storeFlag(ctx, c, msg, imap.FlagSeen, read); err != nil {
 		return err
 	}
-	defer m.changed(msg)
+	// Read changes patch rows in place; a generic new-mail event would rebuild
+	// every open list after IMAP finishes and disrupt optimistic triage.
+	defer func() {
+		current, err := m.st.MessageByID(msg.ID)
+		if err != nil || current == nil {
+			return
+		}
+		data, _ := json.Marshal(map[string]any{"id": strconv.FormatInt(msg.ID, 10), "read": current.IsRead})
+		m.hub.broadcast(Event{Type: "read-state", Data: string(data)})
+	}()
 	m.updated(msg, changeWord(read, "read", "unread"), originMimux)
 	return m.st.ClearSeenDirty(msg.ID, read)
 }

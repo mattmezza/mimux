@@ -398,7 +398,7 @@ document.addEventListener("alpine:init", () => {
     // Reassign the whole object (not just a key) so Alpine reliably reacts even
     // for account names it hasn't seen before.
     toggleAcct(name) { this.accts = { ...this.accts, [name]: !this.accts[name] }; this._save(); },
-    setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); this._syncFilterURL(); },
+    setFilter(f) { this.filter = this.filter === f ? "" : f; this._save(); this._syncFilterURL(); this.$nextTick(updateReadEmptyState); },
     // Keep the active filter in the address bar so it's bookmarkable, without
     // adding a history entry per toggle.
     _syncFilterURL() {
@@ -556,6 +556,16 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
       }
       opened = true;
     });
+    es.addEventListener("read-state", (e) => {
+      const state = JSON.parse(e.data);
+      const id = String(state.id);
+      if (!readChanges.get(id)?.pending) {
+        readChanges.set(id, { read: state.read, thread: false, pending: false });
+        readRevision++;
+        applyReadState(id, state.read, false);
+      }
+      refreshUnreadTitle();
+    });
     es.addEventListener("new-mail", () => { document.body.dispatchEvent(new Event("mimux:refresh")); refreshUnreadTitle(); });
     // data is "1"/"0": is ANY account syncing, computed server-side (handleEvents).
     es.addEventListener("sync-status", (e) => { setSyncing(e.data === "1"); document.body.dispatchEvent(new Event("mimux:sync")); refreshUnreadTitle(); });
@@ -707,7 +717,7 @@ document.addEventListener("htmx:beforeSwap", (e) => {
   if (!e.target || e.target.id !== "message-list") return;
   const r = selectedRow();
   selBefore = e.detail?.requestConfig?.elt?.id !== "message-list" ? null
-    : { id: r?.id, i: r ? listRows().indexOf(r) : -1, scroll: e.target.scrollTop, ids: new Set(listRows().map((x) => x.id)) };
+    : { id: r?.id, i: r ? listRows().indexOf(r) : -1, scroll: e.target.scrollTop, anchors: listRows().map((row) => ({ id: row.id, top: row.getBoundingClientRect().top })).filter((a) => a.top >= e.target.getBoundingClientRect().top), ids: new Set(listRows().map((x) => x.id)) };
 });
 // afterSettle, not afterSwap: with hx-swap="outerHTML" the new section is only
 // in the DOM by then — at afterSwap the class would land on the doomed one.
@@ -716,6 +726,8 @@ document.addEventListener("htmx:afterSettle", (e) => {
   const prev = selBefore;
   selBefore = null;
   e.target.scrollTop = prev.scroll;
+  const anchor = prev.anchors.find((a) => document.getElementById(a.id)?.offsetParent !== null && document.getElementById(a.id));
+  if (anchor) e.target.scrollTop += document.getElementById(anchor.id).getBoundingClientRect().top - anchor.top;
   // Rows that weren't in the pre-swap snapshot just arrived at the top — a
   // fresh render/folder switch/search takes no snapshot, so nothing animates then.
   listRows().forEach((row) => { if (!prev.ids.has(row.id)) row.classList.add("row-enter"); });
@@ -2246,26 +2258,152 @@ function postMarkRead(id, read, thread) {
   return postAction(`/messages/${id}/${read ? "read" : "unread"}`, thread ? { headers: { "X-Mimux-Thread": "1" } } : undefined);
 }
 
-// markRead flips the row right away (a slow link shouldn't make the UI feel
-// stuck) and undoes the flip with a toast when the server never took it, so the
-// list can never silently disagree with what the next sync will show.
-function markRead(id, read, thread) {
-  if (read) markRowRead(id, thread); else markRowUnread(id, thread);
-  return postMarkRead(id, read, thread).catch(() => {
-    if (read) markRowUnread(id, thread); else markRowRead(id, thread);
-    toast(`Couldn't mark ${read ? "read" : "unread"} — still ${read ? "unread" : "read"}.`);
-  });
+// Keep local intent over list responses that were generated before the POST
+// finished. Entries expire on the next response requested after persistence.
+const readChanges = new Map();
+const readQueues = new Map();
+const readSnapshots = new WeakMap();
+const readQueueKeys = new Map();
+let readRevision = 0;
+document.addEventListener("htmx:beforeRequest", (e) => {
+  if (!e.detail?.xhr) return;
+  readSnapshots.set(e.detail.xhr, { revision: readRevision,
+    settled: [...readChanges].filter(([, c]) => !c.pending) });
+});
+document.addEventListener("htmx:beforeSwap", (e) => {
+  const snapshot = e.detail?.xhr && readSnapshots.get(e.detail.xhr);
+  if (e.target?.id !== "message-list" || !snapshot || snapshot.revision === readRevision) return;
+  // Navigation remains authoritative; only discard obsolete background list
+  // refreshes. A canceled response must also settle the sync indicator.
+  if (e.detail.requestConfig?.elt?.id !== "message-list") return;
+  e.detail.shouldSwap = false;
+  if (!mimuxSyncing) {
+    smAwaitList = false;
+    document.body.classList.remove("mimux-syncing");
+  }
+});
+document.addEventListener("htmx:afterSwap", (e) => {
+  if (!e.target?.closest?.("#message-list")) return;
+  const snapshot = e.detail?.xhr && readSnapshots.get(e.detail.xhr);
+  // Only a full list response can retire overrides. Appending a page cannot
+  // establish that the existing rows reflect the persisted state.
+  if (e.target.id === "message-list" && snapshot?.revision === readRevision) {
+    if (snapshot.settled.length) readRevision++;
+    snapshot.settled.forEach(([id, change]) => {
+      if (readChanges.get(id) === change) readChanges.delete(id);
+    });
+  }
+  readChanges.forEach((c, id) => applyReadState(id, c.read, c.thread));
+  updateReadEmptyState();
+});
+
+function updateReadEmptyState() {
+  const list = document.getElementById("message-list");
+  if (!list) return;
+  let empty = list.querySelector("[data-triage-empty]");
+  const done = activeFilter() === "unread" && list.querySelector("#message-list-items") &&
+    !list.querySelector('li[data-message-row]:not([data-mid])[data-unread]');
+  if (done && !empty) {
+    empty = document.createElement("p");
+    empty.dataset.triageEmpty = "";
+    empty.className = "p-8 text-center text-sm text-zinc-400";
+    empty.textContent = "No unread messages left.";
+    list.appendChild(empty);
+  } else if (!done) empty?.remove();
 }
 
-// Flip a list row from unread to read in place: drop the dot, un-bold the text,
-// and clear data-unread. Adds .just-read so the row stays visible even under an
-// active "Unread" quick filter (per requirement — a just-read message shouldn't
-// vanish out from under you; the next list refresh removes it correctly).
-// A message can be on screen twice when it is the latest member of a thread:
-// the conversation row uses msg-<id>, while the expanded message uses
-// msg-s<id>. A per-message change must start at the sub-row so the parent stays
-// unread until every child is read. A whole-thread change updates every loaded
-// child as well as the aggregate row.
+// Thread membership lets an individual message event update a collapsed
+// conversation correctly without fetching or replacing the list.
+function applyReadState(id, read, thread) {
+  const parents = [...document.querySelectorAll("#message-list [data-members]")];
+  const parent = parents.find((row) => row.dataset.members.trim().split(/\s+/).includes(id));
+  if (thread) {
+    const root = document.getElementById(`msg-${id}`);
+    if (root?.dataset.members) root.dataset.unreadMembers = read ? "" : root.dataset.members;
+  } else if (parent) {
+    const unread = new Set(parent.dataset.unreadMembers.trim().split(/\s+/).filter(Boolean));
+    if (read) unread.delete(id); else unread.add(id);
+    parent.dataset.unreadMembers = [...unread].join(" ");
+  }
+  if (!thread && parent) {
+    const sub = document.getElementById(`msg-s${id}`);
+    if (sub) { if (read) setRowRead(sub); else setRowUnread(sub); }
+  } else if (read) markRowRead(id, thread); else markRowUnread(id, thread);
+  if (!thread && parent) {
+    if (parent.dataset.unreadMembers.trim()) setRowUnread(parent); else setRowRead(parent);
+  }
+  const pane = document.getElementById("message-detail");
+  if (pane?.dataset.messageId === id) pane.dataset.isRead = read ? "1" : "0";
+  pane?.querySelectorAll("[data-thread-msg]").forEach((block) => {
+    if (block.dataset.msgId === id || (thread && parent?.dataset.members.trim().split(/\s+/).includes(block.dataset.msgId))) {
+      setThreadMsgRead(block, read);
+    }
+  });
+  updateReadEmptyState();
+}
+
+function markRead(id, read, thread, offerUndo = false) {
+  id = String(id);
+  const parent = [...document.querySelectorAll("#message-list [data-members]")]
+    .find((row) => row.dataset.members.trim().split(/\s+/).includes(id));
+  const ids = thread && parent ? parent.dataset.members.trim().split(/\s+/) : [id];
+  const unread = new Set(parent?.dataset.unreadMembers.trim().split(/\s+/) || []);
+  const changes = ids.map((mid) => {
+    const previous = readChanges.get(mid);
+    const wasRead = previous ? previous.read : parent ? !unread.has(mid)
+      : !rowsFor(mid, false).some((row) => row.hasAttribute("data-unread"));
+    const change = { read, thread: false, pending: true, previous, wasRead };
+    readChanges.delete(mid);
+    readChanges.set(mid, change);
+    return { mid, previous, wasRead, change };
+  });
+  readRevision++;
+  ids.forEach((mid) => applyReadState(mid, read, false));
+  const key = parent?.id || readQueueKeys.get(id) || id;
+  ids.forEach((mid) => readQueueKeys.set(mid, key));
+  const prior = readQueues.get(key) || Promise.resolve();
+  const request = prior.catch(() => {}).then(() => postMarkRead(id, read, thread));
+  readQueues.set(key, request);
+  const result = request.then(() => {
+    changes.forEach(({ change }) => { change.pending = false; });
+    readRevision++;
+    refreshUnreadTitle();
+    // An unread action can restore a message omitted by a previous server list.
+    if (!read && !rowsFor(id, false).length) document.body.dispatchEvent(new Event("mimux:refresh"));
+  }, () => {
+    changes.forEach(({ mid, previous, wasRead, change }) => {
+      change.failed = true;
+      change.pending = false;
+      if (readChanges.get(mid) !== change) return;
+      let restore = previous, fallback = wasRead;
+      while (restore?.failed) { fallback = restore.wasRead; restore = restore.previous; }
+      readChanges.delete(mid);
+      if (restore) readChanges.set(mid, restore);
+      applyReadState(mid, restore ? restore.read : fallback, false);
+    });
+    readRevision++;
+    toast(`Couldn't mark ${read ? "read" : "unread"} — try again.`);
+  }).finally(() => {
+    if (readQueues.get(key) === request) readQueues.delete(key);
+  });
+  if (offerUndo && read && activeFilter() === "unread") {
+    toast("Marked read", { onUndo: () => {
+      changes.filter((c) => !c.wasRead).forEach(({ mid }) => markRead(mid, false, false));
+    } });
+  }
+  return result;
+}
+
+function toggleMessageRead(btn, id) {
+  const block = btn.closest("[data-thread-msg]");
+  const pane = document.getElementById("message-detail");
+  const read = block ? block.hasAttribute("data-unread") : pane?.dataset.isRead !== "1";
+  return markRead(id, read, false);
+}
+window.toggleMessageRead = toggleMessageRead;
+
+// Rows remain in the DOM for instant undo; the Unread filter removes them
+// from layout immediately. No network completion controls their visibility.
 function rowsFor(id, wholeThread) {
   if (!id) return [];
   const parent = document.getElementById(`msg-${id}`);
@@ -2279,9 +2417,9 @@ function rowsFor(id, wholeThread) {
 }
 function markRowRead(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowRead); }
 function setRowRead(row) {
+  row.classList.add("triaged-read");
   if (!row.hasAttribute("data-unread")) return;
   row.removeAttribute("data-unread");
-  row.classList.add("just-read");
   row.querySelector(".unread-dot")?.remove();
   const sender = row.querySelector(".row-sender");
   if (sender) { sender.classList.remove("text-zinc-100", "font-semibold"); sender.classList.add("text-zinc-400"); }
@@ -2324,9 +2462,9 @@ function setRowRead(row) {
 // re-bold). Used by the double-click read/unread toggle.
 function markRowUnread(id, wholeThread = false) { rowsFor(id, wholeThread).forEach(setRowUnread); }
 function setRowUnread(row) {
+  row.classList.remove("triaged-read");
   if (row.hasAttribute("data-unread")) return;
   row.setAttribute("data-unread", "");
-  row.classList.remove("just-read");
   const senderRow = row.querySelector(".row-sender")?.parentElement;
   if (senderRow && !senderRow.querySelector(".unread-dot")) {
     const dot = document.createElement("span");
@@ -2394,13 +2532,7 @@ function markThreadRead(read, btn) {
     const id = block.dataset.msgId;
     if (!id) return;
     setThreadMsgRead(block, read);
-    // These fire in a burst, one per message: exactly the case htmx.ajax used to
-    // swallow on document.body's shared queue (see postMarkRead).
-    postMarkRead(id, read, false).catch(() => {
-      setThreadMsgRead(block, !read);
-      syncThreadRow(pane);
-      toast("Couldn't mark that message — try again.");
-    });
+    markRead(id, read, false);
   });
   syncThreadRow(pane);
 }
@@ -2425,7 +2557,7 @@ function toggleRowRead(row) {
   // X-Mimux-Thread tells the server this is a thread-level toggle: EVERY message in
   // the thread gets marked, not just the row's latest (the row id is the thread
   // root). Otherwise a refresh leaves the thread partially unread.
-  markRead(id, makeRead, true);
+  markRead(id, makeRead, !row.dataset.mid, true);
 }
 
 // --- row gestures (double-click/tap + swipe) ------------------------------

@@ -16,6 +16,7 @@
     {{end}}
     hx-on:click="document.querySelectorAll('#message-list li').forEach(e=>e.classList.remove('bg-zinc-800'));this.classList.add('bg-zinc-800')"
     {{/* prefetch the latest message: that is the one thread_detail expands. */}}
+    data-members="{{range $t.Messages}}{{.ID}} {{end}}" data-unread-members="{{range $t.Messages}}{{if not .IsRead}}{{.ID}} {{end}}{{end}}"
     data-message-row data-prefetch="/messages/{{$m.ID}}/body" data-folder="{{$m.FolderID}}" {{if $t.Unread}}data-unread{{end}}{{if $t.Starred}} data-starred{{end}} tabindex="-1"
     style="view-transition-name:row-{{$t.RootID}}"
     class="flex gap-3 px-3 py-2 border-b border-zinc-800/60 cursor-pointer hover:bg-zinc-800/60 transition-colors duration-150 outline-none focus:bg-zinc-800">
