@@ -4,6 +4,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -462,7 +463,9 @@ func TestSteadyPushesOwedDrafts(t *testing.T) {
 	})
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("session: %v", err)
+	}
 }
 
 // TestDropDraftRemovesAForeignCopy: deleting a draft written in another client

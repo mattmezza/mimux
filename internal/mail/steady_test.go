@@ -4,6 +4,7 @@ package mail
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -142,7 +143,9 @@ func TestSteadySkipsDeselectedFolder(t *testing.T) {
 	}
 
 	cancel()
-	<-done
+	if err := <-done; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("session: %v", err)
+	}
 }
 
 // TestSelectInboxAfterReadOnlyCommand pins the hardening: a server-side search
