@@ -108,3 +108,34 @@ test('pending local state is reapplied after a list response and retires only on
   const event = { target, detail: { xhr: pendingXHR, shouldSwap: true, requestConfig: { elt: target } } };
   h.handlers.get('htmx:beforeSwap')(event); assert.equal(event.detail.shouldSwap, false);
 });
+
+test('gestures on expanded messages use the message ID and do not mark the whole thread', () => {
+  const start = app.indexOf('function toggleRowRead(');
+  const end = app.indexOf('// --- row gestures', start);
+  const calls = [];
+  const sandbox = { window: { htmx: {} }, markReadTimer: null, markRead: (...args) => calls.push(args) };
+  vm.runInNewContext(app.slice(start, end) + '; globalThis.toggle = toggleRowRead;', sandbox);
+  sandbox.toggle({ id: 'msg-s42', dataset: { mid: '42' }, hasAttribute: () => true });
+  assert.deepEqual(calls, [['42', true, false, true]]);
+});
+
+test('a targeted event for the latest member preserves other unread messages in a collapsed thread', () => {
+  const start = app.indexOf('function applyReadState('), end = app.indexOf('function markRead(', start);
+  const parent = { dataset: { members: '1 2', unreadMembers: '1 2' } };
+  const states = [];
+  const sandbox = {
+    document: { querySelectorAll: () => [parent], getElementById: () => null },
+    rowsFor: () => [],
+    setRowRead: () => states.push('read'), setRowUnread: () => states.push('unread'),
+    updateReadEmptyState() {},
+  };
+  vm.runInNewContext(app.slice(start, end) + '; globalThis.apply = applyReadState;', sandbox);
+  sandbox.apply('2', true, false);
+  assert.equal(parent.dataset.unreadMembers, '1');
+  assert.deepEqual(states, ['unread']);
+  sandbox.apply('1', true, false);
+  assert.deepEqual(states, ['unread', 'read']);
+  sandbox.apply('2', false, false);
+  assert.equal(parent.dataset.unreadMembers, '2');
+  assert.deepEqual(states, ['unread', 'read', 'unread']);
+});

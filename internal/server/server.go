@@ -543,7 +543,7 @@ func (s *Server) handleInbox(w http.ResponseWriter, r *http.Request) {
 	s.renderRequest(w, r, "inbox", data)
 }
 
-// handleEvents is the SSE stream: it relays sync-status, new-mail and toast
+// handleEvents is the SSE stream: it relays sync-status, new-mail, read-state and toast
 // events from the mail manager to the browser.
 //
 // sync-status carries the aggregate "is any account syncing" ("1"/"0") rather

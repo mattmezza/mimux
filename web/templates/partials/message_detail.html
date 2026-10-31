@@ -205,10 +205,10 @@
 {{else if eq .ID "unread"}}
 {{/* State-aware: normally a message is read on open so this marks it unread;
      under the Unread filter it opens still-unread, so it offers Mark read. */}}
-<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}" onclick="toggleMessageRead(this, '{{$m.ID}}')"
+<button title="Mark {{if $m.IsRead}}unread{{else}}read{{end}} (u)" aria-label="Mark {{if $m.IsRead}}unread{{else}}read{{end}}" data-read-toggle onclick="toggleMessageRead(this, '{{$m.ID}}')"
   class="{{$btn}} hover:text-indigo-300">
   <svg class="{{$ic}}" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 0 1-2.25 2.25h-15a2.25 2.25 0 0 1-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0 0 19.5 4.5h-15a2.25 2.25 0 0 0-2.25 2.25m19.5 0v.243a2.25 2.25 0 0 1-1.07 1.916l-7.5 4.615a2.25 2.25 0 0 1-2.36 0L3.32 8.91a2.25 2.25 0 0 1-1.07-1.916V6.75"/></svg>
-  {{if $menu}}<span>Mark {{if $m.IsRead}}unread{{else}}read{{end}}</span>{{end}}
+  {{if $menu}}<span data-read-label>Mark {{if $m.IsRead}}unread{{else}}read{{end}}</span>{{end}}
 </button>
 {{else if eq .ID "dark"}}
 <button type="button" title="Toggle dark/light message" aria-label="Toggle dark or light message background"

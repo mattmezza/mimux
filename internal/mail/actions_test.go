@@ -54,7 +54,12 @@ func TestUserActionsBroadcast(t *testing.T) {
 		name string
 		run  func() error
 	}{
-		{"read", func() error { return m.setRead(ctx, c, msg, true) }},
+		{"read", func() error {
+			if err := st.SetRead(msg.ID, true); err != nil {
+				return err
+			}
+			return m.setRead(ctx, c, msg, true)
+		}},
 		{"star", func() error { return m.setStarred(ctx, c, msg, true) }},
 		{"label", func() error { return m.SetLabel(msg, "work", true) }},
 		{"move", func() error { return m.moveTo(ctx, c, msg, archive) }},

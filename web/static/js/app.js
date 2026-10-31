@@ -560,9 +560,12 @@ document.body.addEventListener("htmx:afterSwap", (e) => {
       const state = JSON.parse(e.data);
       const id = String(state.id);
       if (!readChanges.get(id)?.pending) {
-        readChanges.set(id, { read: state.read, thread: false, pending: false });
+        readChanges.set(id, { read: state.read, pending: false });
         readRevision++;
-        applyReadState(id, state.read, false);
+        const found = applyReadState(id, state.read);
+        // Marking an older message unread elsewhere can make a conversation
+        // enter this list for the first time. Only that case needs a fetch.
+        if (!state.read && !found) document.body.dispatchEvent(new Event("mimux:refresh"));
       }
       refreshUnreadTitle();
     });
@@ -2293,7 +2296,7 @@ document.addEventListener("htmx:afterSwap", (e) => {
       if (readChanges.get(id) === change) readChanges.delete(id);
     });
   }
-  readChanges.forEach((c, id) => applyReadState(id, c.read, c.thread));
+  readChanges.forEach((c, id) => applyReadState(id, c.read));
   updateReadEmptyState();
 });
 
@@ -2314,32 +2317,39 @@ function updateReadEmptyState() {
 
 // Thread membership lets an individual message event update a collapsed
 // conversation correctly without fetching or replacing the list.
-function applyReadState(id, read, thread) {
+function applyReadState(id, read) {
   const parents = [...document.querySelectorAll("#message-list [data-members]")];
   const parent = parents.find((row) => row.dataset.members.trim().split(/\s+/).includes(id));
-  if (thread) {
-    const root = document.getElementById(`msg-${id}`);
-    if (root?.dataset.members) root.dataset.unreadMembers = read ? "" : root.dataset.members;
-  } else if (parent) {
+  if (parent) {
     const unread = new Set(parent.dataset.unreadMembers.trim().split(/\s+/).filter(Boolean));
     if (read) unread.delete(id); else unread.add(id);
     parent.dataset.unreadMembers = [...unread].join(" ");
   }
-  if (!thread && parent) {
+  if (parent) {
     const sub = document.getElementById(`msg-s${id}`);
     if (sub) { if (read) setRowRead(sub); else setRowUnread(sub); }
-  } else if (read) markRowRead(id, thread); else markRowUnread(id, thread);
-  if (!thread && parent) {
+  } else if (read) markRowRead(id); else markRowUnread(id);
+  if (parent) {
     if (parent.dataset.unreadMembers.trim()) setRowUnread(parent); else setRowRead(parent);
   }
   const pane = document.getElementById("message-detail");
   if (pane?.dataset.messageId === id) pane.dataset.isRead = read ? "1" : "0";
   pane?.querySelectorAll("[data-thread-msg]").forEach((block) => {
-    if (block.dataset.msgId === id || (thread && parent?.dataset.members.trim().split(/\s+/).includes(block.dataset.msgId))) {
+    if (block.dataset.msgId === id) {
       setThreadMsgRead(block, read);
     }
   });
+  pane?.querySelectorAll("[data-read-toggle]").forEach((btn) => {
+    const block = btn.closest("[data-thread-msg]");
+    const isRead = block ? !block.hasAttribute("data-unread") : pane.dataset.isRead === "1";
+    const label = `Mark ${isRead ? "unread" : "read"}`;
+    btn.title = label + " (u)";
+    btn.setAttribute("aria-label", label);
+    const text = btn.querySelector("[data-read-label]");
+    if (text) text.textContent = label;
+  });
   updateReadEmptyState();
+  return !!parent || rowsFor(id, false).length > 0;
 }
 
 function markRead(id, read, thread, offerUndo = false) {
@@ -2352,13 +2362,13 @@ function markRead(id, read, thread, offerUndo = false) {
     const previous = readChanges.get(mid);
     const wasRead = previous ? previous.read : parent ? !unread.has(mid)
       : !rowsFor(mid, false).some((row) => row.hasAttribute("data-unread"));
-    const change = { read, thread: false, pending: true, previous, wasRead };
+    const change = { read, pending: true, previous, wasRead };
     readChanges.delete(mid);
     readChanges.set(mid, change);
     return { mid, previous, wasRead, change };
   });
   readRevision++;
-  ids.forEach((mid) => applyReadState(mid, read, false));
+  ids.forEach((mid) => applyReadState(mid, read));
   const key = parent?.id || readQueueKeys.get(id) || id;
   ids.forEach((mid) => readQueueKeys.set(mid, key));
   const prior = readQueues.get(key) || Promise.resolve();
@@ -2379,7 +2389,7 @@ function markRead(id, read, thread, offerUndo = false) {
       while (restore?.failed) { fallback = restore.wasRead; restore = restore.previous; }
       readChanges.delete(mid);
       if (restore) readChanges.set(mid, restore);
-      applyReadState(mid, restore ? restore.read : fallback, false);
+      applyReadState(mid, restore ? restore.read : fallback);
     });
     readRevision++;
     toast(`Couldn't mark ${read ? "read" : "unread"} — try again.`);
@@ -2537,20 +2547,13 @@ function markThreadRead(read, btn) {
   syncThreadRow(pane);
 }
 
-// Per-message read/unread inside a thread (the POST is declarative on the
-// button; here we just reflect it in the pane + row).
-function onThreadMsgToggled(btn, read) {
-  setThreadMsgRead(btn.closest("[data-thread-msg]"), read);
-  syncThreadRow(document.getElementById("message-detail"));
-}
 window.markThreadRead = markThreadRead;
-window.onThreadMsgToggled = onThreadMsgToggled;
 
 // Toggle a row's read/unread state in place (the POST response is ignored —
 // swapping the single-message fragment would corrupt thread rows).
 function toggleRowRead(row) {
   if (!row || !window.htmx) return;
-  const id = row.id.replace(/^msg-/, "");
+  const id = row.dataset.mid || row.id.replace(/^msg-/, "");
   if (!id) return;
   const makeRead = row.hasAttribute("data-unread"); // unread -> read, else -> unread
   if (markReadTimer) { clearTimeout(markReadTimer); markReadTimer = null; }

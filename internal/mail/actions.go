@@ -424,12 +424,11 @@ func onlyUID(set imap.NumSet) imap.UID {
 //
 // The tab that asked for the change also refreshes. That is accepted: the swap
 // it already did and the refresh it now does render the same list. Deferred at
-// the read and move call sites, so a failed action also announces itself — a
+// the move call sites, so a failed action also announces itself — a
 // re-read is what puts an optimistic swap back the way the server sees it.
 //
-// ponytail: one broadcast per mutated message. A select-many path (bulk mark
-// read) wants these coalesced per request — do it there, by broadcasting once
-// after the loop, when that path exists.
+// Read changes use read-state instead: the browser can update those rows
+// directly without rebuilding the list.
 func (m *Manager) changed(msg *store.Message) {
 	m.hub.broadcast(Event{Type: "new-mail", Data: msg.Account})
 }

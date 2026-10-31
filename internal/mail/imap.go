@@ -21,7 +21,7 @@ import (
 
 // Event is pushed to SSE subscribers.
 type Event struct {
-	Type string // "sync-status" | "new-mail" (any list change) | "message-new" | "message-updated" | "toast" | search-*
+	Type string // "sync-status" | "new-mail" (list change) | "read-state" | "message-new" | "message-updated" | "toast" | search-*
 	Data string // account name; the store message id for "message-new", "<id> <change>" for "message-updated", text for "toast"
 }
 
