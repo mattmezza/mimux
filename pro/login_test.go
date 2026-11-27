@@ -7,10 +7,12 @@ package pro
 import (
 	"bytes"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -43,12 +45,22 @@ func newLoginBox(t *testing.T, stdin string) (*loginBox, func(args ...string) in
 	// redirects straight back to the CLI's loopback listener.
 	mux.HandleFunc("/cli/auth", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		port, err := strconv.ParseUint(q.Get("port"), 10, 16)
+		if err != nil || port == 0 {
+			http.Error(w, "invalid callback port", http.StatusBadRequest)
+			return
+		}
 		state := q.Get("state")
 		if b.approveState != "" {
 			state = b.approveState
 		}
-		http.Redirect(w, r, "http://127.0.0.1:"+q.Get("port")+
-			"/callback?state="+url.QueryEscape(state)+"&code=the-one-shot-code", http.StatusSeeOther)
+		callback := url.URL{
+			Scheme:   "http",
+			Host:     net.JoinHostPort("127.0.0.1", strconv.FormatUint(port, 10)),
+			Path:     "/callback",
+			RawQuery: url.Values{"state": {state}, "code": {"the-one-shot-code"}}.Encode(),
+		}
+		http.Redirect(w, r, callback.String(), http.StatusSeeOther)
 	})
 	mux.HandleFunc("/cli/auth/exchange", func(w http.ResponseWriter, r *http.Request) {
 		b.exchanges++

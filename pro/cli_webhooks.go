@@ -299,7 +299,7 @@ func (c *cliClient) execute(ctx context.Context, command string, ev liveEvent) {
 	started := time.Now()
 	tctx, cancel := context.WithTimeout(ctx, execTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(tctx, "/bin/sh", "-c", command)
+	cmd := exec.CommandContext(tctx, "/bin/sh", "-c", command) // #nosec G204 -- the local operator supplies -execute. Streamed event data goes to stdin and the environment.
 	cmd.Stdin = bytes.NewReader(ev.Payload)
 	cmd.Stdout = c.out
 	cmd.Stderr = c.errw

@@ -283,12 +283,20 @@ func TestCLIWebhooksListenForwards(t *testing.T) {
 // Exec mode: the payload arrives on stdin — never as an argument — and the
 // event type and delivery id in the environment.
 func TestCLIWebhooksListenExecutes(t *testing.T) {
-	dir := t.TempDir()
-	script := filepath.Join(dir, "hook.sh")
-	sink := filepath.Join(dir, "got")
-	if err := os.WriteFile(script, []byte("#!/bin/sh\n{ printf '%s %s ' \"$MIMUX_EVENT\" \"$MIMUX_DELIVERY_ID\"; cat; } > "+sink+"\n"), 0o755); err != nil {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = root.Close() })
+	if err := root.WriteFile("hook.sh", []byte(`#!/bin/sh
+printf '%s %s ' "$MIMUX_EVENT" "$MIMUX_DELIVERY_ID"
+cat
+printf '\n'
+`), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(root.Name(), "hook.sh")
+	command := "'" + strings.ReplaceAll(script, "'", "'\\''") + "'"
 
 	const payload = `{"id":"abc123","event":"message.received","data":{"subject":"hi"}}`
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -304,7 +312,7 @@ func TestCLIWebhooksListenExecutes(t *testing.T) {
 
 	var out, errw bytes.Buffer
 	c := &cliClient{base: up.URL, token: "mimux_pat_test", out: &out, errw: &errw, http: up.Client()}
-	do := func(ctx context.Context, ev liveEvent) { c.execute(ctx, script, ev) }
+	do := func(ctx context.Context, ev liveEvent) { c.execute(ctx, command, ev) }
 	done := make(chan error, 1)
 	go func() { done <- c.listenLoop(context.Background(), nil, do) }()
 	select {
@@ -313,35 +321,28 @@ func TestCLIWebhooksListenExecutes(t *testing.T) {
 		t.Fatal("the stream never ended")
 	}
 
-	got, err := os.ReadFile(sink)
-	if err != nil {
-		t.Fatalf("the script never ran: %v", err)
-	}
-	if want := "message.received abc123 " + payload; string(got) != want {
+	got, status, _ := strings.Cut(out.String(), "\n")
+	if want := "message.received abc123 " + payload; got != want {
 		t.Errorf("script saw %q, want %q", got, want)
 	}
-	if !strings.Contains(out.String(), "message.received") || !strings.Contains(out.String(), "exit 0") {
-		t.Errorf("no per-event line printed:\n%s", out.String())
+	if !strings.Contains(status, "message.received") || !strings.Contains(status, "exit 0") {
+		t.Errorf("no per-event line printed:\n%s", status)
 	}
 }
 
 // -execute takes a whole shell command line — `-execute 'jq .'` — not just a
 // program name, so arguments, redirects and pipes work.
 func TestCLIWebhooksExecuteShellCommand(t *testing.T) {
-	sink := filepath.Join(t.TempDir(), "got")
 	var out, errw bytes.Buffer
 	c := &cliClient{out: &out, errw: &errw}
-	c.execute(context.Background(), "cat > "+sink,
+	c.execute(context.Background(), "cat | cat; printf '\\n'",
 		liveEvent{Event: "message.received", ID: "x1", Payload: json.RawMessage(`{"a":1}`)})
-	got, err := os.ReadFile(sink)
-	if err != nil {
-		t.Fatalf("the command never ran: %v", err)
-	}
-	if string(got) != `{"a":1}` {
+	got, status, _ := strings.Cut(out.String(), "\n")
+	if got != `{"a":1}` {
 		t.Errorf("command saw %q on stdin", got)
 	}
-	if !strings.Contains(out.String(), "exit 0") {
-		t.Errorf("no per-event line printed:\n%s", out.String())
+	if !strings.Contains(status, "exit 0") {
+		t.Errorf("no per-event line printed:\n%s", status)
 	}
 }
 
