@@ -169,7 +169,8 @@ func TestMCPReadMessageTruncation(t *testing.T) {
 }
 
 func TestMCPMutations(t *testing.T) {
-	cs, _, st := mcpSession(t, "mail:read mail:modify")
+	cs, a, st := mcpSession(t, "mail:read mail:modify")
+	verifyMove := holdMessageMoves(t, a)
 	inbox := seedFolder(t, st, "a1", "INBOX", "inbox")
 	archive := seedFolder(t, st, "a1", "Archive", "archive")
 	trash := seedFolder(t, st, "a1", "Trash", "trash")
@@ -200,8 +201,6 @@ func TestMCPMutations(t *testing.T) {
 		t.Fatal("refused trash still moved the message")
 	}
 
-	// The fixture has no IMAP worker, so assert the accepted destination
-	// from the tool result. The background worker can roll back at any time.
 	var accepted struct {
 		FolderID int64 `json:"folder_id"`
 	}
@@ -209,11 +208,13 @@ func TestMCPMutations(t *testing.T) {
 	if accepted.FolderID != archive {
 		t.Fatalf("accepted archive folder = %d, want %d", accepted.FolderID, archive)
 	}
+	verifyMove(store.MessageMove{ID: id, SourceID: inbox, TargetID: archive}, 3)
 	second := seedMsg(t, st, store.Message{Account: "a1", FolderID: inbox, UID: 4, Subject: "second"})
 	structuredOf(t, callTool(t, cs, "move_message", map[string]any{"id": second, "target": "trash", "confirm": true}), &accepted)
 	if accepted.FolderID != trash {
 		t.Fatalf("accepted confirmed trash folder = %d, want %d", accepted.FolderID, trash)
 	}
+	verifyMove(store.MessageMove{ID: second, SourceID: inbox, TargetID: trash}, 4)
 }
 
 func TestMCPDraftFlow(t *testing.T) {

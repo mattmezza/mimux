@@ -6,6 +6,7 @@ package pro
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 // offline-tolerant paths are tested against).
 type testAPI struct {
 	h      http.Handler
+	api    *api
 	st     *store.Store
 	secret string // token with every scope
 }
@@ -46,11 +48,15 @@ func newTestAPIWith(t *testing.T, cfg *config.Config, seed func(*store.Store)) *
 	}
 	cfg.Accounts = []config.Account{{Name: "a1", Email: "me@example.test"}}
 	m := mail.NewManager(cfg, st)
-	h := routes(ext.Deps{Mail: m, Store: st, Cfg: cfg}).Handler
+	deps := ext.Deps{Mail: m, Store: st, Cfg: cfg}
+	licence := newLicenceGate(deps)
+	hooks := newWebhooks(deps, licence)
+	go hooks.run(t.Context())
+	a := newAPI(deps, hooks)
 	secret := mintToken(t, st, &store.APIToken{
 		Label: "all", Scopes: "mail:read mail:send mail:modify accounts:read webhooks:manage",
 	})
-	return &testAPI{h: h, st: st, secret: secret}
+	return &testAPI{h: a.routes(licence).Handler, api: a, st: st, secret: secret}
 }
 
 // req performs an authenticated API request; body may be nil or a JSON-able.
@@ -107,6 +113,39 @@ func seedMsg(t *testing.T, st *store.Store, m store.Message) int64 {
 		t.Fatalf("seeded message not found: %v", err)
 	}
 	return got.ID
+}
+
+// holdMessageMoves lets a test inspect the staged row before invoking the
+// background move. The offline manager rolls it back when the test runs it.
+func holdMessageMoves(t *testing.T, a *api) func(store.MessageMove, uint32) {
+	t.Helper()
+	pending := make(chan func(context.Context) error, 1)
+	a.background = func(op string, fn func(context.Context) error) {
+		if op != "move" {
+			runInBackground(op, fn)
+			return
+		}
+		pending <- fn
+	}
+	return func(move store.MessageMove, uid uint32) {
+		t.Helper()
+		staged, err := a.store.MessageByID(move.ID)
+		if err != nil || staged == nil || staged.FolderID != move.TargetID || staged.SourceFolderID != move.SourceID || staged.UID != uid {
+			t.Fatalf("staged message = %+v (%v), want target %d and source %d UID %d", staged, err, move.TargetID, move.SourceID, uid)
+		}
+		select {
+		case run := <-pending:
+			if err := run(t.Context()); err == nil {
+				t.Fatal("move succeeded without an IMAP worker")
+			}
+		default:
+			t.Fatal("move was not queued")
+		}
+		reverted, err := a.store.MessageByID(move.ID)
+		if err != nil || reverted == nil || reverted.FolderID != move.SourceID || reverted.SourceFolderID != 0 || reverted.UID != uid {
+			t.Fatalf("rolled-back message = %+v (%v), want original folder %d UID %d", reverted, err, move.SourceID, uid)
+		}
+	}
 }
 
 func TestAccountsEndpoint(t *testing.T) {
@@ -371,11 +410,16 @@ func TestPatchMessage(t *testing.T) {
 	}
 
 	// Move within the account.
+	verifyMove := holdMessageMoves(t, ta.api)
 	rec = ta.req(t, http.MethodPatch, fmt.Sprintf("/v1/messages/%d", id), map[string]any{"folder_id": other})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("move = %d: %s", rec.Code, rec.Body.String())
+	}
 	decodeBody(t, rec, &out)
 	if out.FolderID != other {
 		t.Fatalf("move: folder = %d, want %d", out.FolderID, other)
 	}
+	verifyMove(store.MessageMove{ID: id, SourceID: inbox, TargetID: other}, 1)
 
 	// Cross-account move is rejected.
 	rec = ta.req(t, http.MethodPatch, fmt.Sprintf("/v1/messages/%d", id), map[string]any{"folder_id": foreign})
@@ -392,6 +436,7 @@ func TestPatchMessage(t *testing.T) {
 
 func TestArchiveSpamDelete(t *testing.T) {
 	ta := newTestAPI(t)
+	verifyMove := holdMessageMoves(t, ta.api)
 	inbox := seedFolder(t, ta.st, "a1", "INBOX", "inbox")
 	archive := seedFolder(t, ta.st, "a1", "Archive", "archive")
 	trash := seedFolder(t, ta.st, "a1", "Trash", "trash")
@@ -411,6 +456,7 @@ func TestArchiveSpamDelete(t *testing.T) {
 	if accepted.FolderID != archive {
 		t.Fatalf("accepted archive folder = %d, want %d", accepted.FolderID, archive)
 	}
+	verifyMove(store.MessageMove{ID: arch, SourceID: inbox, TargetID: archive}, 1)
 
 	rec = ta.req(t, http.MethodDelete, fmt.Sprintf("/v1/messages/%d", del), nil)
 	if rec.Code != http.StatusOK {
@@ -420,6 +466,7 @@ func TestArchiveSpamDelete(t *testing.T) {
 	if accepted.FolderID != trash {
 		t.Fatalf("accepted delete folder = %d, want trash %d", accepted.FolderID, trash)
 	}
+	verifyMove(store.MessageMove{ID: del, SourceID: inbox, TargetID: trash}, 2)
 
 	// No spam folder exists: clean 400, message stays put.
 	rec = ta.req(t, http.MethodPost, fmt.Sprintf("/v1/messages/%d/spam", spam), nil)

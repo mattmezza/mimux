@@ -23,16 +23,17 @@ import (
 // api is the /api/v1 JSON surface: the same domain layer the HTML client uses
 // (ext.Deps), driven by machines instead of a browser.
 type api struct {
-	mail  *mail.Manager
-	store *store.Store
-	deps  ext.Deps
-	jobs  *jobTable
-	idem  *idemCache
-	hooks *webhooks
+	mail       *mail.Manager
+	store      *store.Store
+	deps       ext.Deps
+	jobs       *jobTable
+	idem       *idemCache
+	hooks      *webhooks
+	background func(string, func(context.Context) error)
 }
 
 func newAPI(deps ext.Deps, hooks *webhooks) *api {
-	return &api{mail: deps.Mail, store: deps.Store, deps: deps, jobs: newJobTable(), idem: newIdemCache(), hooks: hooks}
+	return &api{mail: deps.Mail, store: deps.Store, deps: deps, jobs: newJobTable(), idem: newIdemCache(), hooks: hooks, background: runInBackground}
 }
 
 // mount registers every v1 route on r, which is already behind tokens.require.
@@ -129,11 +130,11 @@ func (a *api) messageOr404(w http.ResponseWriter, r *http.Request) *store.Messag
 	return msg
 }
 
-// background runs an IMAP side effect off the request path, mirroring the HTML
+// runInBackground runs an IMAP side effect off the request path, mirroring the HTML
 // handlers' optimistic pattern: the store is already updated, the server write
 // follows. Failures are logged (no browser to toast at); flag writes are also
 // retried by the sync loop's seen-dirty sweep.
-func (a *api) background(op string, fn func(context.Context) error) {
+func runInBackground(op string, fn func(context.Context) error) {
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()

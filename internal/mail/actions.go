@@ -419,6 +419,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 			return fmt.Errorf("source folder changed before the move")
 		}
 		var destUID imap.UID
+		var destUIDValidity uint32
 		set := imap.UIDSet{}
 		set.AddNum(imap.UID(msg.UID))
 		if c.Caps().Has(imap.CapMove) {
@@ -428,6 +429,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 			}
 			if data != nil {
 				destUID = onlyUID(data.DestUIDs)
+				destUIDValidity = data.UIDValidity
 			}
 		} else {
 			data, err := c.Copy(set, target.Name).Wait()
@@ -436,6 +438,7 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 			}
 			if data != nil {
 				destUID = onlyUID(data.DestUIDs)
+				destUIDValidity = data.UIDValidity
 			}
 			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
 				return err
@@ -449,13 +452,14 @@ func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.M
 				return err
 			}
 		}
-		// COPYUID tells us the real destination UID. Without it, let the
-		// next sync discover the destination copy with its correct UID.
-		if destUID == 0 {
-			return m.st.DeleteMessage(msg.ID)
-		}
-		if err := m.st.SetMessageLocation(msg.ID, target.ID, uint32(destUID)); err != nil {
+		stored, err := m.st.CompleteMessageMove(msg.ID, target, uint32(destUID), destUIDValidity)
+		if err != nil {
 			return err
+		}
+		if !stored {
+			// Sync can reuse the deleted row ID for a different message.
+			m.bodies.clear()
+			return nil
 		}
 		msg.FolderID, msg.SourceFolderID, msg.UID = target.ID, 0, uint32(destUID)
 		m.updated(msg, "moved", originMimux)

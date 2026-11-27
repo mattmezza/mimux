@@ -288,6 +288,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// describes a folder that no longer exists, so drop the baseline and let
 		// this pass (which is deep, firstFull) re-establish it.
 		a.setBaselineCount(f.ID, 0)
+		a.m.bodies.clear()
 	}
 	deep := firstFull || a.deepDue(f.ID)
 
@@ -327,7 +328,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	if err != nil {
 		return false, err
 	}
-	changed = repaired || newCount > 0
+	changed = reset || repaired || newCount > 0
 	for _, uid := range due {
 		if err := a.enrichStructure(f, uid, nil); err != nil {
 			slog.Warn("message BODYSTRUCTURE retry failed", "account", a.cfg.Name, "folder", f.Name, "uid", uid, "err", err)

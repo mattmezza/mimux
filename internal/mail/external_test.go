@@ -165,10 +165,79 @@ func TestMoveRelocatesTheRowWithTheRealUID(t *testing.T) {
 	if got.UID != 1 {
 		t.Errorf("row uid = %d, want 1 — the UID the destination assigned, not the source's", got.UID)
 	}
+	selected, err := c.Select("Archive", nil).Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedArchive, err := st.FolderByID(archive.ID)
+	if err != nil || storedArchive == nil || storedArchive.UIDValidity != selected.UIDValidity {
+		t.Fatalf("stored archive = %+v (%v), want server UIDVALIDITY %d", storedArchive, err, selected.UIDValidity)
+	}
 	if _, err := st.MessageByFolderUID(inbox.ID, 2); err == nil {
 		if left, _ := st.ListMessages(inbox.ID, 10); len(left) != 1 {
 			t.Errorf("inbox still holds %d messages after the move", len(left))
 		}
+	}
+}
+
+func TestMoveIntoRecreatedMailboxWithReusedUID(t *testing.T) {
+	for _, method := range []string{"MOVE", "COPY"} {
+		t.Run(method, func(t *testing.T) {
+			st := testStore(t)
+			caps := imap.CapSet{imap.CapIMAP4rev1: {}, imap.CapUIDPlus: {}}
+			if method == "MOVE" {
+				caps[imap.CapMove] = struct{}{}
+			}
+			c, user := newTestIMAPCaps(t, caps, testMessage("ada@example.com", "moving"))
+			deliver(t, user, "Archive", testMessage("bob@example.com", "old"))
+			m := NewManager(&config.Config{}, st)
+			a := newTestAccount(m, "acct", "ok")
+			syncInbox(t, a, c)
+			syncSpecial(t, a, c, "archive")
+
+			inbox, _ := st.FolderBySpecial("acct", "inbox")
+			archive, _ := st.FolderBySpecial("acct", "archive")
+			msg, err := st.MessageByFolderUID(inbox.ID, 1)
+			if err != nil || msg == nil {
+				t.Fatalf("source UID 1: %+v (%v)", msg, err)
+			}
+			old, err := st.MessageByFolderUID(archive.ID, 1)
+			if err != nil || old == nil || old.MessageID != "old@example.com" {
+				t.Fatalf("old archive UID 1: %+v (%v)", old, err)
+			}
+			if err := user.Delete("Archive"); err != nil {
+				t.Fatal(err)
+			}
+			if err := user.Create("Archive", nil); err != nil {
+				t.Fatal(err)
+			}
+
+			move := store.MessageMove{ID: msg.ID, SourceID: inbox.ID, TargetID: archive.ID}
+			if err := st.StageMessageMoves([]store.MessageMove{move}); err != nil {
+				t.Fatal(err)
+			}
+			drainCmds(t, a, c)
+			if err := m.MovePending(t.Context(), move); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := st.MessageByFolderUID(archive.ID, 1); err != nil || got == nil || got.ID != old.ID || got.MessageID != old.MessageID {
+				t.Fatalf("move overwrote the old generation's UID 1: %+v (%v)", got, err)
+			}
+			if got, err := st.MessageByID(msg.ID); err != nil || got != nil {
+				t.Fatalf("completed move left its source row: %+v (%v)", got, err)
+			}
+			if selected, err := c.Select("INBOX", nil).Wait(); err != nil || selected.NumMessages != 0 {
+				t.Fatalf("INBOX after move: %+v (%v), want empty", selected, err)
+			}
+
+			syncSpecial(t, a, c, "archive")
+			if got, err := st.FolderByID(archive.ID); err != nil || got == nil || got.UIDValidity == archive.UIDValidity {
+				t.Fatalf("sync did not record the new archive generation: %+v (%v)", got, err)
+			}
+			if got, err := st.MessageByFolderUID(archive.ID, 1); err != nil || got == nil || got.MessageID != msg.MessageID || got.SourceFolderID != 0 {
+				t.Fatalf("sync did not discover the moved message at reused UID 1: %+v (%v)", got, err)
+			}
+		})
 	}
 }
 

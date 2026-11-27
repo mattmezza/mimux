@@ -91,6 +91,48 @@ func TestSearchLocalPredicates(t *testing.T) {
 	}
 }
 
+func TestStagedMoveFolderProjections(t *testing.T) {
+	s := open(t)
+	inbox, err := s.UpsertFolder("A", "INBOX", "inbox", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive, err := s.UpsertFolder("A", "Archive", "archive", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const uid = 7
+	id := seedMsg(t, s, inbox, uid, "a@x.com", "moving", "")
+	if err := s.StageMessageMoves([]MessageMove{{ID: id, SourceID: inbox, TargetID: archive}}); err != nil {
+		t.Fatal(err)
+	}
+
+	assertStaged := func(got []Message, err error) {
+		t.Helper()
+		if err != nil || len(got) != 1 || got[0].ID != id || got[0].FolderID != archive || got[0].SourceFolderID != inbox || got[0].UID != uid {
+			t.Fatalf("got %+v (%v), want message %d staged in Archive with its INBOX UID", got, err, id)
+		}
+	}
+	assertStaged(s.ListMessages(archive, 10))
+	page, _, err := s.ListMessagesPageByMessage(archive, "", 10)
+	assertStaged(page, err)
+	assertStaged(s.SearchLocal(search.Parse("in:archive -in:inbox"), search.ScopeFolder, "A", archive, 10))
+	if got, err := s.ListUnifiedInbox(10); err != nil || len(got) != 0 {
+		t.Fatalf("unified inbox contains the staged message: %+v (%v)", got, err)
+	}
+	if got, _, err := s.ListUnifiedInboxPageByMessage("", 10); err != nil || len(got) != 0 {
+		t.Fatalf("unified inbox message page contains the staged message: %+v (%v)", got, err)
+	}
+	for folderID, want := range map[int64]int{inbox: 0, archive: 1} {
+		if err := s.RecountUnread(folderID); err != nil {
+			t.Fatal(err)
+		}
+		if folder, err := s.FolderByID(folderID); err != nil || folder == nil || folder.UnreadCount != want {
+			t.Fatalf("folder %d after recount: %+v (%v), want %d unread", folderID, folder, err, want)
+		}
+	}
+}
+
 func TestSearchCacheRoundTrip(t *testing.T) {
 	s := open(t)
 	h := QueryHash("from:alice", search.ScopeAll, "", 0)

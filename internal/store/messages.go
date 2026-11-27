@@ -866,26 +866,44 @@ func (s *Store) ResetMessageMoves() error {
 	return tx.Commit()
 }
 
-// SetMessageLocation records where a message really lives once the IMAP move has
-// landed: the destination folder and the UID the server assigned it there
-// (MOVE/COPY report it via UIDPLUS). Any row already holding that (folder, uid)
-// — the destination sync having got there first — is dropped, since the two are
-// the same message and the column pair is unique.
-func (s *Store) SetMessageLocation(id, folderID int64, uid uint32) error {
+// CompleteMessageMove binds the returned UID only within the generation the
+// destination cache describes. An empty, never-synced cache can adopt the
+// reported generation. Otherwise an unverified mapping leaves the destination
+// cache for sync to reconcile and drops the row whose source UID is now gone.
+func (s *Store) CompleteMessageMove(id int64, target *Folder, uid, uidValidity uint32) (bool, error) {
+	if uid == 0 || uidValidity == 0 {
+		return false, s.DeleteMessage(id)
+	}
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	valid, err := changed(tx.Exec(`UPDATE folders SET uidvalidity = ? WHERE id = ? AND account = ? AND name = ?
+		AND (uidvalidity = ? OR (uidvalidity = 0 AND NOT EXISTS (
+			SELECT 1 FROM messages WHERE folder_id = folders.id)))`,
+		uidValidity, target.ID, target.Account, target.Name, uidValidity))
+	if err != nil {
+		return false, err
+	}
+	if !valid {
+		if _, err := tx.Exec(`DELETE FROM messages WHERE id = ?`, id); err != nil {
+			return false, err
+		}
+		return false, tx.Commit()
+	}
+	// A row already holding this UID in the same generation represents the
+	// same message. Keep the original row and its local metadata.
 	if _, err := tx.Exec(`DELETE FROM messages WHERE folder_id = ? AND uid = ? AND id != ?
-		AND EXISTS (SELECT 1 FROM messages WHERE id = ?)`, folderID, uid, id, id); err != nil {
-		return err
+		AND EXISTS (SELECT 1 FROM messages WHERE id = ?)`, target.ID, uid, id, id); err != nil {
+		return false, err
 	}
-	if _, err := tx.Exec(`UPDATE messages SET folder_id = ?, uid = ?, pending_move = 0, pending_folder_id = NULL WHERE id = ?`,
-		folderID, uid, id); err != nil {
-		return err
+	stored, err := changed(tx.Exec(`UPDATE messages SET folder_id = ?, uid = ?, pending_move = 0, pending_folder_id = NULL WHERE id = ?`,
+		target.ID, uid, id))
+	if err != nil {
+		return false, err
 	}
-	return tx.Commit()
+	return stored, tx.Commit()
 }
 
 func b2i(b bool) int {
