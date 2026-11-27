@@ -76,9 +76,9 @@ func BuildLocalSQL(q *SearchQuery, scope Scope, account string, folderID int64) 
 				add(negLike(t.Neg, "snippet"), like("http"))
 			}
 		case "in":
-			c := "folder_id IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"
+			c := "COALESCE(pending_folder_id, folder_id) IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"
 			if t.Neg {
-				c = "folder_id NOT IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"
+				c = "COALESCE(pending_folder_id, folder_id) NOT IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"
 			}
 			add(c, strings.ToLower(t.Value), like(t.Value))
 		case "larger":
@@ -114,7 +114,7 @@ func BuildLocalSQL(q *SearchQuery, scope Scope, account string, folderID int64) 
 
 	switch scope {
 	case ScopeFolder:
-		add("folder_id = ?", folderID)
+		add("COALESCE(pending_folder_id, folder_id) = ?", folderID)
 	case ScopeAccount:
 		add("account = ?", account)
 	}

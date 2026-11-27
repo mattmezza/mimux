@@ -298,23 +298,27 @@ func TestSyncKeepsArrivalsWhenTheDeepPassIsNotDue(t *testing.T) {
 
 // TestSyncSparesMidMoveRows: the guard on the cheap path's most dangerous
 // neighbour. The row for a message that is mid-move carries the source folder's
-// UID, and reconciling that folder must not read it as a deletion. The count
+// UID. Reconciling its visible destination must not read it as a deletion. The count
 // signal does not change what reconcileExpunged does — it only decides when it
 // runs — but the pair has to keep behaving when the count does fire.
 func TestSyncSparesMidMoveRows(t *testing.T) {
 	st := testStore(t)
-	c := newTestIMAP(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	deliver(t, user, "Archive", testMessage("carol@example.com", "archived-one"))
+	deliver(t, user, "Archive", testMessage("dave@example.com", "archived-two"))
 	m := NewManager(&config.Config{}, st)
 	a := newTestAccount(m, "acct", "ok")
+	syncSpecial(t, a, c, "archive")
 	syncInbox(t, a, c)
 	a.setStatus("ok", "")
 
 	inbox, _ := st.FolderBySpecial("acct", "inbox")
-	msg, err := st.MessageByFolderUID(inbox.ID, 2)
+	archive, _ := st.FolderBySpecial("acct", "archive")
+	msg, err := st.MessageByFolderUID(archive.ID, 2)
 	if err != nil || msg == nil {
 		t.Fatalf("synced message not found: %v", err)
 	}
-	if err := st.SetMessageFolderPending(msg.ID, inbox.ID); err != nil {
+	if err := st.StageMessageMoves([]store.MessageMove{{ID: msg.ID, SourceID: archive.ID, TargetID: inbox.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	expungeOnServer(t, c, "INBOX", 2)

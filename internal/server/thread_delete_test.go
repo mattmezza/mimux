@@ -2,8 +2,10 @@
 package server
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -20,8 +22,95 @@ import (
 func threadDeleteRouter(s *Server) http.Handler {
 	r := chi.NewRouter()
 	r.Post("/messages/{id}/delete", s.handleMove("trash"))
+	r.Post("/t/{id}/delete", s.handleThreadMove("trash"))
+	r.Post("/messages/undo-moves", s.handleUndoMoves)
 	r.Get("/t/{id}", s.handleThread)
 	return r
+}
+
+func TestDeleteConversationFromInboxWithSentReply(t *testing.T) {
+	s := serverWith(t, nil, nil)
+	addFolder := func(name, special string) int64 {
+		t.Helper()
+		id, err := s.store.UpsertFolder("A", name, special, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return id
+	}
+	inbox := addFolder("INBOX", "inbox")
+	sent := addFolder("Sent", "sent")
+	trash := addFolder("Trash", "trash")
+	addMessage := func(folder int64, id, reply string, min int) int64 {
+		t.Helper()
+		if err := s.store.UpsertMessage(&store.Message{
+			Account: "A", FolderID: folder, UID: 1, MessageID: id, InReplyTo: reply,
+			Subject: "Deploy", Date: time.Date(2026, 1, 1, 0, min, 0, 0, time.UTC), IsRead: true,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		msg, err := s.store.MessageByFolderUID(folder, 1)
+		if err != nil || msg == nil {
+			t.Fatalf("message in folder %d: %v, %v", folder, msg, err)
+		}
+		return msg.ID
+	}
+	original := addMessage(inbox, "original@example.test", "", 10)
+	reply := addMessage(sent, "reply@example.test", "original@example.test", 20)
+	unrelated := addMessage(trash, "unrelated@example.test", "", 5)
+	r := threadDeleteRouter(s)
+	post := func(path string, form url.Values) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		res := httptest.NewRecorder()
+		r.ServeHTTP(res, req)
+		return res
+	}
+	assertFolder := func(id, visible, imap int64) {
+		t.Helper()
+		msg, err := s.store.MessageByID(id)
+		if err != nil || msg == nil || msg.FolderID != visible || msg.IMAPFolderID() != imap {
+			t.Fatalf("message %d: got %+v (%v), want visible folder %d, IMAP folder %d", id, msg, err, visible, imap)
+		}
+	}
+
+	seedID := strconv.FormatInt(original, 10)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/t/"+seedID+"?src=u", nil))
+	if !strings.Contains(rec.Body.String(), `moveThread('`+seedID+`','delete'`) {
+		t.Fatal("thread pane Delete should target the original list row's ID")
+	}
+	rec = post("/t/"+seedID+"/delete", nil)
+	var result threadMoveResult
+	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &result) != nil || len(result.IDs) != 2 || result.UndoToken == "" {
+		t.Fatalf("delete thread: %d %s", rec.Code, rec.Body.String())
+	}
+	assertFolder(original, trash, inbox)
+	assertFolder(reply, trash, sent)
+	assertFolder(unrelated, trash, trash)
+	if msgs, err := s.store.ListUnifiedInbox(10); err != nil || len(msgs) != 0 {
+		t.Fatalf("conversation remains in inbox: %+v (%v)", msgs, err)
+	}
+
+	first := s.pending[original]
+	rec = post("/messages/"+seedID+"/delete", nil)
+	if rec.Code != http.StatusNoContent || first == nil || s.pending[original] != first {
+		t.Fatalf("repeat delete changed the queued move: %d", rec.Code)
+	}
+	rec = post("/messages/undo-moves", url.Values{"id": result.IDs, "undo_token": {result.UndoToken}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("undo: %d %s", rec.Code, rec.Body.String())
+	}
+	assertFolder(original, inbox, inbox)
+	assertFolder(reply, sent, sent)
+	assertFolder(unrelated, trash, trash)
+	if rec := post("/messages/"+strconv.FormatInt(unrelated, 10)+"/delete", nil); rec.Code != http.StatusNoContent {
+		t.Fatalf("delete already in Trash: %d", rec.Code)
+	}
+	if len(s.pending) != 0 {
+		t.Fatalf("unexpected pending moves: %v", s.pending)
+	}
 }
 
 // TestThreadDetailAfterDeletingLatestMessage reproduces the bug where deleting

@@ -380,7 +380,9 @@ func (a *api) mcpMove(_ context.Context, _ *mcp.CallToolRequest, in moveArgs) (*
 		if tf.Account != msg.Account {
 			return nil, nil, fmt.Errorf("folder %d belongs to a different account", in.FolderID)
 		}
-		a.moveFolder(msg, tf)
+		if err := a.moveFolder(msg, tf); err != nil {
+			return nil, nil, err
+		}
 		return structured(map[string]any{"id": msg.ID, "folder_id": tf.ID})
 	}
 	return nil, nil, fmt.Errorf("set folder_id or target")

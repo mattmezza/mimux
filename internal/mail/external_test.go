@@ -12,6 +12,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 
 	"github.com/mattmezza/mimux/internal/config"
+	"github.com/mattmezza/mimux/internal/store"
 )
 
 // starOnServer flags a UID the way another IMAP client would — the change mimux
@@ -171,6 +172,85 @@ func TestMoveRelocatesTheRowWithTheRealUID(t *testing.T) {
 	}
 }
 
+func TestPendingMovesWithSharedSourceUID(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "incoming"))
+	deliver(t, user, "Sent", testMessage("me@example.com", "reply"))
+	deliver(t, user, "Archive", testMessage("eve@example.com", "already-archived"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	for _, special := range []string{"inbox", "sent", "archive"} {
+		syncSpecial(t, a, c, special)
+	}
+	archive, _ := st.FolderBySpecial("acct", "archive")
+	var moves []store.MessageMove
+	for _, special := range []string{"inbox", "sent"} {
+		folder, _ := st.FolderBySpecial("acct", special)
+		msg, err := st.MessageByFolderUID(folder.ID, 1)
+		if err != nil || msg == nil {
+			t.Fatalf("source message in %s: %v (%v)", special, msg, err)
+		}
+		moves = append(moves, store.MessageMove{ID: msg.ID, SourceID: folder.ID, TargetID: archive.ID})
+	}
+	if err := st.StageMessageMoves(moves); err != nil {
+		t.Fatal(err)
+	}
+	drainCmds(t, a, c)
+	for i, move := range moves {
+		if err := m.MovePending(context.Background(), move); err != nil {
+			t.Fatal(err)
+		}
+		msg, err := st.MessageByID(move.ID)
+		wantUID := uint32(i + 2)
+		if err != nil || msg == nil || msg.SourceFolderID != 0 || msg.FolderID != archive.ID || msg.UID != wantUID {
+			t.Fatalf("move %d: got %+v (%v), want archive UID %d", move.ID, msg, err, wantUID)
+		}
+	}
+	for _, mailbox := range []string{"INBOX", "Sent"} {
+		selected, err := c.Select(mailbox, nil).Wait()
+		if err != nil || selected.NumMessages != 0 {
+			t.Fatalf("%s still holds moved mail: %v (%v)", mailbox, selected, err)
+		}
+	}
+	selected, err := c.Select("Archive", nil).Wait()
+	if err != nil || selected.NumMessages != 3 {
+		t.Fatalf("Archive: %v (%v), want three server messages", selected, err)
+	}
+}
+
+func TestSyncRepairsLegacyPendingMoves(t *testing.T) {
+	st := testStore(t)
+	c, user := newTestIMAPUser(t)
+	deliver(t, user, "Archive", testMessage("ada@example.com", "confirmed"))
+	deliver(t, user, "Archive", testMessage("bob@example.com", "actual"))
+	m := NewManager(&config.Config{}, st)
+	a := newTestAccount(m, "acct", "ok")
+	syncSpecial(t, a, c, "archive")
+	archive, _ := st.FolderBySpecial("acct", "archive")
+	confirmed, _ := st.MessageByFolderUID(archive.ID, 1)
+	if _, err := st.DB.Exec(`UPDATE messages SET pending_move = 1, message_id =
+		CASE WHEN uid = 2 THEN 'ghost@example.com' ELSE message_id END WHERE folder_id = ?`, archive.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.DB.Exec(`INSERT INTO messages(account, folder_id, uid, message_id, pending_move)
+		VALUES ('acct', ?, 90, 'missing@example.com', 1)`, archive.ID); err != nil {
+		t.Fatal(err)
+	}
+	syncSpecial(t, a, c, "archive")
+	pending, err := st.LegacyPendingMessages(archive.ID)
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("remaining pending rows: %+v (%v)", pending, err)
+	}
+	msg, _ := st.MessageByID(confirmed.ID)
+	if msg == nil || msg.MessageID != "confirmed@example.com" {
+		t.Fatalf("confirmed old row lost: %+v", msg)
+	}
+	actual, _ := st.MessageByFolderUID(archive.ID, 2)
+	if actual == nil || actual.MessageID != "actual@example.com" {
+		t.Fatalf("ghost row still shadows live archive UID: %+v", actual)
+	}
+}
+
 // expungeOnServer deletes a UID the way another mail client would.
 func expungeOnServer(t *testing.T, c *imapclient.Client, folder string, uid imap.UID) {
 	t.Helper()
@@ -247,20 +327,24 @@ func TestReconcileDeletesVanishedAndAnnounces(t *testing.T) {
 // and then re-arrive as new mail.
 func TestReconcileSparesTheRowMidMove(t *testing.T) {
 	st := testStore(t)
-	c := newTestIMAP(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	c, user := newTestIMAPUser(t, testMessage("ada@example.com", "one"), testMessage("bob@example.com", "two"))
+	deliver(t, user, "Archive", testMessage("carol@example.com", "archived-one"))
+	deliver(t, user, "Archive", testMessage("dave@example.com", "archived-two"))
 	m := NewManager(&config.Config{}, st)
 	a := newTestAccount(m, "acct", "ok")
+	syncSpecial(t, a, c, "archive")
 	syncInbox(t, a, c)
 	a.setStatus("ok", "")
 
 	inbox, _ := st.FolderBySpecial("acct", "inbox")
-	msg, err := st.MessageByFolderUID(inbox.ID, 2)
+	archive, _ := st.FolderBySpecial("acct", "archive")
+	msg, err := st.MessageByFolderUID(archive.ID, 2)
 	if err != nil || msg == nil {
 		t.Fatalf("synced message not found: %v", err)
 	}
-	// The optimistic half of a move into this folder: the row is here, the UID
-	// is not the server's, and the real move has not happened yet.
-	if err := st.SetMessageFolderPending(msg.ID, inbox.ID); err != nil {
+	// The optimistic placement shows the row in the inbox while its UID still
+	// belongs to Archive.
+	if err := st.StageMessageMoves([]store.MessageMove{{ID: msg.ID, SourceID: archive.ID, TargetID: inbox.ID}}); err != nil {
 		t.Fatal(err)
 	}
 	expungeOnServer(t, c, "INBOX", 2)
@@ -275,9 +359,13 @@ func TestReconcileSparesTheRowMidMove(t *testing.T) {
 	}
 	select {
 	case e := <-events:
-		if e.Type == "message-deleted" {
-			t.Errorf("published %+v for a row that is only mid-move", e)
+		var deleted struct {
+			ID int64 `json:"id"`
+		}
+		if e.Type != "message-deleted" || json.Unmarshal([]byte(e.Data), &deleted) != nil || deleted.ID == msg.ID {
+			t.Errorf("expected deletion of the actual inbox copy, got %+v", e)
 		}
 	case <-time.After(100 * time.Millisecond):
+		t.Error("expected a deletion event for the actual inbox copy")
 	}
 }

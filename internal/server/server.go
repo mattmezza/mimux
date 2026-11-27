@@ -43,7 +43,7 @@ type Server struct {
 	pro bool
 
 	pendingMu sync.Mutex
-	pending   map[int64]*time.Timer // message id -> deferred real IMAP move, cancellable by undo
+	pending   map[int64]*pendingMove
 
 	cliMu      sync.Mutex
 	cliTickets map[string]cliTicket // one-shot CLI login codes; see cliauth.go
@@ -57,7 +57,7 @@ func New(cfg *config.Config, st *store.Store, mgr *mail.Manager, version string)
 		secure:     strings.HasPrefix(cfg.Server.BaseURL, "https://"),
 		version:    version,
 		pro:        len(ext.All()) > 0,
-		pending:    map[int64]*time.Timer{},
+		pending:    map[int64]*pendingMove{},
 		cliTickets: map[string]cliTicket{},
 	}
 	s.refreshAccounts()
@@ -283,6 +283,9 @@ func (s *Server) Handler() http.Handler {
 		r.Get("/t/{id}", s.handleThread)
 		r.Get("/t/{id}/rows", s.handleThreadRows)
 		r.Get("/t/{id}/summary", s.handleThreadSummary)
+		r.Post("/t/{id}/delete", s.handleThreadMove("trash"))
+		r.Post("/t/{id}/archive", s.handleThreadMove("archive"))
+		r.Post("/t/{id}/spam", s.handleThreadMove("spam"))
 		r.Get("/rowmenu/{id}", s.handleRowMenu)
 		r.Get("/cli/auth", s.handleCLIAuthForm)
 		r.Post("/cli/auth", s.handleCLIAuthApprove)
@@ -312,6 +315,7 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/messages/{id}/spam", s.handleMove("spam"))
 		r.Post("/messages/{id}/move", s.handleMoveToFolder)
 		r.Post("/messages/{id}/undo-move", s.handleUndoMove)
+		r.Post("/messages/undo-moves", s.handleUndoMoves)
 		r.Post("/messages/{id}/label", s.handleLabel)
 		r.Post("/messages/{id}/allow-sender", s.handleAllowSender)
 		r.Post("/messages/{id}/unsubscribe", s.handleUnsubscribe)

@@ -27,6 +27,13 @@ func newBodyLRU(capacity int) *bodyLRU {
 	return &bodyLRU{cap: capacity, ll: list.New(), m: map[int64]*list.Element{}}
 }
 
+func (c *bodyLRU) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ll.Init()
+	clear(c.m)
+}
+
 func (c *bodyLRU) get(key int64) (*messageBody, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

@@ -270,6 +270,9 @@ type sweepState struct {
 	// reconnect is a pending pass over every discovered folder, including those
 	// excluded from the regular synced set.
 	reconnect bool
+	// Some servers deselect the previous mailbox on a failed SELECT without
+	// sending CLOSED, leaving the client's cached selection stale.
+	reselectInbox bool
 	// deep is when each folder last had a deep pass — the whole-mailbox
 	// reconciliation that heals gaps and re-baselines the expunge signal.
 	deep map[int64]time.Time
@@ -463,27 +466,27 @@ func (a *account) syncedFolders() ([]store.Folder, error) {
 // attachment listing) that SELECT another mailbox on this same connection and
 // leave it selected. Cheap and idempotent — one local row read and a name
 // compare when nothing moved.
-func (a *account) selectInbox(c *imapclient.Client) error {
+func (a *account) selectInbox(c *imapclient.Client) (bool, error) {
 	f, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox")
 	if err != nil || f == nil {
-		return err
+		return false, err
 	}
-	if mbox := c.Mailbox(); mbox != nil && mbox.Name == f.Name {
-		return nil
+	if mbox := c.Mailbox(); !a.sweep.reselectInbox && mbox != nil && mbox.Name == f.Name {
+		return true, nil
 	}
-	_, err = c.Select(f.Name, nil).Wait()
-	return err
+	_, err = selectMailbox(c, f.Name, nil)
+	a.sweep.reselectInbox = err != nil
+	if !errors.Is(err, errMailboxNotFound) {
+		return err == nil, err
+	}
+	if err := a.removeCachedFolder(f); err != nil {
+		return false, err
+	}
+	a.signalListChanged()
+	return false, nil
 }
 
 func (a *account) steadyWithBudget(ctx context.Context, c *imapclient.Client, caps imap.CapSet, budget time.Duration) error {
-	idleOK := caps.Has(imap.CapIdle)
-	// IDLE needs an inbox to watch. Accounts without one still need poll cycles
-	// to finish a budgeted reconnect pass.
-	if inbox, err := a.m.st.FolderBySpecial(a.cfg.Name, "inbox"); err != nil {
-		return err
-	} else if inbox == nil {
-		idleOK = false
-	}
 	// An unfinished reconnect pass is resumed after the normal short delay.
 	sync := !a.sweep.reconnect
 	for {
@@ -551,13 +554,20 @@ func (a *account) steadyWithBudget(ctx context.Context, c *imapclient.Client, ca
 		if ctx.Err() != nil {
 			return nil
 		}
-		if idleOK {
-			if err := a.selectInbox(c); err != nil {
+		// A missing inbox leaves the connection available for polling and
+		// queued commands, with no mailbox to watch in IDLE.
+		var idle bool
+		if caps.Has(imap.CapIdle) {
+			var err error
+			idle, err = a.selectInbox(c)
+			if err != nil {
 				if ctx.Err() != nil {
 					return nil
 				}
 				return err
 			}
+		}
+		if idle {
 			var err error
 			if sync, err = a.waitIdle(ctx, c, poll); err != nil {
 				if ctx.Err() != nil {
@@ -624,7 +634,7 @@ func (a *account) sweepFolderSet(ctx context.Context, c *imapclient.Client, caps
 			if _, err := a.yield(ctx, c); err != nil {
 				return changed, "", err
 			}
-			got, err := a.syncFolder(ctx, c, &folders[i], caps)
+			got, err := a.syncFolderInSweep(ctx, c, &folders[i], caps)
 			if err != nil {
 				return changed, "", err
 			}
@@ -649,7 +659,7 @@ func (a *account) sweepFolderSet(ctx context.Context, c *imapclient.Client, caps
 		if _, err := a.yield(ctx, c); err != nil {
 			return changed, "", err
 		}
-		got, err := a.syncFolder(ctx, c, &rest[i], caps)
+		got, err := a.syncFolderInSweep(ctx, c, &rest[i], caps)
 		if err != nil {
 			return changed, "", err
 		}
@@ -663,16 +673,28 @@ func (a *account) sweepFolderSet(ctx context.Context, c *imapclient.Client, caps
 			// IDLE, and the reconnect path that mirrors it — waits on the mailbox
 			// new mail arrives in. Cheap and idempotent: selectInbox is a local
 			// row read and a name compare when nothing moved.
-			if err := a.selectInbox(c); err != nil {
+			if _, err := a.selectInbox(c); err != nil {
 				return changed, "", err
 			}
 			return changed, rest[i+1].Name, nil
 		}
 	}
-	if err := a.selectInbox(c); err != nil {
+	if _, err := a.selectInbox(c); err != nil {
 		return changed, "", err
 	}
 	return changed, "", nil
+}
+
+func (a *account) syncFolderInSweep(ctx context.Context, c *imapclient.Client, f *store.Folder, caps imap.CapSet) (bool, error) {
+	changed, err := a.syncFolder(ctx, c, f, caps)
+	if !errors.Is(err, errMailboxNotFound) {
+		return changed, err
+	}
+	a.sweep.reselectInbox = true
+	if err := a.removeCachedFolder(f); err != nil {
+		return changed, err
+	}
+	return true, nil
 }
 
 // yield gives the command queue a turn in the middle of a sweep. It is drain

@@ -36,6 +36,31 @@ func (s *Store) UpsertFolder(account, name, specialUse string, sort int) (int64,
 	return id, err
 }
 
+// DeleteFolder drops a mailbox's cache and clears its drafts' server UIDs before
+// the folder ID can be reused. Their local content stays available.
+func (s *Store) DeleteFolder(f *Folder) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	result, err := tx.Exec(`DELETE FROM folders WHERE id = ? AND account = ? AND name = ?`, f.ID, f.Account, f.Name)
+	if err != nil {
+		return err
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if deleted == 0 {
+		return nil
+	}
+	if _, err := tx.Exec(`UPDATE drafts SET folder_id = 0, uid = 0 WHERE account = ? AND folder_id = ?`, f.Account, f.ID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *Store) FolderByID(id int64) (*Folder, error) {
 	f := &Folder{}
 	err := s.DB.QueryRow(`SELECT id, account, name, special_use, uidvalidity, highestmodseq, unread_count, sort, sync
@@ -155,7 +180,8 @@ func (s *Store) SetFolderModSeq(id int64, modseq uint64) error {
 // RecountUnread recomputes and stores unread_count from the messages table.
 func (s *Store) RecountUnread(id int64) error {
 	_, err := s.DB.Exec(`UPDATE folders SET unread_count =
-		(SELECT COUNT(*) FROM messages WHERE folder_id = ? AND is_read = 0) WHERE id = ?`, id, id)
+		(SELECT COUNT(*) FROM messages WHERE COALESCE(pending_folder_id, folder_id) = ? AND is_read = 0)
+		WHERE id = ?`, id, id)
 	return err
 }
 

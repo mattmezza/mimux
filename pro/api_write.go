@@ -420,6 +420,11 @@ func (a *api) handlePatchMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	fresh, err := a.store.MessageByID(msg.ID)
+	if err != nil || fresh == nil {
+		apiError(w, http.StatusInternalServerError, "internal", "Couldn't re-read the message.")
+		return
+	}
 	if req.FolderID != nil {
 		tf, err := a.store.FolderByID(*req.FolderID)
 		if err != nil || tf == nil {
@@ -430,15 +435,11 @@ func (a *api) handlePatchMessage(w http.ResponseWriter, r *http.Request) {
 			apiError(w, http.StatusBadRequest, "invalid_request", "folder_id belongs to a different account.")
 			return
 		}
-		if tf.ID != msg.FolderID {
-			a.moveFolder(msg, tf)
+		if err := a.moveFolder(fresh, tf); err != nil {
+			apiError(w, http.StatusConflict, "move_conflict", err.Error())
+			return
 		}
-	}
-
-	fresh, err := a.store.MessageByID(msg.ID)
-	if err != nil || fresh == nil {
-		apiError(w, http.StatusInternalServerError, "internal", "Couldn't re-read the message.")
-		return
+		fresh.FolderID = tf.ID
 	}
 	writeJSON(w, toMessageJSON(*fresh))
 }
@@ -478,17 +479,22 @@ func (a *api) applyStarred(msg *store.Message, starred bool) {
 	a.background("set starred", func(ctx context.Context) error { return a.mail.SetStarred(ctx, &msgCopy, starred) })
 }
 
-// moveFolder moves msg to tf, which the caller has already validated to exist
-// in the same account and differ from the current folder.
-func (a *api) moveFolder(msg *store.Message, tf *store.Folder) {
-	src := msg.FolderID
-	_ = a.store.SetMessageFolderPending(msg.ID, tf.ID)
-	_ = a.store.RecountUnread(src)
+// moveFolder moves msg to a folder already validated to exist in its account.
+func (a *api) moveFolder(msg *store.Message, tf *store.Folder) error {
+	if msg.FolderID == tf.ID {
+		return nil
+	}
+	if msg.SourceFolderID != 0 {
+		return store.ErrMessageMoveChanged
+	}
+	move := store.MessageMove{ID: msg.ID, SourceID: msg.FolderID, TargetID: tf.ID}
+	if err := a.store.StageMessageMoves([]store.MessageMove{move}); err != nil {
+		return err
+	}
+	_ = a.store.RecountUnread(move.SourceID)
 	_ = a.store.RecountUnread(tf.ID)
-	msgCopy := *msg
-	target := tf.Name
-	a.background("move", func(ctx context.Context) error { return a.mail.MoveToFolder(ctx, &msgCopy, target) })
-	msg.FolderID = tf.ID
+	a.background("move", func(ctx context.Context) error { return a.mail.MovePending(ctx, move) })
+	return nil
 }
 
 // moveSpecial moves msg to its account's special-use folder (archive, spam,
@@ -498,13 +504,7 @@ func (a *api) moveSpecial(msg *store.Message, target string) (int64, error) {
 	if err != nil || tf == nil {
 		return 0, fmt.Errorf("this account has no %s folder", target)
 	}
-	src := msg.FolderID
-	_ = a.store.SetMessageFolderPending(msg.ID, tf.ID)
-	_ = a.store.RecountUnread(src)
-	_ = a.store.RecountUnread(tf.ID)
-	msgCopy := *msg
-	a.background(target, func(ctx context.Context) error { return a.mail.Move(ctx, &msgCopy, target) })
-	return tf.ID, nil
+	return tf.ID, a.moveFolder(msg, tf)
 }
 
 // --- filters ---

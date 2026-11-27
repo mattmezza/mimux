@@ -400,22 +400,29 @@ func TestArchiveSpamDelete(t *testing.T) {
 	del := seedMsg(t, ta.st, store.Message{Account: "a1", FolderID: inbox, UID: 2, MessageID: "<d@x>"})
 	spam := seedMsg(t, ta.st, store.Message{Account: "a1", FolderID: inbox, UID: 3, MessageID: "<s@x>"})
 
-	if rec := ta.req(t, http.MethodPost, fmt.Sprintf("/v1/messages/%d/archive", arch), nil); rec.Code != http.StatusOK {
+	rec := ta.req(t, http.MethodPost, fmt.Sprintf("/v1/messages/%d/archive", arch), nil)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("archive = %d: %s", rec.Code, rec.Body.String())
 	}
-	if m, _ := ta.st.MessageByID(arch); m.FolderID != archive {
-		t.Fatalf("archived message in folder %d, want %d", m.FolderID, archive)
+	var accepted struct {
+		FolderID int64 `json:"folder_id"`
+	}
+	decodeBody(t, rec, &accepted)
+	if accepted.FolderID != archive {
+		t.Fatalf("accepted archive folder = %d, want %d", accepted.FolderID, archive)
 	}
 
-	if rec := ta.req(t, http.MethodDelete, fmt.Sprintf("/v1/messages/%d", del), nil); rec.Code != http.StatusOK {
+	rec = ta.req(t, http.MethodDelete, fmt.Sprintf("/v1/messages/%d", del), nil)
+	if rec.Code != http.StatusOK {
 		t.Fatalf("delete = %d", rec.Code)
 	}
-	if m, _ := ta.st.MessageByID(del); m.FolderID != trash {
-		t.Fatalf("deleted message in folder %d, want trash %d", m.FolderID, trash)
+	decodeBody(t, rec, &accepted)
+	if accepted.FolderID != trash {
+		t.Fatalf("accepted delete folder = %d, want trash %d", accepted.FolderID, trash)
 	}
 
 	// No spam folder exists: clean 400, message stays put.
-	rec := ta.req(t, http.MethodPost, fmt.Sprintf("/v1/messages/%d/spam", spam), nil)
+	rec = ta.req(t, http.MethodPost, fmt.Sprintf("/v1/messages/%d/spam", spam), nil)
 	if rec.Code != http.StatusBadRequest || errCode(t, rec) != "invalid_request" {
 		t.Fatalf("spam without folder = %d: %s", rec.Code, rec.Body.String())
 	}

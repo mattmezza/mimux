@@ -58,7 +58,7 @@ func (m *Manager) Attachments(ctx context.Context, msg *store.Message) ([]Attach
 	if a == nil {
 		return nil, fmt.Errorf("unknown account %q", msg.Account)
 	}
-	f, err := m.st.FolderByID(msg.FolderID)
+	f, err := m.st.FolderByID(msg.IMAPFolderID())
 	if err != nil || f == nil {
 		return nil, fmt.Errorf("folder not found")
 	}
@@ -107,7 +107,7 @@ func (m *Manager) Attachment(ctx context.Context, msg *store.Message, part []int
 	if a == nil {
 		return nil, "", "", fmt.Errorf("unknown account %q", msg.Account)
 	}
-	f, ferr := m.st.FolderByID(msg.FolderID)
+	f, ferr := m.st.FolderByID(msg.IMAPFolderID())
 	if ferr != nil || f == nil {
 		return nil, "", "", fmt.Errorf("folder not found")
 	}
