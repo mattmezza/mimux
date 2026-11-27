@@ -61,12 +61,12 @@ func TestBuildLocalSQL(t *testing.T) {
 		{
 			name:  "folder scope",
 			query: "hi", scope: ScopeFolder, folder: 7,
-			wantParts: []string{"folder_id = ?"},
+			wantParts: []string{"COALESCE(pending_folder_id, folder_id) = ?"},
 		},
 		{
 			name:  "in operator subquery",
 			query: "in:archive", scope: ScopeAll,
-			wantParts: []string{"folder_id IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"},
+			wantParts: []string{"COALESCE(pending_folder_id, folder_id) IN (SELECT id FROM folders WHERE lower(special_use) = ? OR name LIKE ?)"},
 			wantArgs:  []any{"archive", "%archive%"},
 		},
 		{

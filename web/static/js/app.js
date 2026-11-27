@@ -924,14 +924,20 @@ function flagSelected(path) {
   return true;
 }
 function moveSelected(path, label) {
-  const id = currentId();
   const row = selectedRow(); // the element, so a sub-row animates out, not its thread row
+  const threadID = document.getElementById("message-detail")?.dataset.threadSeedId;
+  const id = currentId();
+  if (threadID && (!row || id === threadID && !row.dataset.mid)) {
+    return moveThread(threadID, path, label, row || document.getElementById(`msg-${threadID}`));
+  }
+  if (row?.dataset.members !== undefined) return moveThread(id, path, label, row);
   const folderId = row?.dataset.folder;
   if (!id) return true;
   // postAction, not htmx.ajax: swap:"none" fire-and-forget on document.body's
   // shared lock (see postMarkRead below) — the same bug that hit mark-read.
   postAction(`/messages/${id}/${path}`)
-    .then(() => {
+    .then((res) => {
+      if (res.status === 204) return;
       closeReadingPane();
       removeRowAnimated(row);
       if (folderId) toastUndo(label, id, folderId);
@@ -939,6 +945,32 @@ function moveSelected(path, label) {
     .catch(() => toast("Couldn't move that message — try again."));
   return true;
 }
+
+function moveThread(id, path, label, row) {
+  postAction(`/t/${id}/${path}`)
+    .then((res) => res.json())
+    .then(({ ids, undo_token }) => {
+      if (!ids.length) return;
+      if (ids.includes(id)) {
+        closeReadingPane();
+        removeRowAnimated(row);
+      } else {
+        document.body.dispatchEvent(new Event("mimux:refresh"));
+      }
+      toast(label, {
+        onUndo: () => {
+          const body = new URLSearchParams({ undo_token });
+          ids.forEach((id) => body.append("id", id));
+          postAction("/messages/undo-moves", { body })
+            .then(() => document.body.dispatchEvent(new Event("mimux:refresh")))
+            .catch(() => toast("Couldn't undo — try again."));
+        },
+      });
+    })
+    .catch(() => toast("Couldn't move that conversation — try again."));
+  return true;
+}
+window.moveThread = moveThread;
 
 // Fade + slide a row out, then drop it (see .row-removing in app.css).
 function removeRowAnimated(el) {

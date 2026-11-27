@@ -71,6 +71,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = st.Close() }()
+	if err := st.ResetMessageMoves(); err != nil {
+		slog.Error("startup: reset interrupted moves", "err", err)
+		os.Exit(1)
+	}
 
 	// Root context cancelled on SIGINT/SIGTERM drives clean shutdown of the
 	// sync workers and the HTTP server.

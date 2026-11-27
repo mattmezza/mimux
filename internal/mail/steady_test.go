@@ -164,7 +164,7 @@ func TestSelectInboxAfterReadOnlyCommand(t *testing.T) {
 	if _, err := c.Select("Archive", &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
 		t.Fatal(err)
 	}
-	if err := a.selectInbox(c); err != nil {
+	if _, err := a.selectInbox(c); err != nil {
 		t.Fatal(err)
 	}
 	// Wait() returns the moment the tagged OK lands on the command's buffered
@@ -181,7 +181,7 @@ func TestSelectInboxAfterReadOnlyCommand(t *testing.T) {
 		t.Fatalf("selected %v before idling, want INBOX", mbox)
 	}
 	// Idempotent: already on the inbox, nothing to do and no error.
-	if err := a.selectInbox(c); err != nil {
+	if _, err := a.selectInbox(c); err != nil {
 		t.Fatal(err)
 	}
 }

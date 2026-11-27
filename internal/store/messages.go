@@ -3,6 +3,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,9 +11,12 @@ import (
 )
 
 type Message struct {
-	ID               int64
-	Account          string
-	FolderID         int64
+	ID       int64
+	Account  string
+	FolderID int64
+	// SourceFolderID is set during an optimistic move. UID still belongs to
+	// this folder until IMAP confirms the move to FolderID.
+	SourceFolderID   int64
 	UID              uint32
 	MessageID        string
 	InReplyTo        string
@@ -42,6 +46,13 @@ type Message struct {
 	// mail.RemoveLabel, which keep the "_ means space" token convention
 	// mail.MessageLabels reverses on display). One column, one code path.
 	Labels string
+}
+
+func (m *Message) IMAPFolderID() int64 {
+	if m.SourceFolderID != 0 {
+		return m.SourceFolderID
+	}
+	return m.FolderID
 }
 
 // UpsertMessage inserts a message or, on UID conflict, updates the mutable
@@ -81,7 +92,7 @@ func scanMessage(sc interface{ Scan(...any) error }) (*Message, error) {
 	var structureKnown bool
 	err := sc.Scan(&m.ID, &m.Account, &m.FolderID, &m.UID, &m.MessageID, &m.InReplyTo, &m.Refs,
 		&m.FromName, &m.FromAddress, &m.ToAddresses, &m.CcAddresses, &m.Subject, &date, &m.Size,
-		&m.IsRead, &m.IsStarred, &m.HasAttachment, &m.Snippet, &m.GmThrID, &m.Labels, &structureKnown)
+		&m.IsRead, &m.IsStarred, &m.HasAttachment, &m.Snippet, &m.GmThrID, &m.Labels, &structureKnown, &m.SourceFolderID)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +101,9 @@ func scanMessage(sc interface{ Scan(...any) error }) (*Message, error) {
 	return m, nil
 }
 
-const messageCols = `id, account, folder_id, uid, message_id, in_reply_to, refs, from_name,
-	from_address, to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels, structure_known`
+const messageCols = `id, account, COALESCE(pending_folder_id, folder_id), uid, message_id, in_reply_to, refs, from_name,
+	from_address, to_addresses, cc_addresses, subject, date, size, is_read, is_starred, has_attachment, snippet, gm_thrid, labels, structure_known,
+	CASE WHEN pending_folder_id IS NULL THEN 0 ELSE folder_id END`
 
 // StructureRetryDue limits malformed messages to one structure request per day.
 func (s *Store) StructureRetryDue(folderID int64, uid uint32, now time.Time) bool {
@@ -150,7 +162,7 @@ func (s *Store) ListMessages(folderID int64, limit int) ([]Message, error) {
 
 // ListMessagesPage is ListMessages one page at a time — see listPage.
 func (s *Store) ListMessagesPage(folderID int64, before string, limit int) ([]Message, string, error) {
-	return s.listPage(`m.folder_id = ?`, []any{folderID}, before, limit)
+	return s.listPage(`COALESCE(m.pending_folder_id, m.folder_id) = ?`, []any{folderID}, before, limit)
 }
 
 // ListUnifiedInbox returns the first page of every account's inbox folder,
@@ -168,12 +180,12 @@ func (s *Store) ListUnifiedInboxPage(before string, limit int) ([]Message, strin
 
 // ListMessagesPageByMessage is ListMessagesPage paged by message — see messagePage.
 func (s *Store) ListMessagesPageByMessage(folderID int64, before string, limit int) ([]Message, string, error) {
-	return s.messagePage(`folder_id = ?`, []any{folderID}, before, limit)
+	return s.messagePage(`COALESCE(pending_folder_id, folder_id) = ?`, []any{folderID}, before, limit)
 }
 
 // ListUnifiedInboxPageByMessage is ListUnifiedInboxPage paged by message — see messagePage.
 func (s *Store) ListUnifiedInboxPageByMessage(before string, limit int) ([]Message, string, error) {
-	return s.messagePage(`folder_id IN (SELECT id FROM folders WHERE special_use = 'inbox')`, nil, before, limit)
+	return s.messagePage(`COALESCE(pending_folder_id, folder_id) IN (SELECT id FROM folders WHERE special_use = 'inbox')`, nil, before, limit)
 }
 
 // messagePage returns one page of a list scope, newest first, paged by MESSAGE:
@@ -370,7 +382,7 @@ type convRow struct {
 func (s *Store) conversationRows(where string, args ...any) ([]convRow, error) {
 	// #nosec G202 -- where is a fixed fragment from this package; every value is bound.
 	rows, err := s.DB.Query(`SELECT m.id, m.account, m.date, m.is_read, m.message_id, m.refs, m.in_reply_to
-		FROM messages m JOIN folders f ON f.id = m.folder_id WHERE `+where, args...)
+		FROM messages m JOIN folders f ON f.id = COALESCE(m.pending_folder_id, m.folder_id) WHERE `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -443,9 +455,8 @@ func (s *Store) conversationRows(where string, args ...any) ([]convRow, error) {
 // delivered to two accounts stays two rows.
 //
 // Gmail's IMAP publishes one message as separate rows in INBOX, [Gmail]/All
-// Mail and [Gmail]/Important, so those copies are deduped, keeping the
-// inbox/sent one when there is one (that row's folder+UID is the sensible
-// target for replies and flag changes).
+// Mail and [Gmail]/Important. Keep the copy that opened the conversation,
+// then prefer inbox/sent copies for the other messages.
 func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 	ids := map[string]bool{}
 	var pending []string
@@ -483,7 +494,7 @@ func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 			SELECT m.*, CASE WHEN f.special_use IN ('inbox', 'sent') THEN 0 ELSE 1 END AS pri
 			FROM messages m JOIN folders f ON f.id = m.folder_id
 			WHERE `+strings.Join(where, " OR ")+`
-		) ORDER BY pri, id`, args...)
+		) ORDER BY (id = ?) DESC, pri, id`, append(args, seed.ID)...)
 		if err != nil {
 			return nil, err
 		}
@@ -499,7 +510,7 @@ func (s *Store) ThreadMessages(seed *Message) ([]Message, error) {
 			}
 			key := m.Account + "\x00" + m.MessageID
 			if _, dup := best[key]; dup {
-				continue // ORDER BY pri already put the inbox/sent copy first
+				continue // keep the seed copy, then prefer inbox/sent
 			}
 			best[key] = *m
 			out = append(out, *m)
@@ -607,9 +618,9 @@ func (s *Store) DistinctLabels() ([]string, error) {
 
 // FolderUIDs returns the set of UIDs currently stored for a folder, for
 // reconciling against the server (detecting expunged messages) and for the
-// backfill's "do we already have this one". Rows mid-move are excluded from
-// both: their UID belongs to the folder they came from, so it neither proves
-// they are present here nor means they have gone missing.
+// backfill's "do we already have this one". New pending moves still hold their
+// real folder and UID. Legacy pending rows carry an unverified UID and are
+// excluded until the server confirms their location.
 func (s *Store) FolderUIDs(folderID int64) (map[uint32]bool, error) {
 	rows, err := s.DB.Query(`SELECT uid FROM messages WHERE folder_id = ? AND pending_move = 0`, folderID)
 	if err != nil {
@@ -625,6 +636,34 @@ func (s *Store) FolderUIDs(folderID int64) (map[uint32]bool, error) {
 		out[u] = true
 	}
 	return out, rows.Err()
+}
+
+// LegacyPendingMessages finds rows staged by older versions that put the
+// source UID in the destination folder.
+func (s *Store) LegacyPendingMessages(folderID int64) ([]Message, error) {
+	rows, err := s.DB.Query(`SELECT id, uid, message_id FROM messages WHERE folder_id = ? AND pending_move = 1`, folderID)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var pending []Message
+	for rows.Next() {
+		var msg Message
+		if err := rows.Scan(&msg.ID, &msg.UID, &msg.MessageID); err != nil {
+			return nil, err
+		}
+		pending = append(pending, msg)
+	}
+	return pending, rows.Err()
+}
+
+func (s *Store) ResolveLegacyPendingMessage(id int64, keep bool) error {
+	query := `UPDATE messages SET pending_move = 0 WHERE id = ? AND pending_move = 1`
+	if !keep {
+		query = `DELETE FROM messages WHERE id = ? AND pending_move = 1`
+	}
+	_, err := s.DB.Exec(query, id)
+	return err
 }
 
 // FolderLabels returns every stored message's label value in a folder, keyed
@@ -762,38 +801,109 @@ func (s *Store) DeleteMessage(id int64) error {
 	return err
 }
 
-// SetMessageFolder puts a message's local row in a folder where its UID is
-// valid — today only the undo of a still-pending move, which returns it to the
-// folder it came from. It clears the pending marker for that reason.
-func (s *Store) SetMessageFolder(id, folderID int64) error {
-	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, pending_move = 0 WHERE id = ?`, folderID, id)
-	return err
+type MessageMove struct {
+	ID       int64
+	SourceID int64
+	TargetID int64
 }
 
-// SetMessageFolderPending is the optimistic half of a move: the row shows up in
-// the destination straight away, while the real IMAP move is still deferred
-// behind the undo grace period (see Server.schedulePendingMove). Its UID is the
-// source folder's until then and means nothing in the destination, so the row is
-// marked pending — expunge reconciliation skips it and cannot mistake it for a
-// message the server dropped. mail.Manager.moveTo clears the marker.
-func (s *Store) SetMessageFolderPending(id, folderID int64) error {
-	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, pending_move = 1 WHERE id = ?`, folderID, id)
-	return err
+var ErrMessageMoveChanged = errors.New("message location changed or another move is pending")
+
+// StageMessageMoves changes the visible folder of every message in one write.
+// The source IMAP location stays valid during the undo window.
+func (s *Store) StageMessageMoves(moves []MessageMove) error {
+	return s.updateMessageMoves(moves, `UPDATE messages SET pending_folder_id = ?
+		WHERE pending_folder_id IS NULL AND pending_move = 0 AND id = ? AND folder_id = ?`)
 }
 
-// SetMessageLocation records where a message really lives once the IMAP move has
-// landed: the destination folder and the UID the server assigned it there
-// (MOVE/COPY report it via UIDPLUS). Any row already holding that (folder, uid)
-// — the destination sync having got there first — is dropped, since the two are
-// the same message and the column pair is unique.
-func (s *Store) SetMessageLocation(id, folderID int64, uid uint32) error {
-	if _, err := s.DB.Exec(`DELETE FROM messages WHERE folder_id = ? AND uid = ? AND id != ?`,
-		folderID, uid, id); err != nil {
+// CancelMessageMoves returns staged messages to their source folders. The
+// destination guard keeps an old undo from clearing a different placement.
+func (s *Store) CancelMessageMoves(moves []MessageMove) error {
+	return s.updateMessageMoves(moves, `UPDATE messages SET pending_folder_id = NULL
+		WHERE pending_folder_id = ? AND id = ? AND folder_id = ?`)
+}
+
+func (s *Store) updateMessageMoves(moves []MessageMove, query string) error {
+	if len(moves) == 0 {
+		return nil
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
 		return err
 	}
-	_, err := s.DB.Exec(`UPDATE messages SET folder_id = ?, uid = ?, pending_move = 0 WHERE id = ?`,
-		folderID, uid, id)
-	return err
+	defer func() { _ = tx.Rollback() }()
+	for _, move := range moves {
+		ok, err := changed(tx.Exec(query, move.TargetID, move.ID, move.SourceID))
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrMessageMoveChanged
+		}
+	}
+	return tx.Commit()
+}
+
+// ResetMessageMoves reverts optimistic placements left by a stopped process.
+// Sync reconciles any IMAP work that completed before the process stopped.
+func (s *Store) ResetMessageMoves() error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE folders SET unread_count =
+		(SELECT COUNT(*) FROM messages WHERE folder_id = folders.id AND is_read = 0)
+		WHERE id IN (
+			SELECT folder_id FROM messages WHERE pending_folder_id IS NOT NULL
+			UNION SELECT pending_folder_id FROM messages WHERE pending_folder_id IS NOT NULL
+		)`); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE messages SET pending_folder_id = NULL WHERE pending_folder_id IS NOT NULL`); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// CompleteMessageMove binds the returned UID only within the generation the
+// destination cache describes. An empty, never-synced cache can adopt the
+// reported generation. Otherwise an unverified mapping leaves the destination
+// cache for sync to reconcile and drops the row whose source UID is now gone.
+func (s *Store) CompleteMessageMove(id int64, target *Folder, uid, uidValidity uint32) (bool, error) {
+	if uid == 0 || uidValidity == 0 {
+		return false, s.DeleteMessage(id)
+	}
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = tx.Rollback() }()
+	valid, err := changed(tx.Exec(`UPDATE folders SET uidvalidity = ? WHERE id = ? AND account = ? AND name = ?
+		AND (uidvalidity = ? OR (uidvalidity = 0 AND NOT EXISTS (
+			SELECT 1 FROM messages WHERE folder_id = folders.id)))`,
+		uidValidity, target.ID, target.Account, target.Name, uidValidity))
+	if err != nil {
+		return false, err
+	}
+	if !valid {
+		if _, err := tx.Exec(`DELETE FROM messages WHERE id = ?`, id); err != nil {
+			return false, err
+		}
+		return false, tx.Commit()
+	}
+	// A row already holding this UID in the same generation represents the
+	// same message. Keep the original row and its local metadata.
+	if _, err := tx.Exec(`DELETE FROM messages WHERE folder_id = ? AND uid = ? AND id != ?
+		AND EXISTS (SELECT 1 FROM messages WHERE id = ?)`, target.ID, uid, id, id); err != nil {
+		return false, err
+	}
+	stored, err := changed(tx.Exec(`UPDATE messages SET folder_id = ?, uid = ?, pending_move = 0, pending_folder_id = NULL WHERE id = ?`,
+		target.ID, uid, id))
+	if err != nil {
+		return false, err
+	}
+	return stored, tx.Commit()
 }
 
 func b2i(b bool) int {

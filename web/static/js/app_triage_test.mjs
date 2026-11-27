@@ -119,6 +119,39 @@ test('gestures on expanded messages use the message ID and do not mark the whole
   assert.deepEqual(calls, [['42', true, false, true]]);
 });
 
+test('delete shortcut on an open conversation moves the thread and offers one undo', async () => {
+  const start = app.indexOf('function moveSelected(');
+  const end = app.indexOf('// Fade + slide a row out', start);
+  const calls = [];
+  const row = { dataset: { members: '1' } };
+  let undo;
+  const sandbox = {
+    window: {}, URLSearchParams, Event,
+    selectedRow: () => row, currentId: () => '1',
+    document: {
+      getElementById: () => ({ dataset: { threadSeedId: '1' } }),
+      body: { dispatchEvent: (event) => calls.push(event.type) },
+    },
+    postAction: async (path, opts) => {
+      calls.push(opts ? [path, opts.body.toString()] : path);
+      return { json: async () => ({ ids: ['1', '2'], undo_token: 'abc' }) };
+    },
+    closeReadingPane: () => calls.push('close'),
+    removeRowAnimated: (removed) => calls.push(removed),
+    toast: (_label, opts) => { undo = opts?.onUndo; },
+  };
+  vm.runInNewContext(app.slice(start, end) + '; globalThis.move = moveSelected;', sandbox);
+  sandbox.move('delete', 'Deleted');
+  await tick();
+  assert.deepEqual(calls, ['/t/1/delete', 'close', row]);
+  undo();
+  await tick();
+  assert.deepEqual(calls.slice(3), [
+    ['/messages/undo-moves', 'undo_token=abc&id=1&id=2'],
+    'mimux:refresh',
+  ]);
+});
+
 test('a targeted event for the latest member preserves other unread messages in a collapsed thread', () => {
   const start = app.indexOf('function applyReadState('), end = app.indexOf('function markRead(', start);
   const parent = { dataset: { members: '1 2', unreadMembers: '1 2' } };

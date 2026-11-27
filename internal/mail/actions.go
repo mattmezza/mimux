@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -86,7 +87,7 @@ func (m *Manager) fetchSectionOn(ctx context.Context, conn *imapclient.Client, m
 	if a == nil {
 		return nil, fmt.Errorf("unknown account %q", msg.Account)
 	}
-	f, err := m.st.FolderByID(msg.FolderID)
+	f, err := m.st.FolderByID(msg.IMAPFolderID())
 	if err != nil || f == nil {
 		return nil, fmt.Errorf("folder not found")
 	}
@@ -212,7 +213,7 @@ func (a *account) pushSeenDirty(c *imapclient.Client) {
 	}
 	for i := range msgs {
 		msg := &msgs[i]
-		f, err := a.m.st.FolderByID(msg.FolderID)
+		f, err := a.m.st.FolderByID(msg.IMAPFolderID())
 		if err != nil || f == nil {
 			continue
 		}
@@ -251,7 +252,7 @@ func (m *Manager) storeFlag(ctx context.Context, c *imapclient.Client, msg *stor
 	if a == nil {
 		return fmt.Errorf("unknown account %q", msg.Account)
 	}
-	f, err := m.st.FolderByID(msg.FolderID)
+	f, err := m.st.FolderByID(msg.IMAPFolderID())
 	if err != nil || f == nil {
 		return fmt.Errorf("folder not found")
 	}
@@ -337,69 +338,133 @@ func (m *Manager) moveToFolder(ctx context.Context, c *imapclient.Client, msg *s
 	return m.moveTo(ctx, c, msg, target)
 }
 
+// MovePending applies a placement staged by the web UI or API. If IMAP
+// fails, removing the placement exposes the original folder and UID again.
+func (m *Manager) MovePending(ctx context.Context, move store.MessageMove) error {
+	msg, err := m.st.MessageByID(move.ID)
+	if err != nil || msg == nil {
+		return err
+	}
+	if msg.SourceFolderID != move.SourceID || msg.FolderID != move.TargetID {
+		return store.ErrMessageMoveChanged
+	}
+	finish := func(err error) error {
+		if err != nil {
+			_ = m.st.CancelMessageMoves([]store.MessageMove{move})
+		}
+		_ = m.st.RecountUnread(move.SourceID)
+		_ = m.st.RecountUnread(move.TargetID)
+		m.changed(msg)
+		return err
+	}
+	target, err := m.st.FolderByID(move.TargetID)
+	if err != nil {
+		return finish(err)
+	}
+	if target == nil {
+		return finish(fmt.Errorf("destination folder no longer exists"))
+	}
+	account := m.account(msg.Account)
+	if account == nil {
+		return finish(fmt.Errorf("unknown account %q", msg.Account))
+	}
+	// Once the worker starts, it owns finalizing the move. A timeout while
+	// it is waiting on the server must not re-expose the source for a retry.
+	var claimed atomic.Bool
+	err = account.submit(ctx, func(c *imapclient.Client) error {
+		if !claimed.CompareAndSwap(false, true) {
+			return nil
+		}
+		return finish(m.moveTo(ctx, c, msg, target))
+	})
+	if claimed.CompareAndSwap(false, true) {
+		return finish(err)
+	}
+	return err
+}
+
 func (m *Manager) moveTo(ctx context.Context, c *imapclient.Client, msg *store.Message, target *store.Folder) error {
-	a := m.accounts[msg.Account]
+	a := m.account(msg.Account)
 	if a == nil {
 		return fmt.Errorf("unknown account %q", msg.Account)
 	}
-	src, err := m.st.FolderByID(msg.FolderID)
+	src, err := m.st.FolderByID(msg.IMAPFolderID())
 	if err != nil || src == nil {
 		return fmt.Errorf("folder not found")
 	}
 	if target.ID == src.ID {
 		return nil
 	}
-	defer m.changed(msg)
-	var destUID imap.UID
-	if err := a.exec(ctx, c, func(c *imapclient.Client) error {
-		if _, err := c.Select(src.Name, nil).Wait(); err != nil {
+	if msg.SourceFolderID == 0 {
+		defer m.changed(msg)
+	}
+	return a.exec(ctx, c, func(c *imapclient.Client) error {
+		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if msg.SourceFolderID != 0 {
+			current, err := m.st.MessageByID(msg.ID)
+			if err != nil {
+				return err
+			}
+			if current == nil || current.SourceFolderID != src.ID || current.FolderID != target.ID || current.UID != msg.UID {
+				return store.ErrMessageMoveChanged
+			}
+		}
+		selected, err := c.Select(src.Name, nil).Wait()
+		if err != nil {
+			return err
+		}
+		if src.UIDValidity != 0 && selected.UIDValidity != src.UIDValidity {
+			return fmt.Errorf("source folder changed before the move")
+		}
+		var destUID imap.UID
+		var destUIDValidity uint32
 		set := imap.UIDSet{}
 		set.AddNum(imap.UID(msg.UID))
 		if c.Caps().Has(imap.CapMove) {
 			data, err := c.Move(set, target.Name).Wait()
-			if err == nil && data != nil {
-				destUID = onlyUID(data.DestUIDs)
+			if err != nil {
+				return err
 			}
-			return err
+			if data != nil {
+				destUID = onlyUID(data.DestUIDs)
+				destUIDValidity = data.UIDValidity
+			}
+		} else {
+			data, err := c.Copy(set, target.Name).Wait()
+			if err != nil {
+				return err
+			}
+			if data != nil {
+				destUID = onlyUID(data.DestUIDs)
+				destUIDValidity = data.UIDValidity
+			}
+			if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
+				return err
+			}
+			if c.Caps().Has(imap.CapUIDPlus) {
+				err = c.UIDExpunge(set).Close()
+			} else {
+				err = c.Expunge().Close()
+			}
+			if err != nil {
+				return err
+			}
 		}
-		data, err := c.Copy(set, target.Name).Wait()
+		stored, err := m.st.CompleteMessageMove(msg.ID, target, uint32(destUID), destUIDValidity)
 		if err != nil {
 			return err
 		}
-		if data != nil {
-			destUID = onlyUID(data.DestUIDs)
+		if !stored {
+			// Sync can reuse the deleted row ID for a different message.
+			m.bodies.clear()
+			return nil
 		}
-		if err := c.Store(set, &imap.StoreFlags{Op: imap.StoreFlagsAdd, Silent: true, Flags: []imap.Flag{imap.FlagDeleted}}, nil).Close(); err != nil {
-			return err
-		}
-		if c.Caps().Has(imap.CapUIDPlus) {
-			return c.UIDExpunge(set).Close()
-		}
-		return c.Expunge().Close()
-	}); err != nil {
-		// The move did not happen, so the server still has the message where it
-		// was. Put the row back there and clear the pending marker, or an
-		// optimistically moved row would sit in the wrong folder with a UID that
-		// resolves nowhere and reconciliation permanently skipping it.
-		_ = m.st.SetMessageFolder(msg.ID, src.ID)
-		return err
-	}
-	// The row's UID belonged to the source folder and means nothing in the
-	// destination — it is why an optimistically moved message could not have its
-	// body fetched, and why expunge reconciliation would read it as gone. COPYUID
-	// tells us the real one; without UIDPLUS there is nothing to correct it with,
-	// so the row goes and the destination's next sync brings the message back
-	// with a UID that works.
-	if destUID > 0 {
-		_ = m.st.SetMessageLocation(msg.ID, target.ID, uint32(destUID))
-		msg.FolderID, msg.UID = target.ID, uint32(destUID)
+		msg.FolderID, msg.SourceFolderID, msg.UID = target.ID, 0, uint32(destUID)
 		m.updated(msg, "moved", originMimux)
 		return nil
-	}
-	_ = m.st.DeleteMessage(msg.ID)
-	return nil
+	})
 }
 
 // onlyUID returns the single UID in a COPYUID/MOVE destination set, or 0 when

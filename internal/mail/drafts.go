@@ -133,7 +133,7 @@ func (m *Manager) pushDraft(ctx context.Context, c *imapclient.Client, d *store.
 			}
 			newUID = imap.UID(u)
 		}
-		m.sweepDraftSiblings(c, f, msgID, uint32(newUID)) // #nosec G115 -- UID fits uint32 by protocol
+		m.sweepDraftSiblings(c, f, msgID, uint32(newUID))                               // #nosec G115 -- UID fits uint32 by protocol
 		return m.st.ClearDraftDirty(cur.ID, msgID, f.ID, uint32(newUID), cur.UpdatedAt) // #nosec G115 -- UID fits uint32 by protocol
 	})
 }
@@ -215,7 +215,7 @@ func (m *Manager) AdoptDraft(ctx context.Context, msg *store.Message) (*store.Dr
 
 // adoptDraft is AdoptDraft on the caller's own connection (see fetchRawOn).
 func (m *Manager) adoptDraft(ctx context.Context, c *imapclient.Client, msg *store.Message) (*store.Draft, error) {
-	existing, err := m.st.DraftByServerCopy(msg.Account, msg.MessageID, msg.FolderID, msg.UID)
+	existing, err := m.st.DraftByServerCopy(msg.Account, msg.MessageID, msg.IMAPFolderID(), msg.UID)
 	if err != nil {
 		return nil, err
 	}
@@ -244,10 +244,10 @@ func (m *Manager) adoptDraft(ctx context.Context, c *imapclient.Client, msg *sto
 	// server, at this location. It also clears the push debt UpsertDraft just
 	// took on — nothing has been edited yet, so republishing an identical copy
 	// would only churn the UID.
-	if err := m.st.ClearDraftDirty(d.ID, msg.MessageID, msg.FolderID, msg.UID, d.UpdatedAt); err != nil {
+	if err := m.st.ClearDraftDirty(d.ID, msg.MessageID, msg.IMAPFolderID(), msg.UID, d.UpdatedAt); err != nil {
 		return nil, err
 	}
-	d.MessageID, d.FolderID, d.UID, d.IMAPDirty = msg.MessageID, msg.FolderID, msg.UID, false
+	d.MessageID, d.FolderID, d.UID, d.IMAPDirty = msg.MessageID, msg.IMAPFolderID(), msg.UID, false
 	return d, nil
 }
 

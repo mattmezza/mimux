@@ -4,6 +4,7 @@ package mail
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -72,8 +73,7 @@ func detectSpecialUse(attrs []imap.MailboxAttr, name string) string {
 	return ""
 }
 
-// syncFolders LISTs the account's mailboxes and upserts them, returning the
-// stored folder rows.
+// syncFolders reconciles the cached folders with a complete LIST response.
 func (a *account) syncFolders(c *imapclient.Client) ([]store.Folder, error) {
 	opts := &imap.ListOptions{}
 	if c.Caps().Has(imap.CapSpecialUse) {
@@ -83,16 +83,79 @@ func (a *account) syncFolders(c *imapclient.Client) ([]store.Folder, error) {
 	if err != nil {
 		return nil, err
 	}
+	live := make(map[int64]bool, len(list))
 	for _, m := range list {
 		if hasAttr(m.Attrs, imap.MailboxAttrNonExistent) || hasAttr(m.Attrs, imap.MailboxAttrNoSelect) {
 			continue
 		}
 		special := detectSpecialUse(m.Attrs, m.Mailbox)
-		if _, err := a.m.st.UpsertFolder(a.cfg.Name, m.Mailbox, special, sortForSpecial(special)); err != nil {
+		id, err := a.m.st.UpsertFolder(a.cfg.Name, m.Mailbox, special, sortForSpecial(special))
+		if err != nil {
+			return nil, err
+		}
+		live[id] = true
+	}
+	folders, err := a.m.st.ListFolders(a.cfg.Name)
+	if err != nil {
+		return nil, err
+	}
+	remaining := folders[:0]
+	for _, f := range folders {
+		if live[f.ID] {
+			remaining = append(remaining, f)
+			continue
+		}
+		if err := a.removeCachedFolder(&f); err != nil {
 			return nil, err
 		}
 	}
-	return a.m.st.ListFolders(a.cfg.Name)
+	if len(remaining) < len(folders) {
+		a.signalListChanged()
+	}
+	return remaining, nil
+}
+
+func (a *account) removeCachedFolder(f *store.Folder) error {
+	if err := a.m.st.DeleteFolder(f); err != nil {
+		return err
+	}
+	// A newly synced message can reuse a deleted SQLite row ID.
+	a.m.bodies.clear()
+	delete(a.sweep.deep, f.ID)
+	delete(a.sweep.counts, f.ID)
+	return nil
+}
+
+var errMailboxNotFound = errors.New("mailbox not found")
+
+func selectMailbox(c *imapclient.Client, name string, opts *imap.SelectOptions) (*imap.SelectData, error) {
+	data, err := c.Select(name, opts).Wait()
+	if isMissingMailbox(err) {
+		return nil, fmt.Errorf("%w: %w", errMailboxNotFound, err)
+	}
+	return data, err
+}
+
+func isMissingMailbox(err error) bool {
+	var response *imap.Error
+	if !errors.As(err, &response) || response.Type != imap.StatusResponseTypeNo {
+		return false
+	}
+	if strings.EqualFold(string(response.Code), string(imap.ResponseCodeNonExistent)) {
+		return true
+	}
+	if response.Code != "" {
+		return false
+	}
+
+	// Some servers (including Dovecot) send a plain NO for a missing mailbox.
+	detail, _, _ := strings.Cut(strings.ToLower(response.Text), ":")
+	switch strings.TrimSuffix(strings.TrimSpace(detail), ".") {
+	case "no such mailbox", "mailbox doesn't exist", "mailbox does not exist", "unknown mailbox", "mailbox not found":
+		return true
+	default:
+		return false
+	}
 }
 
 func hasAttr(attrs []imap.MailboxAttr, want imap.MailboxAttr) bool {
@@ -202,13 +265,17 @@ func expungesLikely(baseline uint32, arrivals int, now uint32) bool {
 // the next deep pass.
 func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store.Folder, caps imap.CapSet) (changed bool, err error) {
 	condstore := caps.Has(imap.CapCondStore)
-	sel, err := c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait()
+	sel, err := selectMailbox(c, f.Name, &imap.SelectOptions{CondStore: condstore})
 	if err != nil {
 		return false, err
 	}
 	reset, err := syncUIDValidity(a.m.st, f, sel.UIDValidity)
 	if err != nil {
 		return false, err
+	}
+	repaired, err := a.reconcileLegacyMoves(c, f)
+	if err != nil {
+		return repaired, err
 	}
 
 	maxUID, err := a.m.st.MaxUID(f.ID)
@@ -221,6 +288,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// describes a folder that no longer exists, so drop the baseline and let
 		// this pass (which is deep, firstFull) re-establish it.
 		a.setBaselineCount(f.ID, 0)
+		a.m.bodies.clear()
 	}
 	deep := firstFull || a.deepDue(f.ID)
 
@@ -260,7 +328,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 	if err != nil {
 		return false, err
 	}
-	changed = newCount > 0
+	changed = reset || repaired || newCount > 0
 	for _, uid := range due {
 		if err := a.enrichStructure(f, uid, nil); err != nil {
 			slog.Warn("message BODYSTRUCTURE retry failed", "account", a.cfg.Name, "folder", f.Name, "uid", uid, "err", err)
@@ -290,7 +358,7 @@ func (a *account) syncFolder(ctx context.Context, c *imapclient.Client, f *store
 		// this pass opened with, which setBaselineCount compares the next cycle's
 		// arrivals against. One extra round trip, only on a pass that served a
 		// command.
-		if _, err := c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait(); err != nil {
+		if _, err := selectMailbox(c, f.Name, &imap.SelectOptions{CondStore: condstore}); err != nil {
 			return changed, err
 		}
 	}
@@ -402,7 +470,7 @@ func (a *account) yieldFolder(ctx context.Context, c *imapclient.Client, f *stor
 	if err != nil || !served {
 		return err
 	}
-	_, err = c.Select(f.Name, &imap.SelectOptions{CondStore: condstore}).Wait()
+	_, err = selectMailbox(c, f.Name, &imap.SelectOptions{CondStore: condstore})
 	return err
 }
 

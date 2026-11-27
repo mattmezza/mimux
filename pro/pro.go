@@ -33,16 +33,6 @@ func init() {
 // server.Handler), and nothing here ever reads that cookie: API callers
 // authenticate with a personal access token minted in Settings → API.
 func routes(deps ext.Deps) ext.Extension {
-	r := chi.NewRouter()
-	// Unauthenticated on purpose: a health probe that needs a credential is a
-	// health probe nobody wires up. It exposes a count, not any mail.
-	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]any{"ok": true, "accounts": len(deps.Mail.Status())})
-	})
-
-	tokens := newTokenAuth(deps.Store, deps.Cfg.API.RateLimitPerMinute)
-	// Licence enforcement, and only here: /health above and the spec below stay
-	// open, and nothing in the mail client is behind this. See pro/licence.go.
 	licence := newLicenceGate(deps)
 	// The webhook delivery engine: subscribes to the mail hub and drains the
 	// delivery queue for as long as the process lives. Started here because
@@ -52,7 +42,20 @@ func routes(deps ext.Deps) ext.Extension {
 	// queue instead of posting them.
 	hooks := newWebhooks(deps, licence)
 	go hooks.run(context.Background())
-	a := newAPI(deps, hooks)
+	return newAPI(deps, hooks).routes(licence)
+}
+
+func (a *api) routes(licence *licenceGate) ext.Extension {
+	r := chi.NewRouter()
+	// Unauthenticated on purpose: a health probe that needs a credential is a
+	// health probe nobody wires up. It exposes a count, not any mail.
+	r.Get("/health", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, map[string]any{"ok": true, "accounts": len(a.mail.Status())})
+	})
+
+	tokens := newTokenAuth(a.store, a.deps.Cfg.API.RateLimitPerMinute)
+	// Licence enforcement, and only here: /health and the spec stay open, and
+	// nothing in the mail client is behind this. See pro/licence.go.
 	// The MCP endpoint: same tokens, same scopes, agent-shaped. Stateless
 	// streamable HTTP — every POST is self-contained, so it sits behind the
 	// same auth middleware as the JSON API with nothing extra.

@@ -467,6 +467,7 @@ func (s *Server) handleThread(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "thread_detail", map[string]any{
 		"CSRF":             auth.EnsureCSRF(w, r, s.secure),
 		"Thread":           thread,
+		"ThreadSeedID":     id,
 		"Ordered":          ordered,
 		"Latest":           latest,
 		"DraftLinks":       s.draftLinks(thread.Messages),
@@ -560,6 +561,7 @@ func (s *Server) handleRowMenu(w http.ResponseWriter, r *http.Request) {
 		if t := s.conversationOf(msg.ID); t != nil && t.Count > 1 {
 			latest := t.LatestMessage()
 			data["Thread"], data["Latest"] = t, latest
+			data["ThreadSeedID"] = msg.ID
 			// Move targets follow the message the actions act on.
 			data["Folders"], _ = s.store.ListFolders(latest.Account)
 			data["CurrentFolder"] = latest.FolderID
@@ -981,137 +983,6 @@ func rowTemplate(r *http.Request) string {
 		return "sub_row"
 	}
 	return "message_row"
-}
-
-// undoGrace is the window during which a move/archive/delete/spam action can
-// be undone: the local row is relocated immediately (optimistic UI), but the
-// real IMAP move is deferred until the grace period elapses so undo can just
-// cancel it — no need to reconcile a remote UID that a real move would have
-// reassigned.
-const undoGrace = 11 * time.Second
-
-func (s *Server) handleMove(target string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		msg := s.messageFromReq(w, r)
-		if msg == nil {
-			return
-		}
-		tf, err := s.store.FolderBySpecial(msg.Account, target)
-		if err != nil || tf == nil {
-			http.Error(w, "no "+target+" folder for this account", http.StatusBadRequest)
-			return
-		}
-		srcFolderID := msg.FolderID
-		_ = s.store.SetMessageFolderPending(msg.ID, tf.ID)
-		_ = s.store.RecountUnread(srcFolderID)
-		_ = s.store.RecountUnread(tf.ID)
-		msgCopy := *msg
-		s.schedulePendingMove(msgCopy.ID, func() {
-			s.background(func(ctx context.Context) error { return s.mail.Move(ctx, &msgCopy, target) })
-		})
-		// Empty body + outerHTML swap removes the row from the list.
-		w.WriteHeader(http.StatusOK)
-	}
-}
-
-// handleMoveToFolder moves a message to an arbitrary folder chosen by the user
-// (form value "folder" = target folder id). It generalizes handleMove's
-// optimistic-move + deferred-IMAP flow to any folder, but only within the
-// message's OWN account — a folder id from another account is rejected.
-func (s *Server) handleMoveToFolder(w http.ResponseWriter, r *http.Request) {
-	msg := s.messageFromReq(w, r)
-	if msg == nil {
-		return
-	}
-	fid, err := strconv.ParseInt(r.FormValue("folder"), 10, 64)
-	if err != nil {
-		http.Error(w, "missing folder", http.StatusBadRequest)
-		return
-	}
-	tf, err := s.store.FolderByID(fid)
-	if err != nil || tf == nil {
-		http.Error(w, "no such folder", http.StatusBadRequest)
-		return
-	}
-	if tf.Account != msg.Account {
-		http.Error(w, "folder belongs to a different account", http.StatusBadRequest)
-		return
-	}
-	srcFolderID := msg.FolderID
-	if tf.ID == srcFolderID {
-		w.WriteHeader(http.StatusOK)
-		return
-	}
-	_ = s.store.SetMessageFolderPending(msg.ID, tf.ID)
-	_ = s.store.RecountUnread(srcFolderID)
-	_ = s.store.RecountUnread(tf.ID)
-	msgCopy := *msg
-	target := tf.Name
-	s.schedulePendingMove(msgCopy.ID, func() {
-		s.background(func(ctx context.Context) error { return s.mail.MoveToFolder(ctx, &msgCopy, target) })
-	})
-	// Empty body + client-side row removal (like archive/spam/delete).
-	w.WriteHeader(http.StatusOK)
-}
-
-// handleUndoMove reverses a still-pending move: it cancels the deferred real
-// IMAP move and puts the local row back in its original folder. folder must be
-// the message's folder id before the move (the client embeds it in the toast
-// at render time). Once the grace period has elapsed the move already hit the
-// server, so undo is no longer possible and this reports 409.
-func (s *Server) handleUndoMove(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	origFolderID, err := strconv.ParseInt(r.FormValue("folder"), 10, 64)
-	if err != nil {
-		http.Error(w, "missing folder", http.StatusBadRequest)
-		return
-	}
-	if !s.cancelPendingMove(id) {
-		http.Error(w, "too late to undo", http.StatusConflict)
-		return
-	}
-	msg, err := s.store.MessageByID(id)
-	if err != nil || msg == nil {
-		http.NotFound(w, r)
-		return
-	}
-	_ = s.store.SetMessageFolder(id, origFolderID)
-	_ = s.store.RecountUnread(msg.FolderID)
-	_ = s.store.RecountUnread(origFolderID)
-	w.WriteHeader(http.StatusOK)
-}
-
-// schedulePendingMove runs fn after undoGrace unless cancelPendingMove(id) is
-// called first.
-func (s *Server) schedulePendingMove(id int64, fn func()) {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-	if t, ok := s.pending[id]; ok {
-		t.Stop()
-	}
-	s.pending[id] = time.AfterFunc(undoGrace, func() {
-		s.pendingMu.Lock()
-		delete(s.pending, id)
-		s.pendingMu.Unlock()
-		fn()
-	})
-}
-
-// cancelPendingMove stops a still-pending move, reporting whether it was in
-// time (false once the timer already fired or there was nothing pending).
-func (s *Server) cancelPendingMove(id int64) bool {
-	s.pendingMu.Lock()
-	defer s.pendingMu.Unlock()
-	t, ok := s.pending[id]
-	if !ok {
-		return false
-	}
-	delete(s.pending, id)
-	return t.Stop()
 }
 
 // handleLabel adds ("label" form value) or removes (+ "remove=1") a user label

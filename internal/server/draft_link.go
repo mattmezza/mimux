@@ -37,7 +37,7 @@ func (s *Server) draftLinks(msgs []store.Message) map[int64]string {
 		if fid == 0 || m.FolderID != fid {
 			continue
 		}
-		if d, err := s.store.DraftByServerCopy(m.Account, m.MessageID, m.FolderID, m.UID); err == nil && d != nil {
+		if d, err := s.store.DraftByServerCopy(m.Account, m.MessageID, m.IMAPFolderID(), m.UID); err == nil && d != nil {
 			links[m.ID] = "/compose?draft=" + strconv.FormatInt(d.ID, 10)
 			continue
 		}

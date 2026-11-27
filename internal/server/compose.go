@@ -1217,7 +1217,7 @@ func (s *Server) draftRows(account string) ([]draftRow, error) {
 			if m.MessageID != "" && mine[m.Account+"\x00"+m.MessageID] {
 				continue
 			}
-			if mine[draftCopyKey(m.FolderID, m.UID)] {
+			if mine[draftCopyKey(m.IMAPFolderID(), m.UID)] {
 				continue
 			}
 			rows = append(rows, draftRow{
@@ -1291,7 +1291,7 @@ func (s *Server) handleForeignDraftDelete(w http.ResponseWriter, r *http.Request
 	}
 	// DropDraft only reads where the copy sits; a draft carrying just that says
 	// it exactly, and reuses the removal rules rather than restating them.
-	d := &store.Draft{Account: msg.Account, FolderID: msg.FolderID, UID: msg.UID}
+	d := &store.Draft{Account: msg.Account, FolderID: msg.IMAPFolderID(), UID: msg.UID}
 	if err := s.store.DeleteMessage(msg.ID); err != nil {
 		slog.Error("drafts: mailbox row delete", "message", msg.ID, "err", err)
 	}
